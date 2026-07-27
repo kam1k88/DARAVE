@@ -1,0 +1,99 @@
+.eq-knobs {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.eq-knobs__band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.eq-knobs__knob {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-bg-elevated);
+  border: 2px solid var(--color-border-default);
+  position: relative;
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.15s;
+  --knob-accent: var(--color-text-primary);
+}
+
+.eq-knobs__knob:active {
+  cursor: grabbing;
+}
+
+.eq-knobs__knob::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+  background: var(--knob-accent, var(--color-text-primary));
+  border-radius: 1px;
+  transform-origin: center 16px;
+}
+
+.eq-knobs__knob:focus-visible {
+  outline: 2px solid var(--color-ice-400);
+  outline-offset: 2px;
+}
+
+.eq-knobs__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  min-width: 3.5em;
+  text-align: center;
+  line-height: 1;
+}
+
+.eq-knobs__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+
+.eq-knobs__kill {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border: 1px solid var(--color-border-default);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.eq-knobs__kill:hover {
+  border-color: var(--color-crimson-500);
+  color: var(--color-crimson-500);
+}
+
+.eq-knobs__kill--active {
+  background: var(--color-crimson-500);
+  border-color: var(--color-crimson-500);
+  color: #fff;
+}
+
+.eq-knobs__kill--active:hover {
+  background: var(--color-crimson-500);
+  color: #fff;
+}

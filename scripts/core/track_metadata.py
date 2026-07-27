@@ -271,7 +271,7 @@ class MetadataCache:
 # HTTP helper
 # ---------------------------------------------------------------------------
 
-_USER_AGENT = "AI-RemixMate/0.2 (portfolio project; github.com/ai-remixmate)"
+_USER_AGENT = "DARAVE/0.2 (portfolio project; github.com/kam1k88/DARAVE)"
 
 
 def _get_json(url: str, timeout: int = 8) -> Optional[dict]:

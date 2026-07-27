@@ -1,0 +1,87 @@
+.crossfader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.crossfader__labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: var(--text-xs, 0.6875rem);
+  padding: 0 2px;
+  user-select: none;
+}
+
+.crossfader__track {
+  position: relative;
+  height: 2rem;
+  background: var(--color-bg-elevated, #18181b);
+  border: 1px solid var(--color-border-default, #27272a);
+  border-radius: 9999px;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.crossfader__fill {
+  position: absolute;
+  inset: 0;
+  opacity: 0.3;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.crossfader__thumb {
+  position: absolute;
+  top: 0;
+  width: 1.5rem;
+  height: 100%;
+  background: var(--color-text-primary, #f4f4f5);
+  border-radius: var(--radius-sm, 0.25rem);
+  cursor: grab;
+  z-index: 1;
+  transform: translateX(-50%);
+  transition: box-shadow 0.15s ease;
+}
+
+.crossfader__thumb:active {
+  cursor: grabbing;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.crossfader__curves {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.crossfader__curve-btn {
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: var(--text-xs, 0.6875rem);
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-default, #27272a);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--color-text-muted, #71717a);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.crossfader__curve-btn:hover {
+  border-color: var(--color-text-muted, #71717a);
+  color: var(--color-text-secondary, #a1a1aa);
+}
+
+.crossfader__curve-btn--active {
+  background: var(--color-amber-500, #f59e0b);
+  color: var(--color-bg-base, #09090b);
+  border-color: var(--color-amber-500, #f59e0b);
+}
+
+.crossfader__curve-btn--active:hover {
+  background: var(--color-amber-500, #f59e0b);
+  color: var(--color-bg-base, #09090b);
+}

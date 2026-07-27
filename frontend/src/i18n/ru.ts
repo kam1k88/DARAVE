@@ -5,12 +5,14 @@ export const ru: Record<string, string> = {
   'nav.strategy': 'Стратегия',
   'nav.library': 'Библиотека',
   'nav.solo': 'ЛАБ',
+  'nav.mixdeck': 'Микшер',
   'nav.downloads': 'Импорт',
   'nav.outputs': 'Файлы',
 
   'nav.short.strategy': 'Стратег.',
   'nav.short.library': 'Библ.',
   'nav.short.solo': 'ЛАБ',
+  'nav.short.mixdeck': 'Микш.',
   'nav.short.downloads': 'Имп.',
   'nav.short.outputs': 'Файлы',
 
@@ -31,6 +33,19 @@ export const ru: Record<string, string> = {
   'inspector.host': 'Хост',
   'inspector.gpu': 'GPU',
   'inspector.tier': 'Уровень',
+
+  // ── AI Чат ──
+  'inspector.chat': 'Чат',
+  'chat.placeholder': 'Спроси DJ-ассистента...',
+  'chat.thinking': 'Думаю...',
+  'chat.error': 'Ошибка чата',
+  'chat.clear': 'Очистить',
+  'chat.splash.title': 'DJ-ассистент',
+  'chat.splash.hint': 'Спрашивай о микшировании, переходах, совместимости треков — или я оптимизирую твой сет.',
+  'chat.prompt.library': 'Показать библиотеку',
+  'chat.prompt.transition': 'Рекомендовать переход',
+  'chat.prompt.effects': 'Какие есть эффекты?',
+  'chat.prompt.setlist': 'Оптимизировать сет',
 
   // ── Центр управления ──
   'mc.title': 'Центр управления',

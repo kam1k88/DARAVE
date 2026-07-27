@@ -1,5 +1,5 @@
 # =============================================================================
-# AI RemixMate — Base Configuration
+# DARAVE — Base Configuration
 # =============================================================================
 #
 # Override any value by:
@@ -114,6 +114,21 @@ generative:                    # AI Studio — generative model configuration
   max_generation_sec: 30.0     # Hard cap on MusicGen output length
   default_guidance_scale: 3.0  # CFG strength (1 = ignore text, 10 = very constrained)
   default_temperature: 1.0     # Sampling temperature (< 1 = conservative)
+
+# ---------------------------------------------------------------------------
+ollama:                         # AI Chat — local LLM via Ollama
+  host: "http://localhost:11501"
+  model: "llama3.1:8b"          # or mistral, phi3, qwen2, etc.
+  timeout_sec: 120              # per-request timeout for Ollama API
+  max_context_messages: 40      # keep conversation context window bounded
+  max_tool_rounds: 5            # max agent loop iterations before forced stop
+  system_prompt: |
+    You are a DJ assistant for DARAVE — a real-time DJ engine.
+    You help with mixing, track selection, transition techniques, compatibility,
+    remix settings, and setlist planning.
+    Always use tools to get real data from the user's library before answering.
+    If the user writes in Russian, respond in Russian. Same for Chinese.
+    Be concise and practical — DJs need actionable advice, not essays.
 
 # ---------------------------------------------------------------------------
 logging:

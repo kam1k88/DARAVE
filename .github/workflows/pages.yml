@@ -4,7 +4,7 @@
 # backend (http://localhost:8000). To use it:
 #   1. Enable Pages: repo Settings → Pages → Source: "GitHub Actions"
 #   2. Start the API locally:  ./start.sh api
-#   3. Open https://chunduri-aditya.github.io/ai-remixmate/
+#   3. Open https://kam1k88.github.io/DARAVE/
 name: Deploy frontend to GitHub Pages
 
 on:
@@ -43,12 +43,12 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
-          VITE_BASE: /ai-remixmate/
+          VITE_BASE: /DARAVE/
           VITE_API_BASE: http://localhost:8000
           VITE_EVENTS_URL: http://localhost:8000/events/stream
         run: npm run build
 
-      # SPA fallback so deep links like /ai-remixmate/widget resolve
+      # SPA fallback so deep links like /DARAVE/widget resolve
       - name: Add 404 fallback
         run: cp frontend/dist/index.html frontend/dist/404.html
 

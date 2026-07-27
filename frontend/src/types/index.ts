@@ -308,6 +308,7 @@ export type NavDestination =
   | 'strategy'
   | 'library'
   | 'solo'
+  | 'mix-deck'
   | 'outputs'
   | 'downloads'
 
@@ -370,4 +371,29 @@ export interface PatternSearchResult {
   technique_name: string
   tracks: PatternSearchTrack[]
   pairs: PatternSearchPair[]
+}
+
+// --- AI Chat ---
+
+export interface ChatToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: ChatToolCall[]
+  toolCallId?: string
+  timestamp?: string
+}
+
+export interface ChatStatus {
+  connected: boolean
+  host: string
+  model: string
+  model_available: boolean
+  available_models?: string[]
+  error?: string
 }

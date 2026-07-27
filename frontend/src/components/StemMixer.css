@@ -1,0 +1,145 @@
+/* ============================================================
+   StemMixer — vertical 4-channel stem mixer component.
+   ============================================================ */
+
+.stem-mixer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* --- Header --- */
+.stem-mixer__header {
+  align-self: flex-end;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  padding-bottom: 4px;
+}
+
+/* --- Channel column --- */
+.stem-mixer__channel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- Vertical fader --- */
+.stem-mixer__fader {
+  height: 120px;
+  width: 28px;
+  cursor: pointer;
+  appearance: slider-vertical;
+  -webkit-appearance: slider-vertical;
+  writing-mode: bt-lr;
+}
+
+.stem-mixer__fader::-webkit-slider-runnable-track {
+  width: 4px;
+  background: var(--color-border-default);
+  border-radius: 2px;
+}
+
+.stem-mixer__fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-bg-base);
+  cursor: grab;
+}
+
+.stem-mixer__fader::-moz-range-track {
+  width: 4px;
+  background: var(--color-border-default);
+  border-radius: 2px;
+}
+
+.stem-mixer__fader::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-bg-base);
+  cursor: grab;
+}
+
+/* --- Stem label --- */
+.stem-mixer__label {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  text-align: center;
+  user-select: none;
+}
+
+/* --- Shared button base --- */
+.stem-mixer__btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+/* --- Solo button --- */
+.stem-mixer__btn--solo {
+  background: var(--color-bg-overlay);
+  color: var(--color-text-muted);
+}
+
+.stem-mixer__btn--solo:hover {
+  background: var(--color-green-glow);
+  color: var(--color-green-400);
+}
+
+.stem-mixer__btn--solo-active {
+  background: var(--color-green-500);
+  color: var(--color-bg-base);
+}
+
+.stem-mixer__btn--solo-active:hover {
+  background: var(--color-green-400);
+  color: var(--color-bg-base);
+}
+
+/* --- Mute button --- */
+.stem-mixer__btn--mute {
+  background: var(--color-bg-overlay);
+  color: var(--color-text-muted);
+}
+
+.stem-mixer__btn--mute:hover {
+  background: var(--color-crimson-glow);
+  color: var(--color-crimson-500);
+}
+
+.stem-mixer__btn--mute-active {
+  background: var(--color-crimson-500);
+  color: var(--color-bg-base);
+}
+
+.stem-mixer__btn--mute-active:hover {
+  background: var(--color-crimson-400);
+  color: var(--color-bg-base);
+}

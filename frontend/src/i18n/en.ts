@@ -5,12 +5,14 @@ export const en: Record<string, string> = {
   'nav.strategy': 'Strategy',
   'nav.library': 'Library',
   'nav.solo': 'LAB',
+  'nav.mixdeck': 'Mix Deck',
   'nav.downloads': 'Import',
   'nav.outputs': 'Files',
 
   'nav.short.strategy': 'Strategy',
   'nav.short.library': 'Library',
   'nav.short.solo': 'LAB',
+  'nav.short.mixdeck': 'Mix',
   'nav.short.downloads': 'Import',
   'nav.short.outputs': 'Files',
 
@@ -31,6 +33,19 @@ export const en: Record<string, string> = {
   'inspector.host': 'Host',
   'inspector.gpu': 'GPU',
   'inspector.tier': 'Tier',
+
+  // ── AI Chat ──
+  'inspector.chat': 'Chat',
+  'chat.placeholder': 'Ask the DJ assistant...',
+  'chat.thinking': 'Thinking...',
+  'chat.error': 'Chat error',
+  'chat.clear': 'Clear',
+  'chat.splash.title': 'DJ Assistant',
+  'chat.splash.hint': 'Ask about mixing, transitions, track compatibility, or let me optimize your set.',
+  'chat.prompt.library': 'List my library',
+  'chat.prompt.transition': 'Recommend a transition',
+  'chat.prompt.effects': 'What effects are available?',
+  'chat.prompt.setlist': 'Optimize my set',
 
   // ── Mission Control ──
   'mc.title': 'Mission Control',

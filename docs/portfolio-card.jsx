@@ -36,8 +36,8 @@ const HIGHLIGHTS = [
 ];
 
 export default function RemixMateCard({
-  githubUrl = "https://github.com/Chunduri-Aditya/ai-remixmate",
-  accessUrl = "https://github.com/Chunduri-Aditya/ai-remixmate/issues/new?template=access-request.yml",
+  githubUrl = "https://github.com/kam1k88/DARAVE",
+  accessUrl = "https://github.com/kam1k88/DARAVE/issues/new?template=access-request.yml",
   showStatus = true,
 }) {
   const [hovered, setHovered] = useState(false);

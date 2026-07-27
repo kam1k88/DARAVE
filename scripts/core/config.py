@@ -133,6 +133,16 @@ class LoggingConfig:
 
 
 @dataclass
+class OllamaConfig:
+    host: str                   = "http://localhost:11501"
+    model: str                  = "llama3.1:8b"
+    timeout_sec: int            = 120
+    max_context_messages: int   = 40
+    max_tool_rounds: int        = 5
+    system_prompt: str          = ""
+
+
+@dataclass
 class AppConfig:
     """Root config object — access via  cfg.<section>.<key>"""
     audio:      AudioConfig      = field(default_factory=AudioConfig)
@@ -145,6 +155,7 @@ class AppConfig:
     database:   DatabaseConfig   = field(default_factory=DatabaseConfig)
     api:        ApiConfig        = field(default_factory=ApiConfig)
     logging:    LoggingConfig    = field(default_factory=LoggingConfig)
+    ollama:     OllamaConfig     = field(default_factory=OllamaConfig)
 
 
 # ---------------------------------------------------------------------------

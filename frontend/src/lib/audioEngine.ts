@@ -3,9 +3,14 @@
 
    Provides:
    - Multi-track playback (stems loaded from server)
-   - Crossfade, EQ sweep, delay, compressor
+   - Per-stem volume, mute/solo
+   - 3-band EQ (BiquadFilter) per track
+   - Stereo panning per track
+   - Crossfade between 2 decks (3 curves)
+   - Live effects (delay, reverb, filter, distortion)
    - Play / pause / seek / stop
    - Analyser node for waveform / frequency visualization
+   - RMS level metering per track
    - Transition scheduling (auto-crossfade between tracks)
 
    No React dependency — pure Web Audio API.
@@ -22,15 +27,47 @@ export interface TrackSlot {
   id: string
   name: string
   buffers: Map<string, AudioBuffer>  // stem_name → buffer
-  source?: AudioBufferSourceNode
-  gain?: GainNode
-  filter?: BiquadFilterNode
+
+  // Per-stem gain nodes
+  stemGains: Map<string, GainNode>
+  // Mix bus: all stem gains → stemMixGain
+  stemMixGain: GainNode
+  // EQ chain
+  eqLow: BiquadFilterNode
+  eqMid: BiquadFilterNode
+  eqHigh: BiquadFilterNode
+  // Panner
+  panner: StereoPannerNode
+  // Slot output gain
+  slotGain: GainNode
+  // Crossfade gain
+  crossfadeGain: GainNode
+
+  // Effect nodes
+  effectInput?: GainNode
+  effectOutput?: GainNode
+  effectDelay?: DelayNode
+  effectFeedback?: GainNode
+  effectFilter?: BiquadFilterNode
+  effectDistortion?: WaveShaperNode
+
+  // State
   loaded: boolean
+  muted: boolean
+  solo: boolean
+  stemVolumes: Map<string, number>  // stem_name → 0-1
+  eqValues: { low: number; mid: number; high: number }  // dB
+  pan: number  // -1 to 1
+  volume: number  // 0-1
+  currentEffect: string
+  // Level metering
+  levelAnalyser: AnalyserNode
 }
 
 export interface TransitionConfig {
   crossfadeDuration: number  // seconds
   crossfadeCurve: 'linear' | 'exponential' | 'equal_power'
+  crossfadeType: 'linear' | 'power' | 'exponential'
   hpStartHz: number
   hpEndHz: number
   effectType: string
@@ -45,6 +82,7 @@ export interface EngineEvents {
   onAnalyser?: (data: { waveform: Float32Array; frequency: Uint8Array }) => void
   onTrackLoaded?: (trackId: string) => void
   onError?: (msg: string) => void
+  onLevels?: (levels: Map<string, number>) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +90,38 @@ export interface EngineEvents {
 // ---------------------------------------------------------------------------
 
 const STEM_NAMES = ['drums', 'bass', 'other', 'vocals']
+
+// ---------------------------------------------------------------------------
+// Crossfade curves
+// ---------------------------------------------------------------------------
+
+function crossfadeGain(value: number, curve: 'linear' | 'power' | 'exponential'): number {
+  // value: 0 = full A, 1 = full B
+  switch (curve) {
+    case 'linear':
+      return value
+    case 'power':
+      // Equal power: sqrt gives ~-3dB at center
+      return Math.sqrt(value)
+    case 'exponential':
+      return value * value
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Distortion curve generator
+// ---------------------------------------------------------------------------
+
+function makeDistortionCurve(amount: number): Float32Array {
+  const n = 44100
+  const curve = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1
+    curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) /
+      (Math.PI + amount * Math.abs(x))
+  }
+  return curve
+}
 
 // ---------------------------------------------------------------------------
 // AudioEngine
@@ -66,17 +136,20 @@ export class AudioEngine {
   private _state: PlayState = 'idle'
   private _duration = 0
   private _rafId = 0
+  private _levelRafId = 0
   private _startTime = 0
   private _pauseOffset = 0
   private events: EngineEvents = {}
   private _transitionConfig: TransitionConfig = {
     crossfadeDuration: 4,
     crossfadeCurve: 'equal_power',
+    crossfadeType: 'power',
     hpStartHz: 400,
     hpEndHz: 80,
     effectType: 'none',
     effectDepth: 0,
   }
+  private _crossfadeValue = 0  // -1 (full A) to +1 (full B), or 0 = center
 
   // --- Lifecycle ---
 
@@ -92,7 +165,7 @@ export class AudioEngine {
       this.analyser = this.ctx.createAnalyser()
       this.analyser.fftSize = 2048
 
-      // Graph: source → masterGain → compressor → analyser → destination
+      // Graph: tracks → masterGain → compressor → analyser → destination
       this.masterGain
         .connect(this.compressor)
         .connect(this.analyser)
@@ -107,6 +180,7 @@ export class AudioEngine {
   destroy(): void {
     this.stop()
     cancelAnimationFrame(this._rafId)
+    cancelAnimationFrame(this._levelRafId)
     if (this.ctx && this.ctx.state !== 'closed') {
       this.ctx.close()
     }
@@ -135,12 +209,7 @@ export class AudioEngine {
     const ctx = this.ensureCtx()
     this.setState('loading')
 
-    const slot: TrackSlot = {
-      id: trackId,
-      name: songName,
-      buffers: new Map(),
-      loaded: false,
-    }
+    const slot = this.createEmptySlot(trackId, songName, ctx)
 
     const stemPromises = STEM_NAMES.map(async (stem) => {
       try {
@@ -190,6 +259,62 @@ export class AudioEngine {
     }
   }
 
+  private createEmptySlot(trackId: string, songName: string, ctx: AudioContext): TrackSlot {
+    const slot: TrackSlot = {
+      id: trackId,
+      name: songName,
+      buffers: new Map(),
+      stemGains: new Map(),
+      stemMixGain: ctx.createGain(),
+      eqLow: ctx.createBiquadFilter(),
+      eqMid: ctx.createBiquadFilter(),
+      eqHigh: ctx.createBiquadFilter(),
+      panner: ctx.createStereoPanner(),
+      slotGain: ctx.createGain(),
+      crossfadeGain: ctx.createGain(),
+      loaded: false,
+      muted: false,
+      solo: false,
+      stemVolumes: new Map(),
+      eqValues: { low: 0, mid: 0, high: 0 },
+      pan: 0,
+      volume: 1,
+      currentEffect: 'none',
+      levelAnalyser: ctx.createAnalyser(),
+    }
+
+    // Init EQ
+    slot.eqLow.type = 'lowshelf'
+    slot.eqLow.frequency.setValueAtTime(320, ctx.currentTime)
+    slot.eqLow.gain.setValueAtTime(0, ctx.currentTime)
+
+    slot.eqMid.type = 'peaking'
+    slot.eqMid.frequency.setValueAtTime(1000, ctx.currentTime)
+    slot.eqMid.Q.setValueAtTime(0.7, ctx.currentTime)
+    slot.eqMid.gain.setValueAtTime(0, ctx.currentTime)
+
+    slot.eqHigh.type = 'highshelf'
+    slot.eqHigh.frequency.setValueAtTime(3200, ctx.currentTime)
+    slot.eqHigh.gain.setValueAtTime(0, ctx.currentTime)
+
+    // Level analyser config
+    slot.levelAnalyser.fftSize = 256
+    slot.levelAnalyser.smoothingTimeConstant = 0.8
+
+    // Chain: stemGains → stemMixGain → eqLow → eqMid → eqHigh → panner → slotGain → crossfadeGain → master
+    slot.stemMixGain
+      .connect(slot.eqLow)
+      .connect(slot.eqMid)
+      .connect(slot.eqHigh)
+      .connect(slot.panner)
+      .connect(slot.slotGain)
+      .connect(slot.crossfadeGain)
+      .connect(this.masterGain!)
+      .connect(slot.levelAnalyser)
+
+    return slot
+  }
+
   getTrackIds(): string[] {
     return Array.from(this.tracks.keys())
   }
@@ -214,31 +339,32 @@ export class AudioEngine {
 
     this.setState('playing')
     this.startAnalyserLoop()
+    this.startLevelLoop()
   }
 
   private playSlot(ctx: AudioContext, slot: TrackSlot, when: number) {
-    // Disconnect previous sources
     this.disconnectSlot(slot)
 
-    // Create new source for each stem
-    const trackGain = ctx.createGain()
-    trackGain.connect(this.masterGain!)
-
-    for (const [, buffer] of slot.buffers) {
+    // Create source nodes for each stem
+    for (const [stemName, buffer] of slot.buffers) {
       const source = ctx.createBufferSource()
       source.buffer = buffer
-      source.connect(trackGain)
-      source.start(when, this._pauseOffset)
-      slot.source = source  // keep reference for stop
-    }
-    slot.gain = trackGain
 
-    // Cleanup on end
-    slot.source?.addEventListener('ended', () => {
-      if (this._state === 'playing') {
-        // Could auto-advance to next track
+      // Get or create per-stem gain
+      let stemGain = slot.stemGains.get(stemName)
+      if (!stemGain) {
+        stemGain = ctx.createGain()
+        stemGain.gain.setValueAtTime(1, ctx.currentTime)
+        slot.stemGains.set(stemName, stemGain)
+        slot.stemVolumes.set(stemName, 1)
       }
-    })
+
+      // source → stemGain → stemMixGain
+      source.connect(stemGain)
+      stemGain.connect(slot.stemMixGain)
+
+      source.start(when, this._pauseOffset)
+    }
   }
 
   pause(): void {
@@ -247,6 +373,7 @@ export class AudioEngine {
     this.stopAllSources()
     this.setState('paused')
     cancelAnimationFrame(this._rafId)
+    cancelAnimationFrame(this._levelRafId)
   }
 
   stop(): void {
@@ -254,6 +381,7 @@ export class AudioEngine {
     this.stopAllSources()
     this.setState('idle')
     cancelAnimationFrame(this._rafId)
+    cancelAnimationFrame(this._levelRafId)
     this.events.onTimeUpdate?.(0, this._duration)
   }
 
@@ -271,13 +399,26 @@ export class AudioEngine {
   }
 
   private disconnectSlot(slot: TrackSlot) {
-    try { slot.source?.stop() } catch {}
-    try { slot.source?.disconnect() } catch {}
-    try { slot.gain?.disconnect() } catch {}
-    try { slot.filter?.disconnect() } catch {}
-    slot.source = undefined
-    slot.gain = undefined
-    slot.filter = undefined
+    for (const [, gain] of slot.stemGains) {
+      try { gain.disconnect() } catch {}
+    }
+    try { slot.stemMixGain.disconnect() } catch {}
+    try { slot.eqLow.disconnect() } catch {}
+    try { slot.eqMid.disconnect() } catch {}
+    try { slot.eqHigh.disconnect() } catch {}
+    try { slot.panner.disconnect() } catch {}
+    try { slot.slotGain.disconnect() } catch {}
+    try { slot.crossfadeGain.disconnect() } catch {}
+    try { slot.levelAnalyser.disconnect() } catch {}
+    // Reconnect chain
+    slot.stemMixGain.connect(slot.eqLow)
+    slot.eqLow.connect(slot.eqMid)
+    slot.eqMid.connect(slot.eqHigh)
+    slot.eqHigh.connect(slot.panner)
+    slot.panner.connect(slot.slotGain)
+    slot.slotGain.connect(slot.crossfadeGain)
+    slot.crossfadeGain.connect(this.masterGain!)
+    slot.crossfadeGain.connect(slot.levelAnalyser)
   }
 
   // --- Volume ---
@@ -288,41 +429,258 @@ export class AudioEngine {
     }
   }
 
-  // --- Effects ---
-
-  setTransition(config: Partial<TransitionConfig>): void {
-    Object.assign(this._transitionConfig, config)
+  setTrackVolume(trackId: string, v: number): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+    slot.volume = v
+    slot.slotGain.gain.setValueAtTime(v, this.ctx!.currentTime)
   }
 
-  // Apply HP sweep effect to a slot during playback
+  // --- Per-stem volume ---
+
+  setStemVolume(trackId: string, stemName: string, v: number): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+    const gain = slot.stemGains.get(stemName)
+    if (gain) {
+      gain.gain.setValueAtTime(Math.max(0, Math.min(1, v)), this.ctx!.currentTime)
+      slot.stemVolumes.set(stemName, v)
+    }
+  }
+
+  setStemMuted(trackId: string, stemName: string, muted: boolean): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+    const gain = slot.stemGains.get(stemName)
+    if (gain) {
+      gain.gain.setValueAtTime(muted ? 0 : (slot.stemVolumes.get(stemName) ?? 1), this.ctx!.currentTime)
+    }
+  }
+
+  setTrackMuted(trackId: string, muted: boolean): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+    slot.muted = muted
+    slot.crossfadeGain.gain.setValueAtTime(muted ? 0 : 1, this.ctx!.currentTime)
+  }
+
+  setTrackSolo(trackId: string, solo: boolean): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+    slot.solo = solo
+    // If any track is solo'd, mute all non-solo'd tracks
+    const hasSolo = Array.from(this.tracks.values()).some((s) => s.solo)
+    for (const [, otherSlot] of this.tracks) {
+      if (hasSolo) {
+        otherSlot.crossfadeGain.gain.setValueAtTime(
+          otherSlot.solo && !otherSlot.muted ? 1 : 0,
+          this.ctx!.currentTime,
+        )
+      } else {
+        otherSlot.crossfadeGain.gain.setValueAtTime(
+          otherSlot.muted ? 0 : 1,
+          this.ctx!.currentTime,
+        )
+      }
+    }
+  }
+
+  // --- 3-Band EQ ---
+
+  setEQ(trackId: string, band: 'low' | 'mid' | 'high', dB: number): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !this.ctx) return
+    const clamped = Math.max(-12, Math.min(12, dB))
+    slot.eqValues[band] = clamped
+    const filter = band === 'low' ? slot.eqLow : band === 'mid' ? slot.eqMid : slot.eqHigh
+    filter.gain.setValueAtTime(clamped, this.ctx.currentTime)
+  }
+
+  setEQBandEnabled(trackId: string, band: 'low' | 'mid' | 'high', enabled: boolean): void {
+    this.setEQ(trackId, band, enabled ? 0 : -12)
+  }
+
+  // --- Panning ---
+
+  setPan(trackId: string, value: number): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !this.ctx) return
+    slot.pan = Math.max(-1, Math.min(1, value))
+    slot.panner.pan.setValueAtTime(slot.pan, this.ctx.currentTime)
+  }
+
+  // --- Crossfade ---
+
+  setCrossfade(value: number): void {
+    // value: -1 = full A, 0 = center, +1 = full B
+    if (!this.ctx) return
+    this._crossfadeValue = Math.max(-1, Math.min(1, value))
+    const curve = this._transitionConfig.crossfadeType
+
+    const trackIds = this.getTrackIds()
+    if (trackIds.length < 2) return
+
+    // Normalize to 0-1 for curve function
+    const t = (this._crossfadeValue + 1) / 2  // 0 = full A, 1 = full B
+
+    const slotA = this.tracks.get(trackIds[0])
+    const slotB = this.tracks.get(trackIds[1])
+
+    if (slotA) {
+      const gainA = 1 - crossfadeGain(t, curve)
+      slotA.crossfadeGain.gain.setValueAtTime(gainA, this.ctx.currentTime)
+    }
+    if (slotB) {
+      const gainB = crossfadeGain(t, curve)
+      slotB.crossfadeGain.gain.setValueAtTime(gainB, this.ctx.currentTime)
+    }
+  }
+
+  setCrossfadeType(type: 'linear' | 'power' | 'exponential'): void {
+    this._transitionConfig.crossfadeType = type
+    this.setCrossfade(this._crossfadeValue)
+  }
+
+  get crossfadeValue(): number { return this._crossfadeValue }
+
+  // --- Effects ---
+
+  setEffect(trackId: string, effectType: string): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !this.ctx) return
+
+    // Remove existing effect
+    this.removeEffect(trackId)
+
+    if (effectType === 'none') {
+      slot.currentEffect = 'none'
+      return
+    }
+
+    const ctx = this.ctx
+
+    // Create effect nodes
+    slot.effectInput = ctx.createGain()
+    slot.effectOutput = ctx.createGain()
+
+    switch (effectType) {
+      case 'echo': {
+        slot.effectDelay = ctx.createDelay(2)
+        slot.effectDelay.delayTime.setValueAtTime(0.3, ctx.currentTime)
+        slot.effectFeedback = ctx.createGain()
+        slot.effectFeedback.gain.setValueAtTime(0.4, ctx.currentTime)
+
+        // Input → delay → feedback → delay (loop)
+        slot.effectInput.connect(slot.effectDelay)
+        slot.effectDelay.connect(slot.effectFeedback)
+        slot.effectFeedback.connect(slot.effectDelay)
+        // Input → output (dry) + delay → output (wet)
+        slot.effectInput.connect(slot.effectOutput)
+        slot.effectDelay.connect(slot.effectOutput)
+        break
+      }
+      case 'filter': {
+        slot.effectFilter = ctx.createBiquadFilter()
+        slot.effectFilter.type = 'lowpass'
+        slot.effectFilter.frequency.setValueAtTime(2000, ctx.currentTime)
+        slot.effectFilter.Q.setValueAtTime(5, ctx.currentTime)
+
+        slot.effectInput.connect(slot.effectFilter)
+        slot.effectFilter.connect(slot.effectOutput)
+        break
+      }
+      case 'reverb': {
+        // Simple reverb using convolver with synthetic impulse
+        const sampleRate = ctx.sampleRate
+        const length = sampleRate * 1.5
+        const impulse = ctx.createBuffer(2, length, sampleRate)
+        for (let ch = 0; ch < 2; ch++) {
+          const data = impulse.getChannelData(ch)
+          for (let i = 0; i < length; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5)
+          }
+        }
+        const convolver = ctx.createConvolver()
+        convolver.buffer = impulse
+
+        slot.effectInput.connect(convolver)
+        convolver.connect(slot.effectOutput)
+        // Also pass dry
+        slot.effectInput.connect(slot.effectOutput)
+        break
+      }
+      case 'distortion': {
+        slot.effectDistortion = ctx.createWaveShaper()
+        slot.effectDistortion.curve = makeDistortionCurve(200) as Float32Array<ArrayBuffer>
+        slot.effectDistortion.oversample = '4x'
+
+        slot.effectInput.connect(slot.effectDistortion)
+        slot.effectDistortion.connect(slot.effectOutput)
+        break
+      }
+      default:
+        this.removeEffect(trackId)
+        return
+    }
+
+    slot.currentEffect = effectType
+
+    // Re-route audio through effect if track is playing
+    if (this._state === 'playing') {
+      this.rerouteEffect(trackId, slot)
+    }
+  }
+
+  private rerouteEffect(_trackId: string, slot: TrackSlot): void {
+    if (!slot.effectInput || !slot.effectOutput) return
+
+    // Disconnect slotGain from crossfadeGain
+    slot.slotGain.disconnect()
+    slot.slotGain.connect(slot.effectInput)
+    slot.effectOutput.connect(slot.crossfadeGain)
+  }
+
+  removeEffect(trackId: string): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+
+    // Reconnect direct path
+    slot.slotGain.disconnect()
+    slot.slotGain.connect(slot.crossfadeGain)
+
+    // Cleanup
+    try { slot.effectInput?.disconnect() } catch {}
+    try { slot.effectOutput?.disconnect() } catch {}
+    slot.effectInput = undefined
+    slot.effectOutput = undefined
+    slot.effectDelay = undefined
+    slot.effectFeedback = undefined
+    slot.effectFilter = undefined
+    slot.effectDistortion = undefined
+    slot.currentEffect = 'none'
+  }
+
+  // --- Filter sweep (legacy compat) ---
+
   applyFilterSweep(trackId: string, progress: number): void {
     const slot = this.tracks.get(trackId)
-    if (!slot?.gain || !this.ctx) return
+    if (!slot?.eqLow || !this.ctx) return
 
     const { hpStartHz, hpEndHz } = this._transitionConfig
     const cutoff = hpStartHz + (hpEndHz - hpStartHz) * progress
-
-    if (!slot.filter) {
-      slot.filter = this.ctx.createBiquadFilter()
-      slot.filter.type = 'highpass'
-      slot.filter.Q.setValueAtTime(0.7, this.ctx.currentTime)
-      // Re-route: source → filter → gain
-      slot.gain!.disconnect()
-      slot.filter.connect(slot.gain!)
-      slot.gain!.connect(this.masterGain!)
-    }
-    slot.filter.frequency.setValueAtTime(cutoff, this.ctx.currentTime)
+    slot.eqLow.frequency.setValueAtTime(cutoff, this.ctx.currentTime)
   }
 
   removeFilter(trackId: string): void {
     const slot = this.tracks.get(trackId)
-    if (!slot?.filter || !this.ctx) return
-    slot.filter.disconnect()
-    slot.filter = undefined
-    if (slot.gain) {
-      slot.gain.disconnect()
-      slot.gain.connect(this.masterGain!)
-    }
+    if (!slot || !this.ctx) return
+    slot.eqLow.frequency.setValueAtTime(320, this.ctx.currentTime)
+  }
+
+  // --- Transition config ---
+
+  setTransition(config: Partial<TransitionConfig>): void {
+    Object.assign(this._transitionConfig, config)
   }
 
   // --- Analyser ---
@@ -350,13 +708,42 @@ export class AudioEngine {
     this._rafId = requestAnimationFrame(loop)
   }
 
-  // --- Multi-track scheduling (set playback order) ---
+  // --- Level metering ---
+
+  getTrackLevel(trackId: string): number {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !slot.levelAnalyser) return 0
+
+    const data = new Float32Array(slot.levelAnalyser.frequencyBinCount)
+    slot.levelAnalyser.getFloatTimeDomainData(data)
+
+    // RMS
+    let sum = 0
+    for (let i = 0; i < data.length; i++) {
+      sum += data[i] * data[i]
+    }
+    return Math.sqrt(sum / data.length)
+  }
+
+  private startLevelLoop() {
+    const loop = () => {
+      if (this._state !== 'playing') return
+      const levels = new Map<string, number>()
+      for (const [id] of this.tracks) {
+        levels.set(id, this.getTrackLevel(id))
+      }
+      this.events.onLevels?.(levels)
+      this._levelRafId = requestAnimationFrame(loop)
+    }
+    this._levelRafId = requestAnimationFrame(loop)
+  }
+
+  // --- Multi-track scheduling ---
 
   async loadSet(tracks: Array<{ id: string; name: string }>): Promise<void> {
     const loadPromises = tracks.map((t) => this.loadTrack(t.id, t.name))
     await Promise.all(loadPromises)
 
-    // Set total duration as sum of all tracks
     let total = 0
     for (const t of tracks) {
       const slot = this.tracks.get(t.id)
@@ -374,7 +761,6 @@ export class AudioEngine {
     const slot = this.tracks.get(trackId)
     if (!slot) return null
 
-    // Get the first available buffer
     let buffer: AudioBuffer | undefined
     for (const buf of slot.buffers.values()) {
       buffer = buf

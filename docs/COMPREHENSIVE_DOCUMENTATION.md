@@ -16,7 +16,7 @@ Version: 0.2.0 | Python: 3.10+ | License: MIT
 ## Project Structure
 
 ```
-ai-remixmate/
+DARAVE/
 ├── scripts/
 │   ├── api/                          # FastAPI backend
 │   │   ├── main.py                   # App factory, CORS, middleware, startup/shutdown
@@ -1984,11 +1984,11 @@ Or process library in batches:
 ### 14.1 Docker
 
 ```bash
-docker build -t ai-remixmate .
+docker build -t DARAVE .
 docker run -p 8000:8000 -p 8501:8501 \
   -v $(pwd)/library:/app/library \
   -v $(pwd)/outputs:/app/outputs \
-  ai-remixmate
+  DARAVE
 ```
 
 ### 14.2 Docker Compose
@@ -2026,8 +2026,8 @@ After=network.target
 [Service]
 Type=simple
 User=remixmate
-WorkingDirectory=/home/remixmate/ai-remixmate
-ExecStart=/home/remixmate/ai-remixmate/remix-env/bin/python -m scripts.api.main
+WorkingDirectory=/home/remixmate/DARAVE
+ExecStart=/home/remixmate/DARAVE/remix-env/bin/python -m scripts.api.main
 Restart=always
 
 [Install]
@@ -2109,8 +2109,8 @@ For commercial use, contact Meta for licensing.
 ### Clone & Setup
 
 ```bash
-git clone https://github.com/Chunduri-Aditya/ai-remixmate.git
-cd ai-remixmate
+git clone https://github.com/kam1k88/DARAVE.git
+cd DARAVE
 python -m venv remix-env
 source remix-env/bin/activate    # Windows: remix-env\Scripts\activate
 pip install -e ".[dev]"

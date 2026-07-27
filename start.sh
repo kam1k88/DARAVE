@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start.sh — Install/update dependencies and start AI RemixMate.
+# start.sh — Install/update dependencies and start DARAVE.
 #
 # Usage:
 #   ./start.sh              # setup + React UI + API (default)
@@ -229,7 +229,109 @@ stop_all() {
   kill_port $API_PORT
   kill_port $UI_PORT
   kill_port $FRONTEND_PORT
+  # Stop Ollama if we started it
+  if [ -n "${OLLAMA_PID:-}" ]; then
+    echo "  Stopping Ollama (PID: $OLLAMA_PID)..."
+    kill "$OLLAMA_PID" 2>/dev/null || true
+  fi
   echo "Done."
+}
+
+# ---------------------------------------------------------------------------
+# Ollama — auto-start for AI Chat
+# ---------------------------------------------------------------------------
+
+OLLAMA_PORT=11501
+OLLAMA_MODEL="llama3.1:8b"   # default — overridden by config.yaml if present
+OLLAMA_PID=""
+
+# Try to read model from config.yaml
+if [ -f "$ROOT/config.yaml" ]; then
+  CFG_MODEL=$(grep -A5 '^ollama:' "$ROOT/config.yaml" 2>/dev/null | grep 'model:' | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+  [ -n "$CFG_MODEL" ] && OLLAMA_MODEL="$CFG_MODEL"
+fi
+
+# Detect Ollama binary — checks common install locations
+find_ollama() {
+  # 1. Already in PATH
+  if command -v ollama &>/dev/null; then
+    echo "ollama"
+    return
+  fi
+  # 2. macOS standard install
+  if [ -x /usr/local/bin/ollama ]; then
+    echo "/usr/local/bin/ollama"
+    return
+  fi
+  # 3. macOS Homebrew Apple Silicon
+  if [ -x /opt/homebrew/bin/ollama ]; then
+    echo "/opt/homebrew/bin/ollama"
+    return
+  fi
+  # 4. Linux standard
+  if [ -x /usr/bin/ollama ]; then
+    echo "/usr/bin/ollama"
+    return
+  fi
+  # 5. Windows (Git Bash / WSL)
+  local win_path
+  win_path=$(find /c/Users/*/AppData/Local/Programs/Ollama/ollama.exe 2>/dev/null | head -1)
+  if [ -n "$win_path" ]; then
+    echo "$win_path"
+    return
+  fi
+  return 1
+}
+
+ensure_ollama() {
+  local OLLAMA_BIN
+  OLLAMA_BIN=$(find_ollama) || {
+    echo "  ⚠️   Ollama not found — AI Chat will be unavailable."
+    echo "      Install: https://ollama.com/download"
+    echo "      Then run: ollama pull llama3.1:8b"
+    return 1
+  }
+  echo "  ✅  Ollama: $OLLAMA_BIN"
+
+  # Check if already running
+  if curl -s -o /dev/null --max-time 2 "http://localhost:$OLLAMA_PORT/api/tags" 2>/dev/null; then
+    echo "  ✅  Ollama server already running on port $OLLAMA_PORT"
+    return 0
+  fi
+
+  echo "  🚀  Starting Ollama server on port $OLLAMA_PORT..."
+  "$OLLAMA_BIN" serve &>/dev/null &
+  OLLAMA_PID=$!
+  echo "    PID: $OLLAMA_PID"
+
+  # Wait for server to be ready (up to 10s)
+  local waited=0
+  while ! curl -s -o /dev/null --max-time 1 "http://localhost:$OLLAMA_PORT/api/tags" 2>/dev/null; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "$waited" -ge 10 ]; then
+      echo "  ⚠️   Ollama server didn't respond within 10s — AI Chat may not work."
+      return 1
+    fi
+  done
+  echo "  ✅  Ollama server ready"
+
+  # Check if the configured model is available
+  local MODEL="${OLLAMA_MODEL:-llama3.1:8b}"
+  if ! "$OLLAMA_BIN" list 2>/dev/null | grep -q "$MODEL"; then
+    echo "  ⚠️  Model '$MODEL' not found. Pulling it now (this may take a few minutes)..."
+    "$OLLAMA_BIN" pull "$MODEL"
+    if [ $? -eq 0 ]; then
+      echo "  ✅  Model '$MODEL' ready"
+    else
+      echo "  ❌  Failed to pull model '$MODEL' — AI Chat may not work."
+      return 1
+    fi
+  else
+    echo "  ✅  Model '$MODEL' available"
+  fi
+
+  return 0
 }
 
 start_frontend() {
@@ -362,6 +464,10 @@ banner
 case "$MODE" in
   stop)
     stop_all
+    # Also kill any ollama serve we may have started
+    if [ -n "${OLLAMA_PID:-}" ]; then
+      kill "$OLLAMA_PID" 2>/dev/null || true
+    fi
     exit 0
     ;;
   setup)
@@ -379,6 +485,9 @@ if ! $SKIP_SETUP; then
   setup_deps
   run_check
 fi
+
+# Start Ollama for AI Chat
+ensure_ollama || true
 
 if $HTTPS_MODE; then
   ensure_certs

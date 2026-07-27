@@ -264,7 +264,7 @@ All endpoints are documented at `http://localhost:8000/docs` (Swagger UI) when t
 ## File Structure
 
 ```
-ai-remixmate/
+DARAVE/
 ├── start.sh                    # Launch script (API + UI)
 ├── bin/check.sh                # Readiness checker
 ├── Dockerfile                  # Docker deployment

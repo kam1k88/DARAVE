@@ -20,18 +20,18 @@ export default function Projects() {
 
 ### Option 3: Link directly from portfolio
 Add to your projects section:
-- **GitHub**: `https://github.com/Chunduri-Aditya/ai-remixmate`
-- **Access Request**: `https://github.com/Chunduri-Aditya/ai-remixmate/issues/new?template=access-request.yml`
+- **GitHub**: `https://github.com/kam1k88/DARAVE`
+- **Access Request**: `https://github.com/kam1k88/DARAVE/issues/new?template=access-request.yml`
 
 ## GitHub Setup (Private Repo with Access Requests)
 
 1. Create private repo on GitHub:
    ```bash
-   cd ai-remixmate
+   cd DARAVE
    git init
    git add .
    git commit -m "Initial commit — AI RemixMate"
-   gh repo create Chunduri-Aditya/ai-remixmate --private --source=. --push
+   gh repo create kam1k88/DARAVE --private --source=. --push
    ```
 
 2. Enable Issues on the repo (Settings → Features → Issues ✓)
@@ -54,7 +54,7 @@ Add to your projects section:
 ## Customization
 
 Update these in both `portfolio-card.html` and `portfolio-card.jsx`:
-- GitHub URLs (search for `Chunduri-Aditya`)
+- GitHub URLs (search for `kam1k88`)
 - Stats numbers (modules, tests, endpoints)
 - Highlight bullet points
 - Tags / tech stack

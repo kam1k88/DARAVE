@@ -1,48 +1,122 @@
-# DARAVE — Перевёрнутая парадигма DAW
+# DARAVE — Реверсивная парадигма DAW + RL DJ-движок
 
-## Концепция: от результата к процессу
+**DARAVE** — это real-time DJ engine, который переворачивает классический DAW-подход.
+Вместо «сырьё → обработка → результат» точкой входа становится **готовый микс**:
+система проводит реверс-инжиниринг аудиопотока, выявляет инструменты, цепочки эффектов,
+ритмические паттерны — и генерирует собственные переходы через самообучающийся RL-агент.
 
-Классические DAW работают по линейному принципу **«Сырьё → Обработка → Результат»**.
-Продюсер берёт семплы, накладывает десятки плагинов, выстраивает сложные цепочки эффектов, тратит годы на изучение теории музыки и акустики — и только в самом конце получает готовый микс.
+---
 
-**DARAVE ломает этот порядок.**
+## Возможности
 
-Мы внедряем **реверсивную (обратную) парадигму**:
-> Точкой входа становится не семпл, а готовый, финальный продукт.
+| Модуль | Что делает |
+|--------|-----------|
+| **Stem-aware DJ engine** | Beat-grid lock, phase-lock, stem-aware crossfade, bridge beats, мастеринг до −14 LUFS |
+| **RL-агент** (PPO + SAC) | Самообучающийся агент: оптимизация переходов, саунд-дизайн, RLHF через лайк/дизлайк |
+| **AI Chat** (Ollama) | Локальный LLM-ассистент с 10 DJ-инструментами: поиск по библиотеке, проверка совместимости, оптимизация сетлиста, запуск ремиксов |
+| **GPU DSP** | PyTorch-ускорение: envelope, gate, compressor, flanger, phaser, vinyl_stop, filter_sweep, beat_stamp |
+| **20 DJ-техник** | Double Drop, Bass Swap, Filter Sweep, Echo Cut, EQ Roller и др. — выбор по 8 priority rules |
+| **Setlist planner** | Greedy + Markov оптимизатор, Camelot wheel, energy arcs |
+| **Stem separation** | Demucs (Meta AI) — drums, bass, vocals, other |
+| **Semantic search** | CLAP 512-D embeddings + 35-dim numpy vector index |
+| **Crate digger** | Мульти-лейбл классификатор, DnB-поджанры |
+| **Cue export** | Rekordbox XML + Serato GEOB marker export |
+| **Spotify integration** | Импорт плейлистов, поиск, топ-треки |
 
-Вы даёте программе уже сведённый трек или эталонный микс. DARAVE выступает в роли аудио-детектива: она проводит **полноценный реверс-инжиниринг** аудиопотока, выявляет все использованные инструменты, цепочки эффектов, частотную динамику, ритмические паттерны и структурные приёмы, которые привели к такому звучанию.
+---
+
+## Архитектура
+
+```
+darave_rl/                  # RL-модуль: PPO + SAC агенты
+├── env.py                  # DaraveEnv — среда (71-dim obs, 26-dim action)
+├── agent.py                # PPOAgent, SACAgent
+├── policy_ppo.py           # ActorCritic + GAE + clipped PPO
+├── policy_sac.py           # TwinCritic + SACActor + AutoAlpha
+├── reward.py               # DJ + producer reward metrics
+├── episode.py              # DjTransitionEpisode
+├── batch.py                # AudioBatch
+├── logger.py               # JSONL-логирование
+└── utils.py                # Seed, device, normalization
+
+scripts/
+├── api/                    # FastAPI — 15 routers, async job store
+│   ├── main.py             # Lifespan, CORS, request-ID middleware
+│   ├── jobs.py             # SQLite job persistence
+│   ├── routers/            # /library, /download, /stems, /analyze,
+│   │                       #  /dj-remix, /setlist, /crates, /jobs,
+│   │                       #  /chat, /events, /spotify, /mix/plan
+│   └── task_modules/       # Long-running task functions
+│
+├── core/                   # Audio engine — 58 модулей
+│   ├── ai_chat.py          # AI Chat engine (Ollama + 10 DJ tools)
+│   ├── gpu.py              # GPU primitives (envelope, gate, compressor, effects, beat)
+│   ├── dj_engine.py        # Transition renderer (the heart)
+│   ├── dj_analysis.py      # Beat / Section / SongStructure / TransitionPlan
+│   ├── transition_intel.py # 20 DJ techniques, 8 priority rules
+│   ├── dj_effects.py       # 14 DJ-эффектов
+│   ├── dj_techniques.py    # Полный каталог 20 DnB-техник
+│   ├── stems.py            # Demucs separation + stem-aware mixer
+│   ├── beat_synth.py       # Procedural drum synthesis (6 genre presets)
+│   ├── mastering.py        # ITU-R BS.1770-4 LUFS + true-peak limiter
+│   ├── key_detection.py    # CQT chroma + Krumhansl-Schmuckler + Camelot
+│   ├── setlist_planner.py  # Greedy optimizer, Markov model, energy arcs
+│   ├── music_index.py      # 35-dim numpy vector index
+│   ├── energy_profiler.py  # RMS + Essentia arousal/valence
+│   ├── synth/              # Mini-synthesizer (10 modules)
+│   └── ...                 # genre, classify, crate_digger, cue_export, ...
+
+frontend/                    # React + Vite + TypeScript (16 pages)
+tests/                       # pytest (25 test files, 370+ tests)
+```
+
+---
+
+## AI Chat — DJ-ассистент с инструментами
+
+Встроенный чат-движок на базе **Ollama** (llama3.1:8b) с агентным циклом и 10 DJ-инструментами:
+
+| Инструмент | Описание |
+|-----------|----------|
+| `list_library` | Список треков в библиотеке |
+| `get_track_info` | Детали трека (BPM, ключ, энергия, структура) |
+| `check_compatibility` | Совместимость двух треков |
+| `find_similar` | Поиск похожих треков |
+| `get_track_structure` | Структура трека (intro, verse, chorus...) |
+| `list_effects` | Доступные DJ-эффекты |
+| `list_techniques` | DJ-техники |
+| `recommend_transition` | Рекомендация перехода для пары треков |
+| `optimize_setlist` | Оптимизация сетлиста |
+| `create_remix` | Запуск ремикса |
+
+### Архитектура AI Chat
+
+```
+POST /chat                    ← SSE streaming (text/event-stream)
+  └─ AIChatEngine.chat_stream()
+       ├─ Ollama API (llama3.1:8b)
+       ├─ Tool definitions (10 DJ tools)
+       ├─ Agent loop (max 5 rounds tool-calling)
+       └─ Tool dispatch → core modules → JSON result
+```
+
+**Быстрый старт с Chat:**
+
+```bash
+# Убедись что Ollama запущен
+ollama serve &
+
+# Отправь сообщение через API
+curl -N -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Какие треки у меня в библиотеке?"}]}'
+```
 
 ---
 
 ## RL-агент: самообучающийся DJ-движок
 
-Сердце DARAVE — **`darave_rl`**: полноценный RL-модуль с агентами PPO и SAC на чистом PyTorch.
-
-### Что делает RL-агент
-
-| Задача | Описание |
-|--------|----------|
-| **Оптимизация переходов** | Агент выбирает параметры DJ-перехода (crossfade curve, EQ sweep, bass swap, эффекты) |
-| **Саунд-дизайн** | Управляет параметрами мини-синтезатора (oscillator, filter, envelope, LFO, compressor, delay) |
-| **RLHF** | Учится на пользовательских оценках (лайк/дизлайк) через reward shaping |
-| **Автономный микс** | После обучения генерирует оптимальные переходы без участия пользователя |
-
-### Архитектура RL-модуля
-
-```
-darave_rl/
-├── env.py              # DaraveEnv — RL среда (71-dim obs, 26-dim action)
-├── agent.py            # PPOAgent, SACAgent — обёртки с save/load
-├── policy_ppo.py       # ActorCritic (shared backbone + Gaussian) + GAE + clipped PPO
-├── policy_sac.py       # TwinCritic + SACActor + AutoAlpha (entropy tuning)
-├── reward.py           # DJ-метрики + продюсерские метрики → [-1, 1]
-├── episode.py          # DjTransitionEpisode dataclass
-├── batch.py            # AudioBatch data container
-├── logger.py           # JSONL-логирование эпизодов и обучения
-└── utils.py            # Seed, device, RunningStats, soft_update
-```
-
-### Observation space (71 измерения)
+### Observation space (71 измерение)
 
 | Компонент | Размер | Описание |
 |-----------|--------|----------|
@@ -55,8 +129,8 @@ darave_rl/
 | Компонент | Размер | Описание |
 |-----------|--------|----------|
 | Crossfade curve | 1 | 0=linear, 0.33=exponential, 0.66=equal_power |
-| EQ HP start/end | 2 | Частота HP-фильтра на входе (80–800 Hz) |
-| Bass swap bar | 1 | Бар замены баса (0–transition_bars) |
+| EQ HP start/end | 2 | Частота HP-фильтра (80–800 Hz) |
+| Bass swap bar | 1 | Бар замены баса |
 | Effect type | 1 | none/filter/echo/loop/wobble/slicer/flanger/... |
 | Effect depth | 1 | Глубина эффекта [0, 1] |
 | Bridge gain | 1 | Громкость мостового бита [0, 1] |
@@ -65,139 +139,43 @@ darave_rl/
 ### Алгоритмы
 
 - **PPO** (Proximal Policy Optimization) — on-policy, clipped surrogate objective, GAE, entropy bonus
-- **SAC** (Soft Actor-Critic) — off-policy, twin Q-critics, auto-tuning alpha (entropy coefficient)
+- **SAC** (Soft Actor-Critic) — off-policy, twin Q-critics, auto-tuning alpha
 
 ### Метрики награды
 
-**DJ-метрики** (веса: energy=0.25, spectral=0.20, phase=0.20, transient=0.15, user=0.20):
+**DJ-метрики** (energy=0.25, spectral=0.20, phase=0.20, transient=0.15, user=0.20):
 - `energy_continuity` — плавность RMS-энергии
-- `spectral_smoothness` — спектральный flux между сегментами
-- `phase_coherence` — crest factor (качество фазы)
+- `spectral_smoothness` — спектральный flux
+- `phase_coherence` — crest factor
 - `transient_clarity` — attack-to-sustain ratio
-- `user_score_to_reward` — маппинг пользовательской оценки
+- `user_score_to_reward` — пользовательская оценка
 
-**Продюсерские метрики** (веса: harmonic=0.25, envelope=0.25, balance=0.25, compression=0.25):
+**Продюсерские метрики** (harmonic=0.25, envelope=0.25, balance=0.25, compression=0.25):
 - `harmonic_similarity` — расстояние по Camelot wheel
 - `envelope_similarity` — корреляция RMS-огибающей
 - `spectral_balance` — spectral flatness
 - `compression_feel` — динамический диапазон
 
-### Быстрый старт
-
-```python
-from darave_rl import DaraveEnv, PPOAgent, SACAgent
-
-# Создать среду
-env = DaraveEnv(tracks_db=my_tracks, reward_mode="dj")
-
-# Создать агента
-agent = PPOAgent(obs_dim=env.obs_dim, action_dim=env.action_dim)
-
-# Цикл обучения
-obs = env.reset()
-for _ in range(1000):
-    action = agent.select_action(obs)
-    next_obs, reward, done, info = env.step(action)
-    agent.store_transition(obs, action, reward, done)
-    obs = next_obs
-
-metrics = agent.update()
-agent.save("checkpoints/ppo_step1000.pt")
-```
-
----
-
-## Как это работает (User Flow)
-
-| Шаг | Действие |
-|-----|----------|
-| **1. Загрузка** | Пользователь загружает аудиофайлы (референс, мастер-запись, собственный микс) |
-| **2. Анализ** | Система извлекает признаки: BPM, ключ, энергия, спектр, транзиенты. Сохраняет в Feature Store |
-| **3. RL-агент** | Агент анализирует пару треков и предлагает оптимальные параметры перехода |
-| **4. Рендер** | DARAVE рендерит переход: time-stretch, phase-lock, stem-aware crossfade, bridge beats |
-| **5. Обратная связь** | Пользователь оценивает результат → обновление политики агента |
-
----
-
-## Stem-aware DJ engine
-
-Два трека → анализ BPM, ключа, энергии, бар-структуры → выбор точек выхода/входа на границах фраз → time-stretch до совпадения BPM → phase-lock даунбита на уровне сэмплов → stem-aware crossfade (drums, bass, vocals.fade independently) → синтез bridge beats → мастеринг до -14 LUFS.
-
 ---
 
 ## GPU-accelerated DSP
 
-Все CPU-bound DSP-примитивы ускорены через PyTorch GPU (auto-detect CUDA/MPS/CPU):
-
 | GPU Primitive | Назначение | Стратегия |
 |---|---|---|
-| `gpu_envelope_follower()` | One-pole envelope (limiter, gate, compressor) | CPU numba (sequential) |
-| `gpu_gate()` | Noise gate | Batch hop-RMS via `unfold` + GPU gain |
+| `gpu_envelope_follower()` | One-pole envelope (limiter, gate, compressor) | CPU numba |
+| `gpu_gate()` | Noise gate | Batch hop-RMS + GPU gain |
 | `gpu_compressor()` | Soft-knee compressor | Batch hop-RMS + vectorized soft-knee |
-| `gpu_vinyl_stop()` | Turntable power-down | Precompute read positions → `gather` |
-| `gpu_flanger()` | Comb filter sweep | `scatter_add` delay line + chunked feedback |
-| `gpu_phaser()` | All-pass filter sweep | Batched allpass (poles independent) |
-| `gpu_filter_sweep()` | Time-varying LP/HP filter | STFT-domain gain curve |
-| `gpu_beat_stamp()` | Procedural beat synthesis | `scatter_add` for batch writes |
-
-Интегрировано в: `mastering.py`, `audio_enhance.py`, `dj_effects.py`, `dj_engine.py`, `beat_synth.py`.
-
----
-
-## Intelligent transitions
-
-20 DJ-техник (Double Drop, Bass Swap, Filter Sweep, Echo Cut, EQ Roller и др.) выбираются по 8 priority rules на основе BPM type, energy level, Camelot key compatibility и energy delta.
-
----
-
-## Architecture
-
-```
-darave_rl/                  # ⭐ RL-модуль: PPO + SAC агенты
-├── env.py                  # DaraveEnv — среда для DJ-переходов
-├── agent.py                # PPOAgent, SACAgent
-├── policy_ppo.py           # ActorCritic + GAE + PPO update
-├── policy_sac.py           # TwinCritic + SACActor + AutoAlpha
-├── reward.py               # DJ + producer reward metrics
-├── episode.py              # DjTransitionEpisode dataclass
-├── batch.py                # AudioBatch container
-├── logger.py               # JSONL-логирование
-└── utils.py                # Seed, device, normalization
-
-scripts/
-├── api/                    # FastAPI — 12 routers, async job store
-│   ├── main.py             # Lifespan, CORS, request-ID middleware
-│   ├── jobs.py             # SQLite job persistence
-│   ├── routers/            # /library, /download, /stems, /analyze,
-│   │                       #  /dj-remix, /setlist, /crates, /jobs
-│   └── task_modules/       # Long-running task functions
-│
-├── core/                   # Audio engine — 50 модулей
-│   ├── gpu.py              # ⭐ GPU primitives (envelope, gate, compressor, effects, beat)
-│   ├── dj_engine.py        # Transition renderer (the heart)
-│   ├── dj_analysis.py      # Beat / Section / SongStructure / TransitionPlan
-│   ├── transition_intel.py # 20 DJ techniques, 8 priority rules
-│   ├── dj_effects.py       # 14 DJ-эффектов (loop, echo, wobble, slicer, ...)
-│   ├── dj_techniques.py    # Полный каталог 20 DnB-техник
-│   ├── stems.py            # Demucs separation + stem-aware mixer
-│   ├── beat_synth.py       # Procedural drum synthesis (6 genre presets)
-│   ├── mastering.py        # ITU-R BS.1770-4 LUFS + true-peak limiter
-│   ├── key_detection.py    # CQT chroma + Krumhansl-Schmuckler + Camelot
-│   ├── setlist_planner.py  # Greedy optimizer, Markov model, energy arcs
-│   ├── music_index.py      # 35-dim numpy vector index
-│   ├── energy_profiler.py  # RMS + Essentia arousal/valence
-│   ├── synth/              # Mini-synthesizer (Oscillator, Filter, ADSR, ...)
-│   └── ...                 # genre, classify, crate_digger, cue_export, ...
-
-frontend/                    # React + Vite + TypeScript (9 pages)
-tests/                       # pytest + behavioral tests + RL tests
-```
-
-Runtime layout (gitignored): `library/` (songs), `outputs/` (mixes), `data/` (SQLite/embeddings), `models/` (Demucs weights).
+| `gpu_vinyl_stop()` | Turntable power-down | Precompute positions → `gather` |
+| `gpu_flanger()` | Comb filter sweep | `scatter_add` delay line |
+| `gpu_phaser()` | All-pass filter sweep | Batched allpass |
+| `gpu_filter_sweep()` | Time-varying LP/HP filter | STFT-domain gain |
+| `gpu_beat_stamp()` | Procedural beat synthesis | `scatter_add` |
 
 ---
 
 ## Quick start
+
+### Linux / macOS
 
 ```bash
 git clone https://github.com/kam1k88/DARAVE.git
@@ -206,25 +184,58 @@ python -m venv remix-env && source remix-env/bin/activate
 ./start.sh          # installs deps + starts API + React UI
 ```
 
-Then:
-- **React UI** → http://localhost:5173
-- **API docs** → http://localhost:8000/docs
-- **Streamlit UI** → `./start.sh ui` → http://localhost:8501
+### Windows
 
-### Windows Desktop Shortcuts
+```bash
+git clone https://github.com/kam1k88/DARAVE.git
+cd DARAVE
+python -m venv remix-env && remix-env\Scripts\activate
+start.bat           # или RemixMate.bat на рабочем столе
+```
 
-| Shortcut | Description |
-|----------|-------------|
-| `DARAVE_Start.bat` | Quick start: API + React UI |
-| `DARAVE_Debug.bat` | Debug mode: debugpy on :5678 + auto-run tests |
+### Что запускается
 
-### VS Code Debugging
+| Сервис | URL |
+|--------|-----|
+| **React UI** | http://localhost:5173 |
+| **API docs** | http://localhost:8000/docs |
+| **AI Chat** | http://localhost:5173 → Right Inspector → Chat |
+| **Ollama** | http://localhost:11501 |
 
-1. Run `DARAVE_Debug.bat` (starts API with debugpy on :5678)
-2. In VS Code: Run → "Attach to DARAVE API (debugpy)"
-3. Set breakpoints, step through code
+### Другие команды
 
-Docker: `docker compose up`
+```bash
+./start.sh --skip-setup    # быстрый перезапуск
+./start.sh api             # только API
+./start.sh stop            # остановить всё
+```
+
+### Docker
+
+```bash
+docker compose up
+```
+
+---
+
+## Frontend — 16 страниц
+
+| Страница | Назначение |
+|----------|-----------|
+| MissionControl | Главный дашборд |
+| LibraryAtlas | Библиотека треков |
+| MixDeck | DJ-микшер |
+| SetBuilder | Конструктор сета |
+| MixPlanPage | Планирование миксов |
+| QuickMix | Быстрый микс |
+| MixVault | Архив миксов |
+| SignalSearch | Поиск по сигналу |
+| AILab | AI-лаборатория |
+| Strategy | Стратегия микширования |
+| Solo / SoloMode | Соло-режим |
+| Operations | Операции |
+| Outputs | Экспорт |
+| Widget | Виджет |
 
 ---
 
@@ -233,7 +244,7 @@ Docker: `docker compose up`
 | Layer | Stack |
 |---|---|
 | Audio analysis | librosa, numpy, scipy, numba |
-| **GPU DSP** | **PyTorch: envelope, gate, compressor, flanger, phaser, vinyl_stop, filter_sweep, beat_stamp** |
+| GPU DSP | PyTorch: envelope, gate, compressor, flanger, phaser, vinyl_stop, filter_sweep, beat_stamp |
 | Stem separation | Demucs (Meta AI), PyTorch |
 | Mastering | ITU-R BS.1770-4 LUFS, true-peak limiter |
 | Mini-synth | Custom DSP: oscillator, filter, ADSR, LFO, compressor, delay |
@@ -241,32 +252,64 @@ Docker: `docker compose up`
 | Semantic search | 35-dim numpy vector index, CLAP 512-D |
 | Setlist planning | Greedy + Markov optimizer, Camelot wheel |
 | **RL Agent** | **PPO + SAC (pure PyTorch), custom reward metrics** |
+| **AI Chat** | **Ollama (llama3.1:8b), 10 DJ tools, SSE streaming, agent loop** |
 | Backend | FastAPI, Uvicorn, Pydantic v2, SQLite |
-| Frontend | React + Vite + TypeScript (9 pages) |
+| Frontend | React + Vite + TypeScript (16 pages) |
 | Testing | pytest (370+ tests), vitest |
 | Packaging | pyproject.toml (PEP 517), Docker |
 
-Python 3.10+. Apple Silicon, NVIDIA, or CPU — GPU auto-detected.
+Python 3.10+. Apple Silicon, NVIDIA, или CPU — GPU auto-detected.
 
 ---
 
 ## Tests
 
 ```bash
-pytest tests/ -v
-pytest tests/ -x                              # stop on first failure
-pytest tests/test_darave_rl.py -v             # RL-тесты (45 tests)
-pytest tests/test_gpu_dynamics.py -v          # GPU dynamics (23 tests)
-pytest tests/test_gpu_dj_effects.py -v        # GPU DJ effects (27 tests)
-pytest tests/test_gpu_filter_beat.py -v       # GPU filter + beat (20 tests)
-pytest -m "not dj_analysis"                   # skip librosa-dependent tests
+pytest tests/ -v                                # все тесты
+pytest tests/ -x                                # stop on first failure
+pytest tests/test_darave_rl.py -v               # RL-тесты
+pytest tests/test_gpu_dynamics.py -v            # GPU dynamics
+pytest tests/test_gpu_dj_effects.py -v          # GPU DJ effects
+pytest tests/test_gpu_filter_beat.py -v         # GPU filter + beat
+pytest tests/test_behavioral.py                 # behavioral correctness (36 tests)
+pytest -m "not dj_analysis"                     # skip librosa-dependent tests
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint
+npm run build        # production build
+npm run test         # vitest
 ```
 
 ---
 
 ## Configuration
 
-`config.yaml` → `config.local.yaml` (gitignored) → env vars `REMIXMATE_<SECTION>_<KEY>`.
+Приоритет (высший → низший):
+1. Переменные окружения `REMIXMATE_<SECTION>_<KEY>`
+2. `config.local.yaml` (gitignored, пользовательские настройки)
+3. `config.yaml` (проектные дефолты)
+
+```yaml
+# config.yaml (пример)
+ollama:
+  host: "http://localhost:11501"
+  model: "llama3.1:8b"
+  timeout_sec: 120
+  max_tool_rounds: 5
+
+audio:
+  sample_rate: 44100
+  target_lufs: -14.0
+
+separation:
+  model: "htdemucs"
+  device: "auto"
+```
 
 ---
 

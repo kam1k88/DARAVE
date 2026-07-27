@@ -388,7 +388,7 @@ Streamlit UI (app.py)
 - **Tests**: `tests/` directory with 80+ usage examples
 
 ### External Resources
-- **GitHub**: https://github.com/Chunduri-Aditya/ai-remixmate
+- **GitHub**: https://github.com/kam1k88/DARAVE
 - **API Docs**: http://localhost:8000/docs (when running)
 - **Dependencies**: See `requirements.txt` and `pyproject.toml`
 

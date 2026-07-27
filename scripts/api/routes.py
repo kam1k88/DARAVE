@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from scripts.api.routers import (
     analysis,
+    chat,
     crates,
     downloads,
     events,
@@ -37,3 +38,4 @@ router.include_router(crates.router)
 router.include_router(events.router)
 router.include_router(setlist.router)
 router.include_router(mix_plan.router)
+router.include_router(chat.router)

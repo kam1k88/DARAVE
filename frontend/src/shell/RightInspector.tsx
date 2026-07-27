@@ -4,12 +4,13 @@
    Updates in real-time from Zustand (fed by SSE).
    ============================================================ */
 
-import { X, Activity, ListOrdered, Cpu, RotateCcw } from 'lucide-react'
+import { X, Activity, ListOrdered, Cpu, RotateCcw, BotMessageSquare } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore, selectRecentJobs, type ActivityEntry } from '@/stores/appStore'
 import { useJobTimer } from '@/hooks/useJobTimer'
 import { remixApi } from '@/lib/api'
+import { ChatPanel } from '@/components/ChatPanel'
 import type { Job } from '@/types'
 import './RightInspector.css'
 
@@ -333,6 +334,15 @@ export function RightInspector() {
           <Cpu size={12} />
           System
         </button>
+        <button
+          className={`inspector-tab ${inspectorTab === 'chat' ? 'inspector-tab--active' : ''}`}
+          onClick={() => setInspectorTab('chat')}
+          role="tab"
+          aria-selected={inspectorTab === 'chat'}
+        >
+          <BotMessageSquare size={12} />
+          Chat
+        </button>
       </div>
 
       {/* Tab content */}
@@ -389,6 +399,8 @@ export function RightInspector() {
         )}
 
         {inspectorTab === 'system' && <SystemTab />}
+
+        {inspectorTab === 'chat' && <ChatPanel />}
       </div>
     </aside>
   )

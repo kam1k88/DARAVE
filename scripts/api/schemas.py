@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
 
+from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -739,3 +739,36 @@ class QuickMixRequest(BaseModel):
     transition_bars: int = Field(16, ge=8, le=32)
     bridge_beat: bool = Field(False)
     master: bool = Field(True, description="Apply LUFS mastering to final output")
+
+
+# ---------------------------------------------------------------------------
+# AI Chat
+# ---------------------------------------------------------------------------
+
+class ChatToolCall(BaseModel):
+    """A single tool call from the AI assistant."""
+    id: str
+    name: str
+    arguments: Dict[str, Any] = {}
+
+
+class ChatMessage(BaseModel):
+    """One message in the chat conversation."""
+    role: str = Field(..., description="'user' | 'assistant' | 'tool'")
+    content: str = ""
+    tool_calls: Optional[List[ChatToolCall]] = None
+    tool_call_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class ChatRequest(BaseModel):
+    """Request body for the chat endpoint."""
+    messages: List[ChatMessage] = Field(..., min_length=1, description="Conversation history")
+    model: Optional[str] = Field(None, description="Override Ollama model for this request")
+
+
+class ChatResponse(BaseModel):
+    """Non-streaming chat response (used for single-turn)."""
+    message: ChatMessage
+    model: str
+    done: bool = True

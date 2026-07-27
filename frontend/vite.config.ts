@@ -9,7 +9,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
   },
-  // For GitHub Pages project sites set VITE_BASE=/ai-remixmate/ at build time
+  // For GitHub Pages project sites set VITE_BASE=/DARAVE/ at build time
   base: process.env.VITE_BASE || '/',
   plugins: [react()],
   resolve: {

@@ -4,8 +4,8 @@
 
 ```bash
 # 1. Clone & setup
-git clone https://github.com/Chunduri-Aditya/ai-remixmate.git
-cd ai-remixmate
+git clone https://github.com/kam1k88/DARAVE.git
+cd DARAVE
 
 # 2. Create virtual environment
 python -m venv remix-env
@@ -30,7 +30,7 @@ bash bin/check.sh
 ## 📁 Project Structure at a Glance
 
 ```
-ai-remixmate/
+DARAVE/
 ├── scripts/
 │   ├── api/                  # FastAPI backend
 │   │   ├── main.py          # App factory
@@ -253,11 +253,11 @@ export REMIXMATE_API_PORT=9000           # Custom port
 
 ### Build & Run
 ```bash
-docker build -t ai-remixmate .
+docker build -t DARAVE .
 docker run -p 8000:8000 -p 8501:8501 \
   -v $(pwd)/library:/app/library \
   -v $(pwd)/outputs:/app/outputs \
-  ai-remixmate
+  DARAVE
 ```
 
 ### Docker Compose
@@ -382,7 +382,7 @@ docker compose up
 
 ## 🔗 Links
 
-- **GitHub**: https://github.com/Chunduri-Aditya/ai-remixmate
+- **GitHub**: https://github.com/kam1k88/DARAVE
 - **API Docs**: http://localhost:8000/docs (when running)
 - **ReDoc**: http://localhost:8000/redoc (when running)
 
@@ -454,5 +454,5 @@ For issues:
 1. Check `/health/ready` endpoint for dependency issues
 2. Review logs in `logs/remixmate.log` (if file logging enabled)
 3. Run `bash bin/check.sh` to validate environment
-4. Check GitHub Issues: https://github.com/Chunduri-Aditya/ai-remixmate/issues
+4. Check GitHub Issues: https://github.com/kam1k88/DARAVE/issues
 

@@ -5,7 +5,7 @@
    ============================================================ */
 
 import { create } from 'zustand'
-import type { Job, NavDestination, HealthStatus, MachineProfile } from '@/types'
+import type { Job, NavDestination, HealthStatus, MachineProfile, ChatMessage } from '@/types'
 
 interface AppState {
   // --- Navigation ---
@@ -42,8 +42,19 @@ interface AppState {
   clearActivity: () => void
 
   // --- Inspector panel ---
-  inspectorTab: 'jobs' | 'activity' | 'system'
+  inspectorTab: 'jobs' | 'activity' | 'system' | 'chat'
   setInspectorTab: (tab: AppState['inspectorTab']) => void
+
+  // --- Chat ---
+  chatMessages: ChatMessage[]
+  chatStreaming: boolean
+  chatError: string | null
+  addChatMessage: (msg: ChatMessage) => void
+  updateLastAssistantMessage: (content: string) => void
+  appendToLastAssistantMessage: (delta: string) => void
+  setChatStreaming: (v: boolean) => void
+  setChatError: (e: string | null) => void
+  clearChatHistory: () => void
 
   // --- Right inspector collapse state ---
   inspectorOpen: boolean
@@ -135,6 +146,38 @@ export const useAppStore = create<AppState>((set) => ({
   setInspectorTab: (tab) => set({ inspectorTab: tab }),
   inspectorOpen: false,
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
+
+  // Chat
+  chatMessages: [],
+  chatStreaming: false,
+  chatError: null,
+  addChatMessage: (msg) =>
+    set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
+  updateLastAssistantMessage: (content) =>
+    set((s) => {
+      const msgs = [...s.chatMessages]
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'assistant') {
+          msgs[i] = { ...msgs[i], content }
+          break
+        }
+      }
+      return { chatMessages: msgs }
+    }),
+  appendToLastAssistantMessage: (delta) =>
+    set((s) => {
+      const msgs = [...s.chatMessages]
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'assistant') {
+          msgs[i] = { ...msgs[i], content: msgs[i].content + delta }
+          break
+        }
+      }
+      return { chatMessages: msgs }
+    }),
+  setChatStreaming: (v) => set({ chatStreaming: v }),
+  setChatError: (e) => set({ chatError: e }),
+  clearChatHistory: () => set({ chatMessages: [], chatError: null }),
 }))
 
 // --- Selectors (convenience) ---

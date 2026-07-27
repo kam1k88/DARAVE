@@ -5,12 +5,14 @@ export const cn: Record<string, string> = {
   'nav.strategy': '策略',
   'nav.library': '音乐库',
   'nav.solo': '实验室',
+  'nav.mixdeck': '混音台',
   'nav.downloads': '导入',
   'nav.outputs': '文件',
 
   'nav.short.strategy': '策略',
   'nav.short.library': '库',
   'nav.short.solo': '实验室',
+  'nav.short.mixdeck': '混音',
   'nav.short.downloads': '导入',
   'nav.short.outputs': '文件',
 
@@ -31,6 +33,19 @@ export const cn: Record<string, string> = {
   'inspector.host': '主机',
   'inspector.gpu': 'GPU',
   'inspector.tier': '等级',
+
+  // ── AI 聊天 ──
+  'inspector.chat': '聊天',
+  'chat.placeholder': '问 DJ 助手...',
+  'chat.thinking': '思考中...',
+  'chat.error': '聊天错误',
+  'chat.clear': '清除',
+  'chat.splash.title': 'DJ 助手',
+  'chat.splash.hint': '询问混音、过渡、曲目兼容性，或让我优化你的演出。',
+  'chat.prompt.library': '查看音乐库',
+  'chat.prompt.transition': '推荐过渡方式',
+  'chat.prompt.effects': '有哪些效果？',
+  'chat.prompt.setlist': '优化演出列表',
 
   // ── 控制中心 ──
   'mc.title': '控制中心',

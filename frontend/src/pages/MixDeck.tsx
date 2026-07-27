@@ -1,7 +1,7 @@
 /* ============================================================
-   AI RemixMate — Mix Deck
-   Dual-deck DJ UI: BPM/key display, compatibility score,
-   transition preview → full remix job.
+   DARAVE — Mix Deck
+   Dual-deck DJ UI with live audio, stem mixing, EQ, effects,
+   crossfader, VU meters. Server remix pipeline preserved.
    ============================================================ */
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -18,35 +18,41 @@ import {
   Clock,
   Loader2,
   Upload,
+  Disc3,
 } from 'lucide-react'
-import { libraryApi, analysisApi, remixApi, audioApi } from '@/lib/api'
+import { libraryApi, analysisApi, remixApi } from '@/lib/api'
 import { useAppStore } from '@/stores/appStore'
-import { WaveformDeck } from '@/components/WaveformDeck'
+import { useWebAudio } from '@/hooks/useWebAudio'
 import { TransitionTimeline } from '@/components/TransitionTimeline'
-import { RemixControls, RemixOptions, REMIX_DEFAULTS } from '@/components/RemixControls'
+import { RemixControls, type RemixOptions, REMIX_DEFAULTS } from '@/components/RemixControls'
 import { CamelotWheel } from '@/components/CamelotWheel'
 import { TrackStructureView } from '@/components/TrackStructureView'
-import { EffectsPanel } from '@/components/EffectsPanel'
+import { StemMixer } from '@/components/StemMixer'
+import EQKnobs from '@/components/EQKnobs'
+import Crossfader from '@/components/Crossfader'
+import VUMeter from '@/components/VUMeter'
+import TransportControls from '@/components/TransportControls'
+import EffectsRack from '@/components/EffectsRack'
 import type { SongInfo, CompatibilityResult, SimilarTrack } from '@/types'
 import './PageBase.css'
 import './MixDeck.css'
 
 const DECK_HEX: Record<'A' | 'B', string> = {
-  A: '#f59e0b',  // amber-500
-  B: '#38bdf8',  // ice-400
+  A: '#f59e0b',
+  B: '#38bdf8',
 }
 
-function DeckCard({
+const STEMS = ['drums', 'bass', 'other', 'vocals']
+
+// ── Sub-components ──────────────────────────────────────────────
+
+function DeckHeader({
   label,
   song,
   songInfo,
   songs,
   suggestedSongs,
   onChange,
-  audioUrl,
-  cueStart,
-  cueEnd,
-  shortcutTarget,
   loadingSongInfo,
 }: {
   label: 'A' | 'B'
@@ -55,22 +61,11 @@ function DeckCard({
   songs: string[]
   suggestedSongs?: string[]
   onChange: (v: string) => void
-  audioUrl?: string
-  cueStart?: number
-  cueEnd?: number
-  shortcutTarget?: boolean
   loadingSongInfo?: boolean
 }) {
-  const accentVar = label === 'A' ? 'var(--color-amber-500)' : 'var(--color-ice-400)'
-  const glowVar   = label === 'A' ? 'var(--color-amber-glow)' : 'var(--color-ice-glow)'
-  const hexColor  = DECK_HEX[label]
-
   return (
-    <div
-      className="md-deck"
-      style={{ '--deck-color': accentVar, '--deck-glow': glowVar } as React.CSSProperties}
-    >
-      <div className="md-deck__label font-display">
+    <div className="md-deck__header">
+      <div className="md-deck__label font-display" style={{ color: DECK_HEX[label] }}>
         Deck {label}
       </div>
 
@@ -156,22 +151,6 @@ function DeckCard({
       ) : (
         <div className="md-deck__empty text-muted">
           No track loaded
-        </div>
-      )}
-
-      {audioUrl && (
-        <WaveformDeck
-          src={audioUrl}
-          color={hexColor}
-          cueStart={cueStart}
-          cueEnd={cueEnd}
-          shortcutTarget={shortcutTarget}
-        />
-      )}
-
-      {song && (
-        <div className="md-deck__structure">
-          <TrackStructureView songName={song} height={100} />
         </div>
       )}
     </div>
@@ -320,6 +299,8 @@ function RemixResultCard({ job }: { job: import('@/types').Job }) {
   )
 }
 
+// ── Main MixDeck page ──────────────────────────────────────────
+
 export default function MixDeck() {
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -336,12 +317,21 @@ export default function MixDeck() {
   const [submitting, setSubmitting]     = useState(false)
   const [dragOverDeck, setDragOverDeck] = useState<'A' | 'B' | null>(null)
   const [analyzing, setAnalyzing] = useState<string | null>(null)
-  const [selectedEffect, setSelectedEffect] = useState('echo')
+
+  // Audio state
+  const [volumeA, setVolumeA] = useState(1)
+  const [volumeB, setVolumeB] = useState(1)
+  const [effectA, setEffectA] = useState('none')
+  const [effectB, setEffectB] = useState('none')
+  const [loadedTracks, setLoadedTracks] = useState<{ a: boolean; b: boolean }>({ a: false, b: false })
 
   const upsertJob  = useAppStore((s) => s.upsertJob)
   const remixJob   = useAppStore((s) => remixJobId ? s.jobs[remixJobId] : null)
 
-  // Clear URL params after consuming them (clean up the address bar).
+  // Audio engine
+  const audio = useWebAudio()
+
+  // Clear URL params after consuming them
   useEffect(() => {
     if (searchParams.get('song_a') || searchParams.get('song_b')) {
       setSearchParams({}, { replace: true })
@@ -354,7 +344,6 @@ export default function MixDeck() {
     staleTime: 60_000,
   })
 
-  // Fetch full detail for each selected song (includes BPM / key / energy from analysis.json)
   const { data: detailA, isLoading: loadingA, refetch: refetchA } = useQuery<SongInfo>({
     queryKey: ['song-detail', songA],
     queryFn: () => libraryApi.get(songA),
@@ -368,7 +357,6 @@ export default function MixDeck() {
     staleTime: 120_000,
   })
 
-  // Fetch similar songs for Deck B when Deck A is loaded
   const { data: similarTracksA = [] } = useQuery<SimilarTrack[]>({
     queryKey: ['similar', songA],
     queryFn: () => analysisApi.similar(songA, 8),
@@ -379,30 +367,41 @@ export default function MixDeck() {
   const songNames  = useMemo(() => songs.map((s) => s.name).sort(), [songs])
   const infoA      = useMemo(() => songs.find((s) => s.name === songA), [songs, songA])
   const infoB      = useMemo(() => songs.find((s) => s.name === songB), [songs, songB])
-
-  // Use the detailed fetch (has analysis) if available; fall back to list entry
   const songInfoA = detailA ?? infoA
   const songInfoB = detailB ?? infoB
 
-  // Names of similar songs for Deck B, excluding Deck A's song itself
   const similarNamesForB = useMemo(
     () => similarTracksA.map((t) => t.name).filter((n) => n !== songA),
     [similarTracksA, songA],
   )
   const canCompare = songA && songB && songA !== songB
-  const shortcutDeck: 'A' | 'B' | null = songA ? 'A' : songB ? 'B' : null
 
-  // Audio URLs for waveform display.
-  const audioUrlA  = songA ? audioApi.streamUrl(songA) : undefined
-  const audioUrlB  = songB ? audioApi.streamUrl(songB) : undefined
+  // ── Load tracks into audio engine when selected ──
+  useEffect(() => {
+    if (!songA) {
+      setLoadedTracks((p) => ({ ...p, a: false }))
+      return
+    }
+    let cancelled = false
+    audio.loadTrack('deckA', songA).then(() => {
+      if (!cancelled) setLoadedTracks((p) => ({ ...p, a: true }))
+    })
+    return () => { cancelled = true }
+  }, [songA]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cue times from transition plan (undefined if plan not available).
-  const cueStartA  = compat?.transition_plan?.exit_time_a
-  const cueEndA    = compat?.transition_plan?.entry_time_b
-  const cueStartB  = compat?.transition_plan?.entry_time_b
-  const cueEndB    = cueStartB !== undefined ? cueStartB + (songInfoB?.duration ?? 0) * 0.1 : undefined
+  useEffect(() => {
+    if (!songB) {
+      setLoadedTracks((p) => ({ ...p, b: false }))
+      return
+    }
+    let cancelled = false
+    audio.loadTrack('deckB', songB).then(() => {
+      if (!cancelled) setLoadedTracks((p) => ({ ...p, b: true }))
+    })
+    return () => { cancelled = true }
+  }, [songB]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Drag & Drop ──────────────────────────────────────────────
+  // ── Drag & Drop ──
   const handleDragOver = useCallback((e: React.DragEvent, deck: 'A' | 'B') => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
@@ -424,13 +423,12 @@ export default function MixDeck() {
     }
   }, [])
 
-  // ── Inline analyze ──────────────────────────────────────────
+  // ── Inline analyze ──
   async function analyzeSong(name: string) {
     if (!name || analyzing) return
     setAnalyzing(name)
     try {
       await analysisApi.analyze(name)
-      // Poll until analysis is available
       let attempts = 0
       const poll = async () => {
         attempts++
@@ -514,39 +512,116 @@ export default function MixDeck() {
     }
   }
 
+  // ── Audio transport handlers ──
+  const handlePlay = useCallback(() => audio.play(), [audio])
+  const handlePause = useCallback(() => audio.pause(), [audio])
+  const handleStop = useCallback(() => audio.stop(), [audio])
+  const handleSeekA = useCallback((t: number) => audio.seek(t), [audio])
+  const handleSeekB = useCallback((t: number) => audio.seek(t), [audio])
+  const handleVolumeA = useCallback((v: number) => { setVolumeA(v); audio.setTrackVolume('deckA', v) }, [audio])
+  const handleVolumeB = useCallback((v: number) => { setVolumeB(v); audio.setTrackVolume('deckB', v) }, [audio])
+  const handleEffectA = useCallback((type: string) => { setEffectA(type); audio.setEffect('deckA', type) }, [audio])
+  const handleEffectB = useCallback((type: string) => { setEffectB(type); audio.setEffect('deckB', type) }, [audio])
+
+  const levelA = audio.levels.get('deckA') ?? 0
+  const levelB = audio.levels.get('deckB') ?? 0
+
   return (
     <div className="page-base">
       <header className="page-base__header">
-        <Sliders size={20} strokeWidth={1.5} className="page-base__header-icon" />
+        <Disc3 size={20} strokeWidth={1.5} className="page-base__header-icon" />
         <div>
           <h1 className="page-base__title font-display">Mix Deck</h1>
           <p className="page-base__sub text-muted">
-            Harmonic matching · stem-aware crossfade · broadcast-mastered output
+            Live stem mixing · EQ · Effects · Crossfade · Server remix
           </p>
+        </div>
+        <div className="md-header__status">
+          {audio.state === 'playing' && (
+            <span className="md-live-badge">
+              <span className="md-live-dot" /> LIVE
+            </span>
+          )}
         </div>
       </header>
 
       <div className="page-base__body md-body">
-        {/* Decks row */}
+        {/* ── Decks row ── */}
         <div className="md-decks-row">
+          {/* Deck A */}
           <div
             className={`md-deck-wrap ${dragOverDeck === 'A' ? 'md-deck-wrap--drag-over' : ''}`}
             onDragOver={(e) => handleDragOver(e, 'A')}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, 'A')}
           >
-            <DeckCard
-              label="A"
-              song={songA}
-              songInfo={songInfoA}
-              songs={songNames}
-              onChange={(v) => { setSongA(v); setCompat(null) }}
-              audioUrl={audioUrlA}
-              cueStart={cueStartA}
-              cueEnd={cueEndA}
-              shortcutTarget={shortcutDeck === 'A'}
-              loadingSongInfo={loadingA}
-            />
+            <div className="md-deck" style={{ '--deck-color': DECK_HEX.A, '--deck-glow': 'var(--color-amber-glow)' } as React.CSSProperties}>
+              <DeckHeader
+                label="A"
+                song={songA}
+                songInfo={songInfoA}
+                songs={songNames}
+                onChange={(v) => { setSongA(v); setCompat(null) }}
+                loadingSongInfo={loadingA}
+              />
+
+              {loadedTracks.a && (
+                <TransportControls
+                  state={audio.state}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  deckColor={DECK_HEX.A}
+                  onPlay={handlePlay}
+                  onPause={handlePause}
+                  onStop={handleStop}
+                  onSeek={handleSeekA}
+                  volume={volumeA}
+                  onVolumeChange={handleVolumeA}
+                />
+              )}
+
+              {loadedTracks.a && (
+                <div className="md-deck__vu">
+                  <VUMeter level={levelA} color={DECK_HEX.A} height={100} width={10} />
+                </div>
+              )}
+
+              {songA && songInfoA?.has_stems && loadedTracks.a && (
+                <StemMixer
+                  trackId="deckA"
+                  trackLabel="A"
+                  deckColor={DECK_HEX.A}
+                  stems={STEMS}
+                  onStemVolume={(stem, v) => audio.setStemVolume('deckA', stem, v)}
+                  onStemMute={(stem, muted) => audio.setStemMuted('deckA', stem, muted)}
+                  onStemSolo={(_, solo) => audio.setTrackSolo('deckA', solo)}
+                />
+              )}
+
+              {loadedTracks.a && (
+                <EQKnobs
+                  trackId="deckA"
+                  deckColor={DECK_HEX.A}
+                  onEQChange={(band: 'low' | 'mid' | 'high', dB: number) => audio.setEQ('deckA', band, dB)}
+                  onKill={(band: 'low' | 'mid' | 'high', enabled: boolean) => audio.setEQBandEnabled('deckA', band, !enabled)}
+                />
+              )}
+
+              {loadedTracks.a && (
+                <EffectsRack
+                  trackId="deckA"
+                  deckColor={DECK_HEX.A}
+                  currentEffect={effectA}
+                  onEffectChange={handleEffectA}
+                />
+              )}
+
+              {songA && (
+                <div className="md-deck__structure">
+                  <TrackStructureView songName={songA} height={80} />
+                </div>
+              )}
+            </div>
             {dragOverDeck === 'A' && (
               <div className="md-drop-overlay">
                 <Upload size={24} />
@@ -555,8 +630,15 @@ export default function MixDeck() {
             )}
           </div>
 
+          {/* Center: crossfader + actions */}
           <div className="md-center">
-            <GitMerge size={20} strokeWidth={1.5} style={{ color: 'var(--color-text-faint)' }} />
+            <Crossfader
+              value={audio.crossfadeValue}
+              curve="power"
+              onChange={audio.setCrossfade}
+              onCurveChange={audio.setCrossfadeType}
+            />
+
             <button
               className="md-compat-btn"
               disabled={!canCompare || compatLoading}
@@ -565,7 +647,7 @@ export default function MixDeck() {
               {compatLoading ? <RefreshCw size={12} className="md-spin" /> : <Zap size={12} />}
               Check compatibility
             </button>
-            {/* Analyze buttons */}
+
             {songA && !songInfoA?.has_analysis && (
               <button
                 className="md-analyze-btn"
@@ -588,25 +670,81 @@ export default function MixDeck() {
             )}
           </div>
 
+          {/* Deck B */}
           <div
             className={`md-deck-wrap ${dragOverDeck === 'B' ? 'md-deck-wrap--drag-over' : ''}`}
             onDragOver={(e) => handleDragOver(e, 'B')}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, 'B')}
           >
-            <DeckCard
-              label="B"
-              song={songB}
-              songInfo={songInfoB}
-              songs={songNames}
-              suggestedSongs={similarNamesForB}
-              onChange={(v) => { setSongB(v); setCompat(null) }}
-              audioUrl={audioUrlB}
-              cueStart={cueStartB}
-              cueEnd={cueEndB}
-              shortcutTarget={shortcutDeck === 'B'}
-              loadingSongInfo={loadingB}
-            />
+            <div className="md-deck" style={{ '--deck-color': DECK_HEX.B, '--deck-glow': 'var(--color-ice-glow)' } as React.CSSProperties}>
+              <DeckHeader
+                label="B"
+                song={songB}
+                songInfo={songInfoB}
+                songs={songNames}
+                suggestedSongs={similarNamesForB}
+                onChange={(v) => { setSongB(v); setCompat(null) }}
+                loadingSongInfo={loadingB}
+              />
+
+              {loadedTracks.b && (
+                <TransportControls
+                  state={audio.state}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  deckColor={DECK_HEX.B}
+                  onPlay={handlePlay}
+                  onPause={handlePause}
+                  onStop={handleStop}
+                  onSeek={handleSeekB}
+                  volume={volumeB}
+                  onVolumeChange={handleVolumeB}
+                />
+              )}
+
+              {loadedTracks.b && (
+                <div className="md-deck__vu">
+                  <VUMeter level={levelB} color={DECK_HEX.B} height={100} width={10} />
+                </div>
+              )}
+
+              {songB && songInfoB?.has_stems && loadedTracks.b && (
+                <StemMixer
+                  trackId="deckB"
+                  trackLabel="B"
+                  deckColor={DECK_HEX.B}
+                  stems={STEMS}
+                  onStemVolume={(stem, v) => audio.setStemVolume('deckB', stem, v)}
+                  onStemMute={(stem, muted) => audio.setStemMuted('deckB', stem, muted)}
+                  onStemSolo={(_, solo) => audio.setTrackSolo('deckB', solo)}
+                />
+              )}
+
+              {loadedTracks.b && (
+                <EQKnobs
+                  trackId="deckB"
+                  deckColor={DECK_HEX.B}
+                  onEQChange={(band: 'low' | 'mid' | 'high', dB: number) => audio.setEQ('deckB', band, dB)}
+                  onKill={(band: 'low' | 'mid' | 'high', enabled: boolean) => audio.setEQBandEnabled('deckB', band, !enabled)}
+                />
+              )}
+
+              {loadedTracks.b && (
+                <EffectsRack
+                  trackId="deckB"
+                  deckColor={DECK_HEX.B}
+                  currentEffect={effectB}
+                  onEffectChange={handleEffectB}
+                />
+              )}
+
+              {songB && (
+                <div className="md-deck__structure">
+                  <TrackStructureView songName={songB} height={80} />
+                </div>
+              )}
+            </div>
             {dragOverDeck === 'B' && (
               <div className="md-drop-overlay">
                 <Upload size={24} />
@@ -616,7 +754,7 @@ export default function MixDeck() {
           </div>
         </div>
 
-        {/* Compat result + transition timeline */}
+        {/* ── Compat result + timeline ── */}
         {compatError && (
           <div className="md-error">{compatError}</div>
         )}
@@ -634,20 +772,14 @@ export default function MixDeck() {
           />
         )}
 
-        {/* Remix options */}
+        {/* ── Remix options + server actions ── */}
         {canCompare && (
           <RemixControls value={remixOpts} onChange={setRemixOpts} />
         )}
 
-        {/* Effects panel */}
-        {canCompare && (
-          <EffectsPanel value={selectedEffect} onChange={setSelectedEffect} />
-        )}
-
-        {/* Transition controls */}
         {canCompare && (
           <div className="md-controls">
-            <h3 className="md-controls__title">Transition Controls</h3>
+            <h3 className="md-controls__title">Server Remix</h3>
             <div className="md-controls__row">
               <div className="md-control">
                 <label className="md-control__label">Crossfade bars</label>
@@ -713,7 +845,7 @@ export default function MixDeck() {
               Drag & drop tracks from the library, or use the selectors above.
             </p>
             <p className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>
-              The engine will lock downbeats, match tempo, show structure (drops/breaks/builds), and fade stems independently.
+              Real-time stem mixing, EQ, effects, and crossfade. Or use the server for a mastered −14 LUFS render.
             </p>
           </div>
         )}

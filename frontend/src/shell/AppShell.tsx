@@ -29,6 +29,7 @@ const LibraryAtlas = lazy(() => import('@/pages/LibraryAtlas'))
 const Solo         = lazy(() => import('@/pages/Solo'))
 const Operations   = lazy(() => import('@/pages/Operations'))
 const Outputs      = lazy(() => import('@/pages/Outputs'))
+const MixDeck      = lazy(() => import('@/pages/MixDeck'))
 
 function PageFallback() {
   return (
@@ -82,6 +83,11 @@ export function AppShell() {
             <Route path="outputs" element={
               <PageErrorBoundary pageName="Outputs">
                 <Suspense fallback={<PageFallback />}><Outputs /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="mix-deck" element={
+              <PageErrorBoundary pageName="MixDeck">
+                <Suspense fallback={<PageFallback />}><MixDeck /></Suspense>
               </PageErrorBoundary>
             } />
             <Route path="*" element={<Navigate to="/strategy" replace />} />

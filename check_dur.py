@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-lib = Path(r"C:\Users\kam1k88\ai-remixmate\library")
+lib = Path(r"C:\Users\kam1k88\DARAVE\library")
 dirs = [d for d in lib.iterdir() if d.is_dir()]
 analyzed = [d for d in dirs if (d / "analysis.json").exists()]
 print(f"Analyzed: {len(analyzed)}/{len(dirs)}")

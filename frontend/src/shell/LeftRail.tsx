@@ -13,6 +13,7 @@ import {
   Bug,
   Globe,
   Folder,
+  Disc3,
   type LucideIcon,
 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
@@ -33,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'strategy',  path: '/strategy',  icon: Map,       labelKey: 'nav.strategy',  shortKey: 'nav.short.strategy' },
   { id: 'library',   path: '/library',   icon: Library,    labelKey: 'nav.library',   shortKey: 'nav.short.library' },
   { id: 'solo',      path: '/solo',      icon: Headphones,  labelKey: 'nav.solo',      shortKey: 'nav.short.solo' },
+  { id: 'mix-deck',  path: '/mix-deck',  icon: Disc3,      labelKey: 'nav.mixdeck',   shortKey: 'nav.short.mixdeck' },
   { id: 'outputs',   path: '/outputs',   icon: Folder,     labelKey: 'nav.outputs',   shortKey: 'nav.short.outputs' },
   { id: 'downloads', path: '/downloads', icon: Settings,   labelKey: 'nav.import', shortKey: 'nav.short.import' },
 ]

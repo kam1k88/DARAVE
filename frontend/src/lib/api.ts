@@ -23,6 +23,8 @@ import type {
   HealthStatus,
   DJTechnique,
   PatternSearchResult,
+  ChatMessage,
+  ChatStatus,
 } from '@/types'
 
 // In dev the Vite proxy rewrites /api/* → http://localhost:8000/*.
@@ -379,4 +381,36 @@ export const strategyApi = {
 
   alternatives: (songA: string, songB: string) =>
     post<{ alternatives: any[] }>(`/mix/plan/alternatives?song_a=${encodeURIComponent(songA)}&song_b=${encodeURIComponent(songB)}`),
+}
+
+// --- AI Chat ---
+
+async function postStream(path: string, body?: unknown): Promise<ReadableStream<Uint8Array>> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new ApiError(res.status, path, text)
+  }
+  if (!res.body) {
+    throw new ApiError(0, path, 'No response body')
+  }
+  return res.body
+}
+
+export const chatApi = {
+  stream: (messages: ChatMessage[], model?: string) =>
+    postStream('/chat', { messages, model }),
+
+  history: (limit = 50) =>
+    get<ChatMessage[]>(`/chat/history?limit=${limit}`),
+
+  clearHistory: () =>
+    del<void>('/chat/history'),
+
+  status: () =>
+    get<ChatStatus>('/chat/status'),
 }

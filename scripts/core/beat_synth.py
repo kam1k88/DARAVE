@@ -33,8 +33,9 @@ Usage
 
 from __future__ import annotations
 
-from typing import Optional
 import numpy as np
+
+from scripts.core.gpu import gpu_beat_stamp
 
 # ---------------------------------------------------------------------------
 # Instrument synthesis (numpy only — no scipy dependency at module level)
@@ -249,17 +250,9 @@ def render_beat(
     }
 
     pattern = _PATTERNS[genre]
-    output  = np.zeros(total_samples, dtype=np.float32)
 
-    # Stamp each hit for each bar in the loop
-    for bar in range(bars):
-        for inst, step, vel in pattern:
-            sound    = sounds[inst]
-            position = (bar * 16 + step) * step_samples
-            end      = min(position + len(sound), total_samples)
-            length   = end - position
-            if length > 0:
-                output[position:end] += sound[:length] * vel
+    # GPU-accelerated pattern stamping
+    output = gpu_beat_stamp(pattern, sounds, bars, step_samples, total_samples)
 
     # Normalise to prevent clipping before intensity scaling
     peak = float(np.abs(output).max())

@@ -125,6 +125,25 @@ agent.save("checkpoints/ppo_step1000.pt")
 
 ---
 
+## GPU-accelerated DSP
+
+Все CPU-bound DSP-примитивы ускорены через PyTorch GPU (auto-detect CUDA/MPS/CPU):
+
+| GPU Primitive | Назначение | Стратегия |
+|---|---|---|
+| `gpu_envelope_follower()` | One-pole envelope (limiter, gate, compressor) | CPU numba (sequential) |
+| `gpu_gate()` | Noise gate | Batch hop-RMS via `unfold` + GPU gain |
+| `gpu_compressor()` | Soft-knee compressor | Batch hop-RMS + vectorized soft-knee |
+| `gpu_vinyl_stop()` | Turntable power-down | Precompute read positions → `gather` |
+| `gpu_flanger()` | Comb filter sweep | `scatter_add` delay line + chunked feedback |
+| `gpu_phaser()` | All-pass filter sweep | Batched allpass (poles independent) |
+| `gpu_filter_sweep()` | Time-varying LP/HP filter | STFT-domain gain curve |
+| `gpu_beat_stamp()` | Procedural beat synthesis | `scatter_add` for batch writes |
+
+Интегрировано в: `mastering.py`, `audio_enhance.py`, `dj_effects.py`, `dj_engine.py`, `beat_synth.py`.
+
+---
+
 ## Intelligent transitions
 
 20 DJ-техник (Double Drop, Bass Swap, Filter Sweep, Echo Cut, EQ Roller и др.) выбираются по 8 priority rules на основе BPM type, energy level, Camelot key compatibility и energy delta.
@@ -154,6 +173,7 @@ scripts/
 │   └── task_modules/       # Long-running task functions
 │
 ├── core/                   # Audio engine — 50 модулей
+│   ├── gpu.py              # ⭐ GPU primitives (envelope, gate, compressor, effects, beat)
 │   ├── dj_engine.py        # Transition renderer (the heart)
 │   ├── dj_analysis.py      # Beat / Section / SongStructure / TransitionPlan
 │   ├── transition_intel.py # 20 DJ techniques, 8 priority rules
@@ -191,6 +211,19 @@ Then:
 - **API docs** → http://localhost:8000/docs
 - **Streamlit UI** → `./start.sh ui` → http://localhost:8501
 
+### Windows Desktop Shortcuts
+
+| Shortcut | Description |
+|----------|-------------|
+| `DARAVE_Start.bat` | Quick start: API + React UI |
+| `DARAVE_Debug.bat` | Debug mode: debugpy on :5678 + auto-run tests |
+
+### VS Code Debugging
+
+1. Run `DARAVE_Debug.bat` (starts API with debugpy on :5678)
+2. In VS Code: Run → "Attach to DARAVE API (debugpy)"
+3. Set breakpoints, step through code
+
 Docker: `docker compose up`
 
 ---
@@ -200,6 +233,7 @@ Docker: `docker compose up`
 | Layer | Stack |
 |---|---|
 | Audio analysis | librosa, numpy, scipy, numba |
+| **GPU DSP** | **PyTorch: envelope, gate, compressor, flanger, phaser, vinyl_stop, filter_sweep, beat_stamp** |
 | Stem separation | Demucs (Meta AI), PyTorch |
 | Mastering | ITU-R BS.1770-4 LUFS, true-peak limiter |
 | Mini-synth | Custom DSP: oscillator, filter, ADSR, LFO, compressor, delay |
@@ -209,7 +243,7 @@ Docker: `docker compose up`
 | **RL Agent** | **PPO + SAC (pure PyTorch), custom reward metrics** |
 | Backend | FastAPI, Uvicorn, Pydantic v2, SQLite |
 | Frontend | React + Vite + TypeScript (9 pages) |
-| Testing | pytest (271+ tests), vitest |
+| Testing | pytest (370+ tests), vitest |
 | Packaging | pyproject.toml (PEP 517), Docker |
 
 Python 3.10+. Apple Silicon, NVIDIA, or CPU — GPU auto-detected.
@@ -222,6 +256,9 @@ Python 3.10+. Apple Silicon, NVIDIA, or CPU — GPU auto-detected.
 pytest tests/ -v
 pytest tests/ -x                              # stop on first failure
 pytest tests/test_darave_rl.py -v             # RL-тесты (45 tests)
+pytest tests/test_gpu_dynamics.py -v          # GPU dynamics (23 tests)
+pytest tests/test_gpu_dj_effects.py -v        # GPU DJ effects (27 tests)
+pytest tests/test_gpu_filter_beat.py -v       # GPU filter + beat (20 tests)
 pytest -m "not dj_analysis"                   # skip librosa-dependent tests
 ```
 

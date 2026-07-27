@@ -26,6 +26,8 @@ from typing import Callable, Dict, Optional
 
 import numpy as np
 
+from scripts.core.gpu import gpu_flanger, gpu_phaser, gpu_vinyl_stop
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -298,42 +300,14 @@ def effect_flanger(
 ) -> np.ndarray:
     """
     Flanger effect — comb filter with LFO-modulated delay.
-
-    Creates the classic "jet plane" sweep by mixing the audio with a
-    slightly delayed copy whose delay varies over time.
-
-    Args:
-        audio:      Input audio (mono float32).
-        sr:         Sample rate.
-        bpm:        Tempo (rate_beats = delay modulation period in beats).
-        depth_ms:   Max delay in milliseconds (1-10 ms typical).
-        rate_beats: LFO period in beats (4 = one bar sweep).
-        feedback:   Feedback amount 0-0.9 (higher = more resonant).
+    Delegates to gpu_flanger() which auto-selects GPU or CPU path.
     """
-    audio = _ensure_float(audio)
-    n = len(audio)
-    max_delay_s = int(sr * depth_ms / 1000.0)
-    lfo_freq = bpm / (60.0 * rate_beats)
-    t = np.arange(n, dtype=np.float32) / sr
-    lfo = np.sin(2.0 * np.pi * lfo_freq * t)  # -1 to +1
-
-    result = audio.copy()
-    delayed = np.zeros(n + max_delay_s * 2, dtype=np.float32)
-
-    for i in range(n):
-        delay_samples = int((lfo[i] * 0.5 + 0.5) * max_delay_s)
-        if i + delay_samples < len(delayed):
-            delayed[i + delay_samples] = audio[i]
-
-    # Apply feedback
-    for i in range(max_delay_s, n + max_delay_s):
-        if i < len(delayed) and i - max_delay_s >= 0:
-            delayed[i] += delayed[i - max_delay_s] * feedback * 0.3
-
-    # Mix dry + wet
-    wet = delayed[:n]
-    result = audio + wet * 0.4
-    return _normalize(result)
+    return gpu_flanger(
+        audio, sr, bpm,
+        depth_ms=depth_ms,
+        rate_beats=rate_beats,
+        feedback=feedback,
+    )
 
 
 def effect_phaser(
@@ -346,41 +320,14 @@ def effect_phaser(
 ) -> np.ndarray:
     """
     Phaser effect — cascaded all-pass filters with LFO modulation.
-
-    Creates a swirling, sweeping sound by modulating the resonant
-    frequencies of all-pass filters.
-
-    Args:
-        audio:      Input audio (mono float32).
-        sr:         Sample rate.
-        bpm:        Tempo (rate_beats = sweep period in beats).
-        n_poles:    Number of all-pass filter poles (2-6, higher = more peaks).
-        rate_beats: LFO period in beats (8 = two bar sweep).
-        depth:      Modulation depth 0-1.
+    Delegates to gpu_phaser() which auto-selects GPU or CPU path.
     """
-    audio = _ensure_float(audio)
-    n = len(audio)
-    lfo_freq = bpm / (60.0 * rate_beats)
-    t = np.arange(n, dtype=np.float32) / sr
-
-    result = audio.copy().astype(np.float64)
-
-    for pole in range(n_poles):
-        # All-pass filter coefficient modulation
-        lfo = np.sin(2.0 * np.pi * lfo_freq * t + pole * np.pi / n_poles)
-        # Map LFO to feedback coefficient (0.1 to 0.7)
-        coeff = 0.1 + (lfo * 0.5 + 0.5) * 0.6 * depth
-
-        # Simple first-order all-pass: y[n] = coeff * y[n-1] + x[n] - coeff * x[n-1]
-        y = np.zeros(n, dtype=np.float64)
-        for i in range(1, n):
-            y[i] = coeff[i] * y[i - 1] + result[i] - coeff[i] * result[i - 1]
-        result = y
-
-    # Mix dry + wet
-    wet = result.astype(np.float32)
-    mixed = audio * 0.6 + wet * 0.4
-    return _normalize(mixed.astype(np.float32))
+    return gpu_phaser(
+        audio, sr, bpm,
+        n_poles=n_poles,
+        rate_beats=rate_beats,
+        depth=depth,
+    )
 
 
 def effect_vinyl_stop(
@@ -390,47 +337,9 @@ def effect_vinyl_stop(
 ) -> np.ndarray:
     """
     Turntable power-down simulation.
-
-    Gradually slows down playback speed and pitch until the audio stops,
-    simulating a vinyl turntable being turned off.
-
-    Args:
-        audio:        Input audio (mono float32).
-        sr:           Sample rate.
-        duration_sec: How long the slowdown takes (seconds).
+    Delegates to gpu_vinyl_stop() which auto-selects GPU or CPU path.
     """
-    audio = _ensure_float(audio)
-    n = len(audio)
-    stop_samples = min(n, int(sr * duration_sec))
-
-    if stop_samples < 100:
-        return audio
-
-    result = audio.copy()
-    # Apply slowdown to the last `stop_samples`
-    start = n - stop_samples
-    for i in range(stop_samples):
-        idx = start + i
-        if idx >= n:
-            break
-        # Speed factor goes from 1.0 to 0.0
-        progress = i / stop_samples
-        speed = 1.0 - progress ** 2  # Quadratic deceleration
-        # Read position advances slower and slower
-        src_pos = int(start + i * speed)
-        if src_pos < n:
-            result[idx] = audio[src_pos] * (1.0 - progress)  # Fade out volume too
-
-    # Add a slight low-pass filter at the end for realism
-    try:
-        from scipy.signal import butter, lfilter
-        nyq = sr / 2.0
-        b, a = butter(2, max(0.001, min(0.999, 200.0 / nyq)), btype="low")
-        result[start:] = lfilter(b, a, result[start:]).astype(np.float32)
-    except ImportError:
-        pass
-
-    return _normalize(result)
+    return gpu_vinyl_stop(audio, sr, duration_sec=duration_sec)
 
 
 def effect_bitcrush(

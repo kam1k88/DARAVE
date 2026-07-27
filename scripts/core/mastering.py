@@ -30,6 +30,8 @@ import numpy as np
 from scipy import signal
 from scipy.ndimage import maximum_filter1d
 
+from scripts.core.gpu import gpu_envelope_follower
+
 log = logging.getLogger(__name__)
 
 # ── K-weighting filter coefficient cache ─────────────────────────────────────
@@ -187,57 +189,12 @@ def _smooth_gain_envelope(
     alpha_release: float,
 ) -> np.ndarray:
     """
-    Sample-accurate two-coefficient envelope follower (gain[i] = a*gain[i-1]
-    + (1-a)*reduction[i], where `a` switches between a fast attack
-    coefficient and a slow release coefficient depending on direction).
+    Sample-accurate two-coefficient envelope follower.
 
-    REMIX_QUALITY_INSIGHTS.md finding #4: the previous implementation
-    smoothed gain reduction with a single `release_ms` time constant in
-    *both* directions via scipy.signal.lfilter (a linear, time-invariant
-    filter). A transient needing full reduction took the same ~50ms to ramp
-    down as a fully-limited section took to ramp back up to unity — during
-    that attack lag the unattenuated peak passed through and got caught by
-    the hard-clip safety net instead of being smoothly limited, which is
-    audible distortion, not loudness control. Real look-ahead limiters use a
-    fast attack (near-instant) and a slow release (avoids pumping) —
-    asymmetric by design, which is why this can't be one lfilter call.
-
-    The recursion is inherently sequential (the coefficient at each sample
-    depends on whether gain is dropping or recovering), so it isn't
-    expressible as a single LTI filter. Numba JIT-compiles the loop to
-    native speed (numba is already a transitive dependency via librosa);
-    falls back to a pure-Python loop — slower, but still correct — if numba
-    is unavailable, same graceful-degradation pattern used elsewhere in this
-    codebase (e.g. BeatThisTracker → LibrosaBeatTracker).
+    Delegates to gpu_envelope_follower() which auto-selects GPU (torch) or
+    CPU (numba) path based on device availability.
     """
-    red = reduction.astype(np.float64)
-    n = red.shape[0]
-
-    try:
-        from numba import njit  # noqa: PLC0415
-
-        @njit(cache=True)
-        def _run(r, a_atk, a_rel):
-            out = np.empty(r.shape[0], dtype=np.float64)
-            g = 1.0
-            for i in range(r.shape[0]):
-                target = r[i]
-                a = a_atk if target < g else a_rel
-                g = a * g + (1.0 - a) * target
-                out[i] = g
-            return out
-
-        gain = _run(red, float(alpha_attack), float(alpha_release))
-    except Exception:
-        gain = np.empty(n, dtype=np.float64)
-        g = 1.0
-        for i in range(n):
-            target = red[i]
-            a = alpha_attack if target < g else alpha_release
-            g = a * g + (1.0 - a) * target
-            gain[i] = g
-
-    return gain
+    return gpu_envelope_follower(reduction, alpha_attack, alpha_release)
 
 
 def apply_limiter(

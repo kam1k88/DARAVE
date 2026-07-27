@@ -56,6 +56,9 @@ from scripts.core.dj_analysis import (
 # DJ effects library — all transition effects live here
 from scripts.core.dj_effects import apply_effect, EFFECTS
 
+# GPU-accelerated DSP primitives
+from scripts.core.gpu import gpu_filter_sweep
+
 # Mastering utilities — per-stem LUFS normalization disabled (kept for reference)
 # from scripts.core.mastering import normalize_stems_to_target, normalize_stems_to_corpus_targets, load_stem_targets
 from scripts.core.key_detection import pitch_shift_audio
@@ -352,43 +355,15 @@ def _apply_filter_sweep(
 ) -> np.ndarray:
     """
     Sweep a low-pass filter cutoff across the entire audio clip.
-
-    direction='out': cutoff closes (start_hz → end_hz), darkening the sound
-                     as Song A exits (classic "filter out" DJ technique).
-    direction='in':  cutoff opens (end_hz → start_hz), brightening Song B
-                     as it enters.
+    Delegates to gpu_filter_sweep() which auto-selects GPU or CPU path.
     """
-    try:
-        from scipy.signal import butter, lfilter
-    except ImportError:
-        return audio
-
-    n = len(audio)
-    if n < 512:
-        return audio
-
-    if direction == "in":
-        start_hz, end_hz = end_hz, start_hz
-
-    chunk_size = max(128, n // num_chunks)
-    out = np.empty_like(audio)
-    nyq = sr / 2.0
-
-    pos = 0
-    chunk_idx = 0
-    while pos < n:
-        t = chunk_idx / max(num_chunks - 1, 1)
-        cutoff = float(np.clip((start_hz + t * (end_hz - start_hz)) / nyq, 0.001, 0.999))
-        end    = min(pos + chunk_size, n)
-        try:
-            b, a = butter(2, cutoff, btype="low")
-            out[pos:end] = lfilter(b, a, audio[pos:end]).astype(np.float32)
-        except Exception:
-            out[pos:end] = audio[pos:end]
-        pos        += chunk_size
-        chunk_idx  += 1
-
-    return out.astype(np.float32)
+    return gpu_filter_sweep(
+        audio, sr,
+        direction=direction,
+        start_hz=start_hz,
+        end_hz=end_hz,
+        num_chunks=num_chunks,
+    )
 
 
 def _apply_reverb_tail(

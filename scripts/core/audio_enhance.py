@@ -13,7 +13,8 @@ Enhancement chain (in order):
   6. LUFS normalisation to -14 LUFS  (Streaming / Demucs sweet-spot)
   7. True-peak limiter at -1 dBFS
 
-All processing is CPU-only (numpy + scipy); no GPU required.
+All processing delegates to GPU-accelerated primitives in gpu.py when
+PyTorch is available, falling back to numpy/scipy on CPU.
 
 Usage:
     from scripts.core.audio_enhance import enhance_audio, EnhanceOptions, enhance_stems
@@ -28,6 +29,8 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 import numpy as np
+
+from scripts.core.gpu import gpu_compressor, gpu_gate
 
 log = logging.getLogger(__name__)
 
@@ -135,25 +138,9 @@ def apply_noise_gate(
 ) -> np.ndarray:
     """
     Mute samples whose short-term RMS envelope is below `threshold_db`.
-    Uses a one-pole smoother for the gain envelope.
+    Delegates to gpu_gate() which auto-selects GPU or CPU path.
     """
-    hop       = max(1, int(sr * 0.010))      # 10 ms frames
-    threshold = 10.0 ** (threshold_db / 20.0)
-    release   = np.exp(-1.0 / (sr * release_ms / 1000.0 / hop))
-
-    out    = audio.copy()
-    gain   = 1.0
-    n_hops = (len(audio) + hop - 1) // hop
-
-    for i in range(n_hops):
-        start = i * hop
-        end   = min(start + hop, len(audio))
-        rms   = float(np.sqrt(np.mean(out[start:end] ** 2)))
-        target = 1.0 if rms >= threshold else 0.0
-        gain   = release * gain + (1.0 - release) * target
-        out[start:end] *= gain
-
-    return out.astype(np.float32)
+    return gpu_gate(audio, sr, threshold_db=threshold_db, release_ms=release_ms)
 
 
 # ---------------------------------------------------------------------------
@@ -172,41 +159,17 @@ def apply_compression(
 ) -> np.ndarray:
     """
     Soft-knee RMS compressor.
-    All gain-decision math is in dB; application is linear.
+    Delegates to gpu_compressor() which auto-selects GPU or CPU path.
     """
-    hop        = max(1, int(sr * 0.005))   # 5 ms frames
-    attack_c   = np.exp(-1.0 / (sr * attack_ms  / 1000.0 / hop))
-    release_c  = np.exp(-1.0 / (sr * release_ms / 1000.0 / hop))
-    makeup     = 10.0 ** (makeup_db / 20.0)
-    knee_half  = knee_db / 2.0
-
-    out        = audio.copy()
-    n_hops     = (len(audio) + hop - 1) // hop
-    gain_db    = 0.0   # smoothed gain reduction in dB
-
-    for i in range(n_hops):
-        start = i * hop
-        end   = min(start + hop, len(audio))
-        rms   = float(np.sqrt(np.mean(out[start:end] ** 2)))
-        lvl   = 20.0 * np.log10(max(rms, 1e-9))
-
-        # Soft-knee gain computation
-        diff = lvl - threshold_db
-        if diff < -knee_half:
-            target_gr = 0.0
-        elif diff > knee_half:
-            target_gr = (diff * (1.0 - 1.0 / ratio))
-        else:
-            k = diff + knee_half
-            target_gr = k * k / (2.0 * knee_db) * (1.0 - 1.0 / ratio)
-
-        # Smooth the gain reduction
-        coeff  = attack_c if target_gr > gain_db else release_c
-        gain_db = coeff * gain_db + (1.0 - coeff) * target_gr
-
-        out[start:end] *= (10.0 ** (-gain_db / 20.0)) * makeup
-
-    return np.clip(out, -1.0, 1.0).astype(np.float32)
+    return gpu_compressor(
+        audio, sr,
+        threshold_db=threshold_db,
+        ratio=ratio,
+        attack_ms=attack_ms,
+        release_ms=release_ms,
+        knee_db=knee_db,
+        makeup_db=makeup_db,
+    )
 
 
 # ---------------------------------------------------------------------------

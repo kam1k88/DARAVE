@@ -15,6 +15,7 @@ from scripts.api.routers import (
     generative,
     jobs,
     library,
+    mix_plan,
     remix,
     setlist,
     spotify,
@@ -35,3 +36,4 @@ router.include_router(jobs.router)
 router.include_router(crates.router)
 router.include_router(events.router)
 router.include_router(setlist.router)
+router.include_router(mix_plan.router)

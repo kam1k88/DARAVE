@@ -4,28 +4,18 @@ import { useAppStore } from '@/stores/appStore'
 import type { NavDestination } from '@/types'
 
 const NAV_MAP: Record<string, string> = {
-  m: '/mission-control',
-  l: '/library-atlas',
-  x: '/mix-deck',
-  s: '/set-builder',
-  q: '/signal-search',
-  a: '/ai-lab',
-  v: '/mix-vault',
-  o: '/operations',
+  s: '/strategy',
+  l: '/library',
+  o: '/solo',
+  d: '/downloads',
 }
 
 const NUMBER_NAV: Array<{ id: NavDestination; path: string }> = [
-  { id: 'mission-control', path: '/mission-control' },
-  { id: 'library-atlas', path: '/library-atlas' },
-  { id: 'mix-deck', path: '/mix-deck' },
-  { id: 'set-builder', path: '/set-builder' },
-  { id: 'signal-search', path: '/signal-search' },
-  { id: 'ai-lab', path: '/ai-lab' },
-  { id: 'mix-vault', path: '/mix-vault' },
-  { id: 'operations', path: '/operations' },
+  { id: 'strategy', path: '/strategy' },
+  { id: 'library', path: '/library' },
+  { id: 'solo', path: '/solo' },
+  { id: 'downloads', path: '/downloads' },
 ]
-
-const MIX_DECK_TOGGLE_EVENT = 'remixmate:mixdeck-toggle-playback'
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
@@ -65,13 +55,13 @@ export function useKeyboardShortcuts(
 
       if (hasCommandModifier && key === 'k') {
         e.preventDefault()
-        setActiveNav('library-atlas')
-        navigate('/library-atlas')
+        setActiveNav('library')
+        navigate('/library')
         window.setTimeout(() => focusLibrarySearch(), 0)
         return
       }
 
-      if (hasCommandModifier && /^[1-8]$/.test(e.key)) {
+      if (hasCommandModifier && /^[1-4]$/.test(e.key)) {
         e.preventDefault()
         const destination = NUMBER_NAV[Number(e.key) - 1]
         if (destination) {
@@ -81,13 +71,13 @@ export function useKeyboardShortcuts(
         return
       }
 
-      if (hasCommandModifier) return
-
-      if (e.key === ' ' && location.pathname.startsWith('/mix-deck')) {
+      if (hasCommandModifier && key === 'i') {
         e.preventDefault()
-        window.dispatchEvent(new Event(MIX_DECK_TOGGLE_EVENT))
+        toggleInspector()
         return
       }
+
+      if (hasCommandModifier) return
 
       if (e.key === '?') { onShowHelp(); return }
       if (e.key === 'Escape') {

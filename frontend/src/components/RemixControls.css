@@ -128,3 +128,18 @@
   accent-color: var(--color-amber-500);
   cursor: pointer;
 }
+
+/* Advanced mixing controls */
+.rc-grid--advanced {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.rc-slider-hints {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  margin-top: -2px;
+}

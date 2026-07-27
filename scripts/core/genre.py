@@ -282,12 +282,24 @@ GENRE_PRESETS: Dict[str, GenrePreset] = {
 
 @dataclass
 class GenreResult:
-    """Result of genre detection."""
+    """Result of genre detection — single label (backward-compat)."""
     genre: str
     confidence: float               # 0–1
     preset: GenrePreset
     features: Dict[str, float]      # raw features for debugging
     runner_up: Optional[str] = None # second-best genre
+
+
+@dataclass
+class GenreClassResult:
+    """Multi-label genre classification with Russian description."""
+    genres: list                    # [{"name": "dnb", "confidence": 0.9}, ...]
+    tags: list                      # ["агрессивный", "с глубоким сабом", "инструментал"]
+    description: str                # "Мощный тяжёлый DnB, 174 BPM, минор G, 6A. ..."
+    primary_genre: str              # best single genre (backward-compat)
+    confidence: float
+    features: Dict[str, float]
+    preset: GenrePreset
 
 
 def _extract_detection_features(audio: np.ndarray, sr: int = 44100) -> Dict[str, float]:
@@ -525,3 +537,244 @@ def auto_preset(audio: np.ndarray, sr: int = 44100,
         return get_preset(override)
     result = detect_genre(audio, sr)
     return result.preset
+
+
+# ---------------------------------------------------------------------------
+# DnB sub-style classification
+# ---------------------------------------------------------------------------
+
+DNB_STYLES = [
+    {"name": "liquid",     "bpm_range": (170, 176), "sub_bass": "low",    "centroid": "high",   "energy": "low",  "desc": "плавный мелодичный"},
+    {"name": "jump_up",    "bpm_range": (170, 178), "sub_bass": "medium", "centroid": "medium", "energy": "high", "desc": "прыгающий энергичный"},
+    {"name": "techstep",   "bpm_range": (172, 178), "sub_bass": "high",   "centroid": "low",    "energy": "high", "desc": "механический тёмный"},
+    {"name": "neurofunk",  "bpm_range": (174, 180), "sub_bass": "high",   "centroid": "low",    "energy": "high", "desc": "тяжёлый нейронный"},
+    {"name": "darkstep",   "bpm_range": (170, 178), "sub_bass": "medium", "centroid": "low",    "energy": "medium", "desc": "мрачный агрессивный"},
+    {"name": "jungle",     "bpm_range": (160, 175), "sub_bass": "medium", "centroid": "medium", "energy": "high", "desc": "хаотичный амен-брейки"},
+    {"name": "minimal",    "bpm_range": (170, 174), "sub_bass": "low",    "centroid": "medium", "energy": "low",  "desc": "чистый минималистичный"},
+    {"name": "dancefloor", "bpm_range": (172, 176), "sub_bass": "medium", "centroid": "high",   "energy": "high", "desc": "яркий танцевальный"},
+]
+
+
+def _classify_dnb_style(feats: Dict[str, float]) -> list:
+    """Classify DnB sub-styles from features. Returns sorted list of {name, score}."""
+    bpm = feats.get("bpm", 174)
+    sub = feats.get("sub_bass_ratio", 0.10)
+    centroid = feats.get("spectral_centroid", 3000)
+    energy = feats.get("low_energy_ratio", 0.5)
+
+    # Normalise features to low/medium/high buckets
+    sub_bucket = "high" if sub > 0.15 else "medium" if sub > 0.08 else "low"
+    centroid_bucket = "high" if centroid > 4000 else "medium" if centroid > 2500 else "low"
+    energy_bucket = "high" if energy > 0.6 else "medium" if energy > 0.4 else "low"
+
+    results = []
+    for style in DNB_STYLES:
+        score = 0.0
+        # BPM match (most important)
+        lo, hi = style["bpm_range"]
+        if lo <= bpm <= hi:
+            score += 3.0
+        elif lo - 5 <= bpm <= hi + 5:
+            score += 1.5
+        # Sub-bass match
+        if sub_bucket == style["sub_bass"]:
+            score += 1.0
+        # Centroid match
+        if centroid_bucket == style["centroid"]:
+            score += 0.8
+        # Energy match
+        if energy_bucket == style["energy"]:
+            score += 0.6
+        if score > 0:
+            results.append({"name": style["name"], "score": round(score, 2)})
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Multi-label classification + Russian description
+# ---------------------------------------------------------------------------
+
+def classify_genre_multi(audio: np.ndarray, sr: int = 44100,
+                         key_name: str = "", mode: str = "",
+                         camelot: str = "", tempo_type: str = "",
+                         el: int = 0) -> GenreClassResult:
+    """
+    Multi-label genre classification with tags and Russian description.
+    Returns GenreClassResult with genres list, tags, and natural language description.
+    """
+    # Run base detection
+    result = detect_genre(audio, sr)
+    feats = result.features
+    bpm = feats.get("bpm", 120)
+
+    # Build genres list (top-3)
+    max_possible = max(
+        _score_genre(g, p, feats)
+        for g, p in GENRE_PRESETS.items()
+    ) if feats else 1.0
+
+    genre_scores = []
+    for genre, preset in GENRE_PRESETS.items():
+        score = _score_genre(genre, preset, feats)
+        norm = score / max_possible if max_possible > 0 else 0
+        if norm > 0.15:
+            genre_scores.append({"name": genre, "confidence": round(min(1.0, norm), 2)})
+    genre_scores.sort(key=lambda x: x["confidence"], reverse=True)
+    genres = genre_scores[:5]
+
+    # If primary is DnB, add sub-styles
+    tags = []
+    if result.genre == "dnb":
+        dnb_styles = _classify_dnb_style(feats)
+        for s in dnb_styles[:3]:
+            genres.append({"name": s["name"], "confidence": round(min(1.0, s["score"] / 5.0), 2)})
+            tags.append(_dnb_style_tag(s["name"]))
+
+    # Generate tags from features
+    tags.extend(_generate_tags(feats, result.genre, el))
+
+    # Generate Russian description
+    description = _generate_description(
+        genres=genres, tags=tags, bpm=bpm,
+        key_name=key_name, mode=mode, camelot=camelot,
+        el=el, feats=feats,
+    )
+
+    return GenreClassResult(
+        genres=genres,
+        tags=tags,
+        description=description,
+        primary_genre=result.genre,
+        confidence=result.confidence,
+        features=feats,
+        preset=result.preset,
+    )
+
+
+def _dnb_style_tag(style: str) -> str:
+    mapping = {
+        "liquid": "liquid funk",
+        "jump_up": "jump up",
+        "techstep": "techstep",
+        "neurofunk": "neurofunk",
+        "darkstep": "darkstep",
+        "jungle": "jungle",
+        "minimal": "minimal dnb",
+        "dancefloor": "dancefloor dnb",
+    }
+    return mapping.get(style, style)
+
+
+def _generate_tags(feats: Dict, genre: str, el: int) -> list:
+    """Generate descriptive tags from audio features."""
+    tags = []
+    sub = feats.get("sub_bass_ratio", 0.10)
+    centroid = feats.get("spectral_centroid", 3000)
+    dynamic = feats.get("dynamic_range_db", 10)
+    vocal_density = feats.get("low_energy_ratio", 0.5)
+
+    # Bass
+    if sub > 0.18:
+        tags.append("глубокий саб")
+    elif sub > 0.12:
+        tags.append("плотный бас")
+    elif sub < 0.05:
+        tags.append("лёгкий бас")
+
+    # Brightness
+    if centroid > 4500:
+        tags.append("яркие синты")
+    elif centroid < 2000:
+        tags.append("тёмный саунд")
+
+    # Dynamic
+    if dynamic > 20:
+        tags.append("динамичный")
+    elif dynamic < 8:
+        tags.append("сжатый")
+
+    # Energy level
+    el_labels = {1: "спокойный", 2: "лёгкий", 3: "умеренный", 4: "энергичный", 5: "мощный"}
+    if el in el_labels:
+        tags.append(el_labels[el])
+
+    # Tempo type
+    tempo_labels = {
+        "half-time": "полу-темп",
+        "full-time": "полный темп",
+        "downtempo": "замедленный",
+    }
+    if genre in ("dnb", "trap", "hiphop") and feats.get("bpm", 120) < 100:
+        tags.append("полу-темп")
+
+    return tags
+
+
+def _generate_description(genres: list, tags: list, bpm: float,
+                          key_name: str, mode: str, camelot: str,
+                          el: int, feats: Dict) -> str:
+    """
+    Generate a natural language description in Russian, like Yandex Music.
+    Example: "Мощный тяжёлый neurofunk DnB, 174 BPM, минор G, 6A. 
+    Доминируют агрессивные басы и плотные драм-паттерны. Инструментал, высокая энергия (EL 4)."
+    """
+    parts = []
+
+    # Adjective + genre
+    adj_map = {
+        "dnb": "Мощный", "liquid": "Плавный мелодичный", "jump_up": "Прыгающий",
+        "techstep": "Тяжёлый механический", "neurofunk": "Агрессивный нейронный",
+        "darkstep": "Мрачный", "jungle": "Хаотичный", "minimal": "Чистый минималистичный",
+        "dancefloor": "Яркий танцевальный", "house": "Танцевальный", "techno": "Драйвовый",
+        "hiphop": "Ритмичный", "trap": "Тяжёлый", "pop": "Мелодичный",
+        "rnb": "Душевный", "ambient": "Атмосферный", "rock": "Энергичный",
+        "jazz": "Импровизационный",
+    }
+    primary = genres[0]["name"] if genres else "unknown"
+    adj = adj_map.get(primary, "")
+    genre_names = [g["name"] for g in genres[:3]]
+    genre_str = " / ".join(genre_names)
+    parts.append(f"{adj} {genre_str}, {bpm:.0f} BPM")
+
+    # Key
+    if key_name:
+        mode_ru = "мажор" if mode == "major" else "минор" if mode == "minor" else ""
+        key_str = f"{key_name} {mode_ru}".strip()
+        parts.append(key_str)
+    if camelot:
+        parts.append(camelot)
+
+    # Bass description
+    sub = feats.get("sub_bass_ratio", 0.10)
+    if sub > 0.18:
+        bass_desc = "Доминируют глубокие агрессивные басы"
+    elif sub > 0.12:
+        bass_desc = "Плотный басовый фундамент"
+    elif sub > 0.06:
+        bass_desc = "Сбалансированный низ"
+    else:
+        bass_desc = "Лёгкий прозрачный бас"
+
+    # Vocal/instrumental
+    vocal_density = feats.get("low_energy_ratio", 0.5)
+    if vocal_density > 0.65:
+        vocal_desc = "с вокалом"
+    elif vocal_density < 0.35:
+        vocal_desc = "инструментал"
+    else:
+        vocal_desc = ""
+
+    # Energy
+    el_adj = {1: "спокойная", 2: "умеренная", 3: "средняя", 4: "высокая", 5: "максимальная"}
+    energy_desc = f"энергия {el_adj.get(el, 'средняя')} (EL {el})"
+
+    # Build final description
+    header = ", ".join(parts) + "."
+    body = f"{bass_desc}."
+    if vocal_desc:
+        body += f" {vocal_desc.capitalize()}."
+    body += f" {energy_desc.capitalize()}."
+
+    return f"{header} {body}"

@@ -184,6 +184,8 @@ export default function SetBuilder() {
     return list.sort((a, b) => a.name.localeCompare(b.name))
   }, [songs, set, search])
 
+  const [dragOver, setDragOver] = useState(false)
+
   function addToSet(song: SongInfo) {
     setSet((prev) => [
       ...prev,
@@ -196,6 +198,26 @@ export default function SetBuilder() {
         energy: song.energy,
       },
     ])
+  }
+
+  function handleExternalDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const name = e.dataTransfer.getData('text/plain')
+    if (!name) return
+    const song = songs.find((s) => s.name === name)
+    if (song) addToSet(song)
+    else setSet((prev) => [...prev, { id: `${name}-${Date.now()}`, name }])
+  }
+
+  function handleExternalDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }
+
+  function handleExternalDragLeave() {
+    setDragOver(false)
   }
 
   function removeFromSet(id: string) {
@@ -264,6 +286,9 @@ export default function SetBuilder() {
         bridge_beat_mode:      chainOpts.bridge_beat_mode,
         bridge_beat_genre:     chainOpts.bridge_beat_genre,
         bridge_beat_intensity: chainOpts.bridge_beat_intensity,
+        target_lufs:           chainOpts.target_lufs,
+        eq_strategy:           chainOpts.eq_strategy,
+        crossfade_type:        chainOpts.crossfade_type,
       })
       setChainJobId(res.job_id)
       upsertJob({
@@ -383,31 +408,42 @@ export default function SetBuilder() {
             </div>
           </div>
 
-          {set.length === 0 ? (
-            <div className="sb-empty">
-              <ListMusic size={36} strokeWidth={0.75} />
-              <p className="font-display" style={{ fontSize: 'var(--text-xl)' }}>Your set is empty</p>
-              <p className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>Add tracks from the pool or browse the library first.</p>
-              <button className="sb-empty-action" onClick={() => navigate(songs.length === 0 ? '/operations' : '/library-atlas')}>
-                {songs.length === 0 ? 'Add songs in Operations' : 'Browse Library Atlas'} <ArrowRight size={13} />
-              </button>
-            </div>
-          ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={set.map((e) => e.id)} strategy={verticalListSortingStrategy}>
-                <div className="sb-set-list">
-                  {set.map((entry, i) => (
-                    <SetRow
-                      key={entry.id}
-                      entry={entry}
-                      index={i}
-                      onRemove={removeFromSet}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          )}
+          <div
+            className={`sb-set-dropzone ${dragOver ? 'sb-set-dropzone--active' : ''}`}
+            onDrop={handleExternalDrop}
+            onDragOver={handleExternalDragOver}
+            onDragLeave={handleExternalDragLeave}
+          >
+            {set.length === 0 ? (
+              <div className="sb-empty">
+                <ListMusic size={36} strokeWidth={0.75} />
+                <p className="font-display" style={{ fontSize: 'var(--text-xl)' }}>Your set is empty</p>
+                <p className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
+                  {dragOver ? 'Drop to add track' : 'Add tracks from the pool or drag from Library Atlas'}
+                </p>
+                {!dragOver && (
+                  <button className="sb-empty-action" onClick={() => navigate(songs.length === 0 ? '/operations' : '/library-atlas')}>
+                    {songs.length === 0 ? 'Add songs in Operations' : 'Browse Library Atlas'} <ArrowRight size={13} />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={set.map((e) => e.id)} strategy={verticalListSortingStrategy}>
+                  <div className="sb-set-list">
+                    {set.map((entry, i) => (
+                      <SetRow
+                        key={entry.id}
+                        entry={entry}
+                        index={i}
+                        onRemove={removeFromSet}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+          </div>
 
           {error && <div className="sb-error">{error}</div>}
 

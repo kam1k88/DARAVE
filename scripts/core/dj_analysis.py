@@ -124,6 +124,10 @@ class SongStructure:
     # BeatThisTracker.  Used for bar-grid cue point snapping (Stage 2B).
     downbeat_times: list = field(default_factory=list)
 
+    # ── DnB classification fields (from scripts.core.classify) ────────────────
+    tempo_type: str = ""     # 'half-time' | 'full-time' | 'downtempo' | 'other'
+    el: int = 0              # Energy Level 1-5 (from energy_to_el)
+
     @property
     def total_bars(self) -> int:
         return len(self.bars)
@@ -143,12 +147,19 @@ class SongStructure:
     def best_exit_bar(self, phrase_size: int = 8) -> int:
         """
         Return the best bar for Song A to exit (start fading out).
-        Prefers the last outro/break section aligned to a phrase boundary.
+
+        Flexible selection: collects ALL mixable exit sections (outro, break,
+        verse) and picks the EARLIEST one aligned to a phrase boundary.  This
+        starts transitions earlier, giving more room for smooth crossfading.
         """
-        # Look for outro / break sections near the end
-        for sec in reversed(self.sections):
+        candidates = []
+        for sec in self.sections:
             if sec.is_mixable_exit:
-                return self.phrase_boundary(sec.start_bar, phrase_size)
+                candidates.append(self.phrase_boundary(sec.start_bar, phrase_size))
+
+        if candidates:
+            return candidates[0]
+
         # Fallback: last 25% of track, phrase-aligned
         fallback = int(self.total_bars * 0.75)
         return self.phrase_boundary(fallback, phrase_size)
@@ -765,19 +776,23 @@ def plan_transition(
     entry_time = song_b.bar_start_time(entry_bar)
 
     # --- Refine with SSM phrase boundaries ---
+    # Flexible: pick the FIRST SSM boundary that gives enough room for the
+    # transition, rather than always taking the LAST one before 85%.
     if song_a.phrase_boundaries and song_a.bars:
         threshold_a = song_a.duration * 0.85
         candidates_a = [b for b in song_a.phrase_boundaries if b < threshold_a]
         if candidates_a:
-            last_boundary = candidates_a[-1]
-            nearest = min(
-                range(len(song_a.bars)),
-                key=lambda i: abs(song_a.bars[i][0] - last_boundary),
-            )
-            nearest = song_a.phrase_boundary(nearest, phrase_size)
-            nearest = min(nearest, max_exit)
-            exit_bar = nearest
-            exit_time = song_a.bar_start_time(exit_bar)
+            # Find the earliest boundary that leaves enough bars for transition
+            for boundary in candidates_a:
+                nearest = min(
+                    range(len(song_a.bars)),
+                    key=lambda i: abs(song_a.bars[i][0] - boundary),
+                )
+                nearest = song_a.phrase_boundary(nearest, phrase_size)
+                if nearest <= max_exit:
+                    exit_bar = nearest
+                    exit_time = song_a.bar_start_time(exit_bar)
+                    break
 
     if song_b.phrase_boundaries and song_b.bars:
         candidates_b = [b for b in song_b.phrase_boundaries if b > 0]

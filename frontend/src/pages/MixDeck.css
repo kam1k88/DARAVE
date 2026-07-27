@@ -523,3 +523,66 @@
   height: 32px;
   accent-color: var(--color-green-500);
 }
+
+/* ── Drag & Drop ─────────────────────────────────────────────── */
+
+.md-deck-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.md-deck-wrap--drag-over {
+  outline: 2px dashed var(--color-amber-500);
+  outline-offset: 4px;
+  border-radius: var(--radius-lg);
+}
+
+.md-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: var(--radius-lg);
+  color: var(--color-amber-500);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Analyze button ──────────────────────────────────────────── */
+
+.md-analyze-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-analyze-btn:hover:not(:disabled) {
+  border-color: var(--color-amber-500);
+  color: var(--color-amber-500);
+}
+
+.md-analyze-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Structure view in deck ──────────────────────────────────── */
+
+.md-deck__structure {
+  margin-top: var(--space-3);
+}

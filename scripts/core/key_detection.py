@@ -624,6 +624,21 @@ def camelot_modulation(a: str, b: str) -> dict:
             "safe_to_blend": False,
         }
 
+    # Tritone — ±6 semitones, maximum dissonance on the Camelot wheel
+    if min_delta == 6:
+        return {
+            "type": "tritone",
+            "semitone_shift": semitone_shift,
+            "cost": 0.85,
+            "impact": "Tritone modulation (±6 semitones) — the most dissonant interval. "
+                      "Maximum harmonic tension. Can be used intentionally for dramatic "
+                      "effect, but never blended.",
+            "recommendation": "Quick cut only. Use Echo Cut or Quick Cut technique "
+                              "(Priority Rule 1 in DARAVE). Works well on minimal "
+                              "or percussive tracks where melody is sparse.",
+            "safe_to_blend": False,
+        }
+
     # Non-standard — scale cost by distance
     dist = camelot_distance(a, b)
     cost = min(0.95, dist / 12.0 + 0.3)

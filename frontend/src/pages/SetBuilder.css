@@ -205,6 +205,19 @@
   gap: var(--space-1);
 }
 
+/* Drop zone */
+.sb-set-dropzone {
+  min-height: 120px;
+  border: 2px dashed transparent;
+  border-radius: var(--radius-lg);
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.sb-set-dropzone--active {
+  border-color: var(--color-amber-500);
+  background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
+}
+
 /* Set row */
 .sb-row {
   display: flex;

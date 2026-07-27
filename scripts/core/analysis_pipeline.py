@@ -70,6 +70,24 @@ def _load_song_audio(song: str, sr: int, duration: float):
     return mix
 
 
+def _get_full_duration(song: str, sr: int = 44100) -> float:
+    """Get the real duration (seconds) of the full audio file, without loading it all into memory."""
+    import soundfile as sf
+    d = song_dir(song)
+    full_wav = d / "full.wav"
+    if full_wav.exists():
+        info = sf.info(str(full_wav))
+        return info.duration
+    # Fallback: try stems
+    for stem in _STEM_NAMES:
+        for ext in (".flac", ".wav"):
+            p = d / f"{stem}{ext}"
+            if p.exists():
+                info = sf.info(str(p))
+                return info.duration
+    return 0.0
+
+
 def _add_clipped(a, b):
     """Sum two audio arrays of possibly different length, padding the shorter."""
     import numpy as np
@@ -129,7 +147,7 @@ def run_song_analysis(
     (i.e. it isn't really in the library — call this after a download/stem
     job has completed).
     """
-    from scripts.core.genre import detect_genre
+    from scripts.core.genre import detect_genre, classify_genre_multi
     from scripts.core.dj_analysis import analyze_structure
 
     def _progress(frac: float, msg: str) -> None:
@@ -141,11 +159,36 @@ def run_song_analysis(
     sr = 44100
     audio = _load_song_audio(song, sr=sr, duration=120.0)
 
+    # Get real full-track duration (separate from the 120s analysis clip)
+    try:
+        real_duration = _get_full_duration(song, sr=sr)
+    except Exception:
+        real_duration = len(audio) / sr
+
     _progress(0.4, "Detecting genre…")
     genre = detect_genre(audio, sr)
 
     _progress(0.7, "Analysing structure…")
     struct = analyze_structure(audio, sr, key_profile=key_profile)
+    struct.duration = real_duration  # override 120s clip duration with real file duration
+
+    # ── DnB classification (tempo type + energy level) ────────────────────
+    from scripts.core.classify import classify_tempo, energy_to_el
+    _tempo_type = classify_tempo(struct.bpm)
+    _el = energy_to_el(struct.energy_mean) if hasattr(struct, "energy_mean") else 0
+    struct.tempo_type = _tempo_type
+    struct.el = _el
+
+    # ── Multi-label genre classification + Russian description ───────────
+    _progress(0.75, "Classifying style…")
+    try:
+        genre_class = classify_genre_multi(
+            audio, sr,
+            key_name=struct.key_name, mode=struct.mode,
+            camelot=struct.camelot, tempo_type=_tempo_type, el=_el,
+        )
+    except Exception:
+        genre_class = None
 
     # ── Persist BPM + genre to meta.json cache for the recommendation engine ──
     try:
@@ -161,9 +204,19 @@ def run_song_analysis(
         _meta = {}
         if _meta_path.exists():
             _meta = _json.loads(_meta_path.read_text())
+
+        # Genre — new multi-label format
+        if genre_class:
+            _meta["genre"] = {
+                "genres": genre_class.genres,
+                "tags": genre_class.tags,
+                "description": genre_class.description,
+            }
+        else:
+            _meta["genre"] = genre.genre  # fallback to old format
+
         _meta.update({
             "bpm":                   round(struct.bpm, 1),
-            "genre":                 genre.genre,
             "key":                   struct.key_name,
             "mode":                  struct.mode,
             "camelot":               struct.camelot,
@@ -175,9 +228,11 @@ def run_song_analysis(
             "vocal_density":         round(struct.vocal_density, 4)   if hasattr(struct, "vocal_density") else None,
             "spectral_centroid_hz":  round(struct.spectral_centroid_hz, 1) if hasattr(struct, "spectral_centroid_hz") else None,
             "chroma_vector":         struct.chord_sequence if hasattr(struct, "chroma_vector") else None,
+            "tempo_type":            _tempo_type,
+            "el":                    _el,
         })
         _meta = {k: v for k, v in _meta.items() if v is not None}
-        _meta_path.write_text(_json.dumps(_meta))
+        _meta_path.write_text(_json.dumps(_meta, ensure_ascii=False))
     except Exception:
         pass
 
@@ -187,12 +242,68 @@ def run_song_analysis(
         phrase_boundaries = [
             round(s.start_time, 2) for s in struct.sections
         ] if getattr(struct, "sections", None) else []
+
+        # Sections: list of {type, start_time, end_time, avg_energy, start_bar, end_bar}
+        sections_data = []
+        if getattr(struct, "sections", None):
+            for s in struct.sections:
+                sections_data.append({
+                    "type":       s.type,
+                    "start_time": round(s.start_time, 2),
+                    "end_time":   round(s.end_time, 2),
+                    "start_bar":  s.start_bar,
+                    "end_bar":    s.end_bar,
+                    "avg_energy": round(s.avg_energy, 4),
+                })
+
+        # Energy curve: per-bar energy values (0-1), sampled down to max 200 points
+        energy_curve_data = None
+        if getattr(struct, "energy_curve", None) is not None:
+            import numpy as _np
+            ec = struct.energy_curve
+            if len(ec) > 200:
+                step = len(ec) // 200
+                ec = ec[::step]
+            energy_curve_data = [round(float(v), 4) for v in ec]
+
+        # ── Structure analysis for set planning ─────────────────────────────
+        intro_bars = 0
+        outro_bars = 0
+        breakdowns = []
+        first_drop_bar = None
+        if getattr(struct, "sections", None):
+            for s in struct.sections:
+                if s.type == "drop" and first_drop_bar is None:
+                    first_drop_bar = s.start_bar
+                if s.type == "build" or s.type == "break":
+                    breakdowns.append({
+                        "start_bar": s.start_bar,
+                        "end_bar": s.end_bar,
+                        "type": s.type,
+                    })
+            if first_drop_bar is not None:
+                intro_bars = first_drop_bar
+            # Outro = bars after last section
+            if struct.sections:
+                last_bar = struct.sections[-1].end_bar
+                outro_bars = max(0, struct.total_bars - last_bar)
+
         analysis_doc = {
             "bpm":                round(struct.bpm, 1),
             "phrase_boundaries":  phrase_boundaries,
             "duration":           round(struct.duration, 1),
             "key":                struct.key_name,
             "camelot":            struct.camelot,
+            "sections":           sections_data,
+            "energy_curve":       energy_curve_data,
+            "total_bars":         struct.total_bars,
+            "tempo_type":         getattr(struct, "tempo_type", ""),
+            "el":                 getattr(struct, "el", 0),
+            # Set planning fields
+            "intro_bars":         intro_bars,
+            "outro_bars":         outro_bars,
+            "breakdowns":         breakdowns,
+            "first_drop_bar":     first_drop_bar,
         }
         (song_dir(song) / "analysis.json").write_text(_json.dumps(analysis_doc))
     except Exception as exc:
@@ -234,6 +345,8 @@ def run_song_analysis(
         result["vocal_density"]    = round(struct.vocal_density, 3)
         result["spectral_centroid_hz"] = round(struct.spectral_centroid_hz, 1)
         result["chord_sequence"]   = struct.chord_sequence
+        result["tempo_type"]       = getattr(struct, "tempo_type", "")
+        result["el"]               = getattr(struct, "el", 0)
         if struct.drop_position is not None:
             result["drop_position_sec"] = round(struct.drop_position, 1)
 

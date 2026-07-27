@@ -201,6 +201,97 @@ def storage_status():
     )
 
 
+# ---------------------------------------------------------------------------
+# POST /library/storage/scan — scan a user-specified folder for audio files
+# ---------------------------------------------------------------------------
+
+AUDIO_IMPORT_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma"}
+
+
+@router.post("/library/storage/scan", tags=["library", "storage"])
+def storage_scan_folder(folder: str = ""):
+    """
+    Scan a local folder for audio files and report what's there.
+    Defaults to the Windows Music folder.
+    """
+    import os
+
+    if not folder:
+        folder = str(Path(os.path.expanduser("~")) / "Music")
+
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
+        raise HTTPException(404, f"Folder not found: {folder}")
+
+    files = []
+    total_bytes = 0
+    for f in sorted(folder_path.iterdir()):
+        if f.is_file() and f.suffix.lower() in AUDIO_IMPORT_EXTS:
+            size = f.stat().st_size
+            total_bytes += size
+            files.append({
+                "name": f.stem,
+                "filename": f.name,
+                "ext": f.suffix.lower(),
+                "size_mb": round(size / 1_048_576, 1),
+            })
+
+    # Check which are already in library
+    for fi in files:
+        fi["already_in_library"] = (LIBRARY_DIR / fi["name"]).exists()
+
+    already = sum(1 for f in files if f["already_in_library"])
+    return {
+        "folder": str(folder_path),
+        "total_files": len(files),
+        "already_in_library": already,
+        "new_files": len(files) - already,
+        "total_size_mb": round(total_bytes / 1_048_576, 1),
+        "files": files,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /library/cleanup-stale — remove dirs with no audio files
+# ---------------------------------------------------------------------------
+
+@router.post("/library/cleanup-stale", tags=["library"])
+def cleanup_stale():
+    """
+    Scan every song directory under LIBRARY_DIR. If a directory contains
+    neither full.wav / full.mp3 / full.flac nor any stem files, remove it
+    and unregister from the index. Returns the list of removed songs.
+    """
+    import shutil
+    from scripts.core.library import get_library_manager
+
+    AUDIO_NAMES = {"full.wav", "full.mp3", "full.flac", "full.m4a", "full.ogg", "full.aac"}
+    STEM_NAMES = {"vocals.wav", "vocals.flac", "drums.wav", "drums.flac",
+                  "bass.wav", "bass.flac", "other.wav", "other.flac"}
+
+    removed = []
+    kept = 0
+    mgr = get_library_manager()
+
+    if not LIBRARY_DIR.exists():
+        return {"removed": [], "kept": 0}
+
+    for d in sorted(LIBRARY_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        files_in_dir = {f.name for f in d.iterdir() if f.is_file()}
+        has_audio = bool(AUDIO_NAMES & files_in_dir) or bool(STEM_NAMES & files_in_dir)
+
+        if not has_audio:
+            shutil.rmtree(d)
+            mgr.unregister(d.name)
+            removed.append(d.name)
+        else:
+            kept += 1
+
+    return {"removed": removed, "kept": kept}
+
+
 @router.post("/library/storage/prune", response_model=StoragePruneResponse, tags=["library", "storage"])
 def storage_prune():
     """
@@ -274,7 +365,10 @@ def stream_audio(name: str):
     # Prefer streaming an existing file (full.wav → full_enhanced.wav) directly.
     src = resolve_source_file(name)
     if src is not None:
-        return FileResponse(str(src), media_type="audio/wav", filename=f"{name}.wav")
+        ext = src.suffix.lower()
+        media_types = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac"}
+        mt = media_types.get(ext, "application/octet-stream")
+        return FileResponse(str(src), media_type=mt, filename=f"{name}{ext}")
 
     # No single-file source — reconstruct from Demucs stems on the fly and
     # stream the summed mix from memory (no library mutation).
@@ -291,6 +385,78 @@ def stream_audio(name: str):
         )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"No source audio for {name!r}")
+
+
+@router.get("/library/{name}/structure", tags=["library"])
+def get_track_structure(name: str):
+    """Return sections, energy curve, and bar-level structure for a track."""
+    song_dir = _require_song(name)
+
+    # Try cached analysis.json first
+    analysis_path = song_dir / "analysis.json"
+    if analysis_path.exists():
+        import json
+        try:
+            data = json.loads(analysis_path.read_text())
+            sections = data.get("sections", [])
+            energy_curve = data.get("energy_curve", [])
+            if sections or energy_curve:
+                return {
+                    "name":           name,
+                    "bpm":            data.get("bpm"),
+                    "duration":       data.get("duration"),
+                    "key":            data.get("key"),
+                    "camelot":        data.get("camelot"),
+                    "total_bars":     data.get("total_bars"),
+                    "sections":       sections,
+                    "energy_curve":   energy_curve,
+                    "phrase_boundaries": data.get("phrase_boundaries", []),
+                }
+        except Exception:
+            pass
+
+    # No cached data — run live analysis
+    from scripts.core.audio_source import load_source_audio
+    from scripts.core.dj_analysis import analyze_structure
+
+    try:
+        audio, sr = load_source_audio(name, sr=22050, mono=True, duration=180.0)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"No audio for {name!r}")
+
+    struct = analyze_structure(audio, sr)
+
+    sections_data = []
+    for s in struct.sections:
+        sections_data.append({
+            "type":       s.type,
+            "start_time": round(s.start_time, 2),
+            "end_time":   round(s.end_time, 2),
+            "start_bar":  s.start_bar,
+            "end_bar":    s.end_bar,
+            "avg_energy": round(s.avg_energy, 4),
+        })
+
+    energy_curve_data = None
+    if getattr(struct, "energy_curve", None) is not None:
+        import numpy as np
+        ec = struct.energy_curve
+        if len(ec) > 200:
+            step = len(ec) // 200
+            ec = ec[::step]
+        energy_curve_data = [round(float(v), 4) for v in ec]
+
+    return {
+        "name":           name,
+        "bpm":            round(struct.bpm, 1),
+        "duration":       round(struct.duration, 1),
+        "key":            struct.key_name,
+        "camelot":        struct.camelot,
+        "total_bars":     struct.total_bars,
+        "sections":       sections_data,
+        "energy_curve":   energy_curve_data,
+        "phrase_boundaries": [round(s.start_time, 2) for s in struct.sections],
+    }
 
 
 @router.get("/library/{name}/stems/{stem}", tags=["library"])
@@ -322,7 +488,58 @@ def stream_output(session_id: str, filename: str):
         raise HTTPException(status_code=400, detail="Invalid path component.")
     if not path.exists():
         raise HTTPException(status_code=404, detail="Output not found")
-    return FileResponse(str(path), media_type="audio/wav", filename=safe_filename)
+    # Detect media type from extension
+    ext = path.suffix.lower()
+    media_types = {
+        ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac",
+        ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".aac": "audio/aac",
+    }
+    media_type = media_types.get(ext, "application/octet-stream")
+    return FileResponse(str(path), media_type=media_type, filename=safe_filename)
+
+
+@router.get("/outputs", tags=["outputs"])
+def list_outputs():
+    """List all generated outputs (previews, transitions, chains, beats)."""
+    if not OUTPUTS_DIR.exists():
+        return []
+    results = []
+    for d in sorted(OUTPUTS_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not d.is_dir():
+            continue
+        files = []
+        for f in sorted(d.iterdir()):
+            if f.is_file():
+                files.append({
+                    "name": f.name,
+                    "size_mb": round(f.stat().st_size / 1_048_576, 2),
+                    "ext": f.suffix.lower(),
+                    "modified": f.stat().st_mtime,
+                })
+        if not files:
+            continue
+        # Determine type from dir prefix
+        dir_name = d.name
+        if dir_name.startswith("dj_"):
+            output_type = "transition"
+        elif dir_name.startswith("chain_"):
+            output_type = "chain"
+        elif dir_name.startswith("beat_"):
+            output_type = "beat"
+        elif dir_name.startswith("lab_"):
+            output_type = "lab"
+        else:
+            output_type = "preview"
+        audio_files = [f for f in files if f["ext"] in (".wav", ".mp3", ".flac")]
+        results.append({
+            "session_id": dir_name,
+            "type": output_type,
+            "modified": d.stat().st_mtime,
+            "files": files,
+            "audio_file": audio_files[0]["name"] if audio_files else None,
+            "total_size_mb": round(sum(f["size_mb"] for f in files), 2),
+        })
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -520,3 +737,102 @@ def initialize_library(req: InitializeLibraryRequest, background_tasks=None):
         run_index=req.run_index,
     )
     return job_store.job_to_response(job_store.get_job(job_id))
+
+
+# ---------------------------------------------------------------------------
+# POST /library/import-local — Import audio files from a local folder
+# ---------------------------------------------------------------------------
+
+AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma"}
+
+
+@router.post("/library/import-local", tags=["library"])
+def import_local_folder(
+    folder: str = "",
+    auto_analyze: bool = True,
+    auto_stems: bool = False,
+):
+    """
+    Scan a local folder for audio files, copy/convert them into the library as full.wav.
+    Non-wav files (mp3, flac, etc.) are converted via librosa + soundfile.
+    Defaults to the Windows Music folder.
+    """
+    if not folder:
+        import os
+        folder = str(Path(os.path.expanduser("~")) / "Music")
+
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
+        raise HTTPException(404, f"Folder not found: {folder}")
+
+    from shutil import copy2
+    from scripts.core.paths import LIBRARY_DIR
+
+    audio_files = [
+        f for f in folder_path.iterdir()
+        if f.is_file() and f.suffix.lower() in AUDIO_EXTS
+    ]
+
+    if not audio_files:
+        return {"imported": 0, "skipped": 0, "files": []}
+
+    imported = []
+    skipped = 0
+
+    for f in audio_files:
+        song_name = f.stem
+        dest_dir = LIBRARY_DIR / song_name
+
+        if dest_dir.exists():
+            skipped += 1
+            continue
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_wav = dest_dir / "full.wav"
+
+        try:
+            if f.suffix.lower() == ".wav":
+                copy2(str(f), str(dest_wav))
+            else:
+                # Convert mp3/flac/etc → full.wav via librosa + soundfile
+                import librosa
+                import soundfile as sf
+                audio, sr = librosa.load(str(f), sr=44100, mono=True)
+                sf.write(str(dest_wav), audio, sr, format="WAV", subtype="PCM_16")
+        except Exception as exc:
+            # If conversion fails, copy original as-is (fallback)
+            copy2(str(f), str(dest_dir / f"full{f.suffix.lower()}"))
+
+        # Register in index
+        try:
+            from scripts.core.library import get_library_manager
+            mgr = get_library_manager()
+            mgr.register(song_name, str(dest_dir))
+        except Exception:
+            pass
+
+        imported.append(song_name)
+
+    # Optionally queue analysis jobs
+    if auto_analyze and imported:
+        for name in imported:
+            jid = job_store.create_job(JobType.ANALYZE, {"song": name, "type": "import"})
+            job_store.submit_job(jid, task_analyze_imported, song_name=name)
+
+    return {
+        "imported": len(imported),
+        "skipped": skipped,
+        "files": imported,
+    }
+
+
+def task_analyze_imported(song_name: str):
+    """Background task: analyze an imported song (BPM/key/energy)."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from scripts.core.analysis_pipeline import run_song_analysis
+        run_song_analysis(song_name)
+        log.info("Analyzed imported song: %s", song_name)
+    except Exception as exc:
+        log.error("Failed to analyze %s: %s", song_name, exc)

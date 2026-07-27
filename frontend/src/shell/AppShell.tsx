@@ -1,5 +1,5 @@
 /* ============================================================
-   AI RemixMate — AppShell
+   DARAVE — AppShell
    3-zone CSS Grid: [LeftRail | Canvas | RightInspector]
    The canvas is router-controlled; the two side zones are persistent.
    ============================================================ */
@@ -23,15 +23,12 @@ function JobToastWatcher() {
   return null
 }
 
-// Lazy-load pages — each is a separate code chunk
-const MissionControl = lazy(() => import('@/pages/MissionControl'))
-const LibraryAtlas   = lazy(() => import('@/pages/LibraryAtlas'))
-const MixDeck        = lazy(() => import('@/pages/MixDeck'))
-const SetBuilder     = lazy(() => import('@/pages/SetBuilder'))
-const SignalSearch   = lazy(() => import('@/pages/SignalSearch'))
-const AILab          = lazy(() => import('@/pages/AILab'))
-const MixVault       = lazy(() => import('@/pages/MixVault'))
-const Operations     = lazy(() => import('@/pages/Operations'))
+// Lazy-load pages
+const Strategy     = lazy(() => import('@/pages/Strategy'))
+const LibraryAtlas = lazy(() => import('@/pages/LibraryAtlas'))
+const Solo         = lazy(() => import('@/pages/Solo'))
+const Operations   = lazy(() => import('@/pages/Operations'))
+const Outputs      = lazy(() => import('@/pages/Outputs'))
 
 function PageFallback() {
   return (
@@ -42,9 +39,7 @@ function PageFallback() {
 }
 
 export function AppShell() {
-  // Mount SSE connection at shell level — persists across page navigation
   useSSE()
-  // Polling fallback when SSE is unavailable
   const sseConnected = useAppStore((s) => s.sseConnected)
   useJobPoller(!sseConnected)
 
@@ -63,48 +58,33 @@ export function AppShell() {
 
         <main className="app-shell__canvas">
           <Routes>
-            <Route index element={<Navigate to="/mission-control" replace />} />
-              <Route path="mission-control" element={
-                <PageErrorBoundary pageName="Mission Control">
-                  <Suspense fallback={<PageFallback />}><MissionControl /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="library-atlas" element={
-                <PageErrorBoundary pageName="Library Atlas">
-                  <Suspense fallback={<PageFallback />}><LibraryAtlas /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="mix-deck" element={
-                <PageErrorBoundary pageName="Mix Deck">
-                  <Suspense fallback={<PageFallback />}><MixDeck /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="set-builder" element={
-                <PageErrorBoundary pageName="Set Builder">
-                  <Suspense fallback={<PageFallback />}><SetBuilder /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="signal-search" element={
-                <PageErrorBoundary pageName="Signal Search">
-                  <Suspense fallback={<PageFallback />}><SignalSearch /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="ai-lab" element={
-                <PageErrorBoundary pageName="AI Lab">
-                  <Suspense fallback={<PageFallback />}><AILab /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="mix-vault" element={
-                <PageErrorBoundary pageName="Mix Vault">
-                  <Suspense fallback={<PageFallback />}><MixVault /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="operations" element={
-                <PageErrorBoundary pageName="Operations">
-                  <Suspense fallback={<PageFallback />}><Operations /></Suspense>
-                </PageErrorBoundary>
-              } />
-              <Route path="*" element={<Navigate to="/mission-control" replace />} />
+            <Route index element={<Navigate to="/strategy" replace />} />
+            <Route path="strategy" element={
+              <PageErrorBoundary pageName="Strategy">
+                <Suspense fallback={<PageFallback />}><Strategy /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="library" element={
+              <PageErrorBoundary pageName="Library">
+                <Suspense fallback={<PageFallback />}><LibraryAtlas /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="solo" element={
+              <PageErrorBoundary pageName="Solo">
+                <Suspense fallback={<PageFallback />}><Solo /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="downloads" element={
+              <PageErrorBoundary pageName="Downloads">
+                <Suspense fallback={<PageFallback />}><Operations /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="outputs" element={
+              <PageErrorBoundary pageName="Outputs">
+                <Suspense fallback={<PageFallback />}><Outputs /></Suspense>
+              </PageErrorBoundary>
+            } />
+            <Route path="*" element={<Navigate to="/strategy" replace />} />
           </Routes>
         </main>
 

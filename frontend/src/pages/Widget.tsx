@@ -144,7 +144,7 @@ function WidgetPanel({
       {/* Header */}
       <header className="wgt-head">
         <Radio size={15} className="wgt-head__logo" />
-        <span className="wgt-head__title font-display">RemixMate&nbsp;· DJ Assist</span>
+        <span className="wgt-head__title font-display">DARAVE&nbsp;· DJ Assist</span>
         {!inPip && canPip && (
           <button className="wgt-head__pip" onClick={onPopOut} title="Float on top (Picture-in-Picture)">
             <PictureInPicture2 size={14} />
@@ -282,7 +282,7 @@ export default function Widget() {
     try {
       const win = await dpp.requestWindow({ width: 380, height: 620 })
       copyStylesTo(win)
-      win.document.title = 'RemixMate — DJ Assist'
+      win.document.title = 'DARAVE — DJ Assist'
       win.document.body.classList.add('wgt-pip-body')
       win.addEventListener('pagehide', () => {
         pipRef.current = null

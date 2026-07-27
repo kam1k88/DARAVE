@@ -53,8 +53,11 @@ from scripts.core.dj_analysis import (
     plan_transition,
 )
 
-# Mastering utilities — used for per-stem LUFS normalization in render_stem_blend()
-from scripts.core.mastering import normalize_stems_to_target, normalize_stems_to_corpus_targets, load_stem_targets
+# DJ effects library — all transition effects live here
+from scripts.core.dj_effects import apply_effect, EFFECTS
+
+# Mastering utilities — per-stem LUFS normalization disabled (kept for reference)
+# from scripts.core.mastering import normalize_stems_to_target, normalize_stems_to_corpus_targets, load_stem_targets
 from scripts.core.key_detection import pitch_shift_audio
 
 # _analyze_impl was renamed to analyze_structure during the dj_analysis module split.
@@ -736,6 +739,7 @@ class DJEngine:
         bridge_beat: Optional[np.ndarray] = None,
         bridge_gain: float = 0.38,
         transition_effect: str = "auto",
+        crossfade_type: str = "auto",
     ) -> np.ndarray:
         """
         Render the full DJ mix of track_a into track_b.
@@ -933,12 +937,38 @@ class DJEngine:
         # (mid is computed earlier in the beat-grid lock block)
         tail  = trans_samples - mid          # length of the actual crossfade region
 
-        # ── Dynamic EQ crossfade ──────────────────────────────────────────
-        # Instead of flat cosine, use frequency-selective fading:
-        # Song A: highs fade first, bass lingers (natural exit)
-        # Song B: bass enters first, highs bloom in (natural entry)
-        a_faded = self._apply_dynamic_eq_fade(a_trans_final, tail, direction="out")
-        b_faded = self._apply_dynamic_eq_fade(b_trans_final, tail, direction="in")
+        # ── Crossfade type adjustments ─────────────────────────────────────
+        # Adjust mid/tail split based on crossfade_type:
+        #   standard — default dynamic EQ fade (current behavior)
+        #   extended — A holds 90% until 60%, B enters from 10%
+        #   sharp    — A exits by 50%, B enters from 50% (quick handoff)
+        cf = crossfade_type if crossfade_type in ("extended", "sharp") else "standard"
+
+        if cf == "extended":
+            ext_end = int(trans_samples * 0.6)
+            a_tail = trans_samples - ext_end
+            a_envelope = np.ones(trans_samples, dtype=np.float32)
+            a_envelope[ext_end:] = np.cos(np.linspace(0.0, np.pi / 2.0, a_tail, dtype=np.float32))
+            b_envelope = np.zeros(trans_samples, dtype=np.float32)
+            b_start = int(trans_samples * 0.1)
+            b_envelope[b_start:mid] = np.sin(np.linspace(0.0, np.pi / 2.0, mid - b_start, dtype=np.float32))
+            b_envelope[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+            a_faded = a_trans_final * a_envelope
+            b_faded = b_trans_proc * b_envelope
+        elif cf == "sharp":
+            a_envelope = np.ones(trans_samples, dtype=np.float32)
+            a_envelope[mid:] = np.cos(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+            b_envelope = np.zeros(trans_samples, dtype=np.float32)
+            b_envelope[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+            a_faded = a_trans_final * a_envelope
+            b_faded = b_trans_proc * b_envelope
+        else:
+            # ── Dynamic EQ crossfade ──────────────────────────────────────
+            # Instead of flat cosine, use frequency-selective fading:
+            # Song A: highs fade first, bass lingers (natural exit)
+            # Song B: bass enters first, highs bloom in (natural entry)
+            a_faded = self._apply_dynamic_eq_fade(a_trans_final, tail, direction="out")
+            b_faded = self._apply_dynamic_eq_fade(b_trans_final, tail, direction="in")
 
         mixed_transition = a_faded + b_faded
 
@@ -987,6 +1017,8 @@ class DJEngine:
         bridge_gain: float = 0.38,
         transition_effect: str = "auto",
         stems_dirs: Optional[list] = None,
+        transition_intel: Optional[list] = None,
+        structures: Optional[list] = None,
     ) -> np.ndarray:
         """
         Render a continuous N-song DJ mix chain.
@@ -1077,6 +1109,17 @@ class DJEngine:
             entry_sample_b = _orig_to_stretched(plan.entry_time_b, i + 1)
             exit_sample_a  = max(0, min(exit_sample_a,  len(audio_a) - 1))
             entry_sample_b = max(0, min(entry_sample_b, len(audio_b) - 1))
+
+            # Override transition_bars from intel if available
+            _rec = transition_intel[i] if transition_intel and i < len(transition_intel) else None
+            if _rec is not None and _rec.transition_bars != plan.transition_bars:
+                log.info(
+                    "Chain intel [%d->%d]: overriding bars %d -> %d",
+                    i + 1, i + 2, plan.transition_bars, _rec.transition_bars,
+                )
+                plan.transition_bars = _rec.transition_bars
+                plan.transition_seconds = _rec.transition_bars * 4 * (60.0 / plan.bpm_a)
+
             trans_s        = _trans_samples(plan)
             mid            = trans_s // 2
 
@@ -1098,18 +1141,25 @@ class DJEngine:
             b_trans = _pad_or_trim(audio_b[b_start : b_start + trans_s], trans_s)
 
             # Smart transition effect on Song A's exit window
-            _eff = transition_effect
-            if _eff == "auto":
-                if plan.harmonic_score >= 0.0 and plan.harmonic_score < 0.35:
-                    _eff = "filter"
-                else:
-                    _eff = "echo"
-            if _eff == "echo":
-                a_trans = _apply_echo_out(a_trans, sr, plan.bpm_a)
-            elif _eff == "filter":
-                a_trans = _apply_filter_sweep(a_trans, sr, direction="out")
-            elif _eff == "reverb":
-                a_trans = _apply_reverb_tail(a_trans, sr)
+            _rec = transition_intel[i] if transition_intel and i < len(transition_intel) else None
+            if _rec is not None:
+                _eff = _rec.effect
+                log.info(
+                    "Chain intel [%d->%d]: technique=%s effect=%s bars=%d reason=%s",
+                    i + 1, i + 2, _rec.technique, _rec.effect,
+                    _rec.transition_bars, _rec.reason[:60],
+                )
+            else:
+                _eff = transition_effect
+                if _eff == "auto":
+                    if plan.harmonic_score >= 0.0 and plan.harmonic_score < 0.35:
+                        _eff = "filter"
+                    else:
+                        _eff = "echo"
+
+            # Apply effect via unified effects module
+            if _eff != "none":
+                a_trans = apply_effect(a_trans, sr, _eff, bpm=plan.bpm_a)
 
             # HP ramp on B (remove bass during intro)
             hp_half        = trans_s // 2
@@ -1159,12 +1209,28 @@ class DJEngine:
                     i + 1, i + 2, trans_s,
                 )
             else:
-                # Sequential crossfade (original path)
-                tail   = trans_s - mid
-                a_env  = np.ones(trans_s, dtype=np.float32)
-                a_env[mid:] = np.cos(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
-                b_env  = np.zeros(trans_s, dtype=np.float32)
-                b_env[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+                # Sequential crossfade — shaped by intel if available
+                _cf = _rec.crossfade_type if _rec else "standard"
+                tail = trans_s - mid
+                a_env = np.ones(trans_s, dtype=np.float32)
+                b_env = np.zeros(trans_s, dtype=np.float32)
+
+                if _cf == "sharp":
+                    # Sharp handoff: A exits by 50%, B enters from 50%
+                    a_env[mid:] = np.cos(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+                    b_env[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+                elif _cf == "extended":
+                    # Extended blend: A holds 90% until 60%, B enters from 10%
+                    ext_end = int(trans_s * 0.6)
+                    a_env[ext_end:] = np.cos(np.linspace(0.0, np.pi / 2.0, trans_s - ext_end, dtype=np.float32))
+                    b_start_s = int(trans_s * 0.1)
+                    b_env[b_start_s:mid] = np.sin(np.linspace(0.0, np.pi / 2.0, mid - b_start_s, dtype=np.float32))
+                    b_env[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+                else:
+                    # Standard cosine crossfade
+                    a_env[mid:] = np.cos(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+                    b_env[mid:] = np.sin(np.linspace(0.0, np.pi / 2.0, tail, dtype=np.float32))
+
                 mixed = a_trans_final * a_env + b_trans_proc * b_env
 
             # Bridge beat (optional)
@@ -1177,7 +1243,16 @@ class DJEngine:
 
             # ── Pre-segment (first song only) ──────────────────────────
             if i == 0:
-                segments.append(audio_a[:exit_sample_a])
+                # Trim intro: start from first non-intro section if available
+                trim_start = 0
+                if structures and len(structures) > 0:
+                    struct_a = structures[0]
+                    for sec in struct_a.sections:
+                        if sec.type not in ("intro",):
+                            trim_start = _orig_to_stretched(sec.start_time, 0)
+                            trim_start = max(0, min(trim_start, exit_sample_a))
+                            break
+                segments.append(audio_a[trim_start:exit_sample_a])
 
             segments.append(mixed)
 
@@ -1191,8 +1266,19 @@ class DJEngine:
                 if body_end > body_start:
                     segments.append(audio_b[body_start : body_end])
             else:
-                # Last song: take everything after the entry transition
-                tail_b = audio_b[b_start + trans_s :]
+                # Last song: take from entry transition to last non-outro section
+                tail_start = b_start + trans_s
+                tail_end = len(audio_b)
+                if structures and len(structures) > i + 1:
+                    struct_b = structures[i + 1]
+                    # Find last section that's not outro
+                    for sec in reversed(struct_b.sections):
+                        if sec.type not in ("outro",):
+                            cut_point = _orig_to_stretched(sec.end_time, i + 1)
+                            cut_point = max(tail_start, min(cut_point, len(audio_b)))
+                            tail_end = cut_point
+                            break
+                tail_b = audio_b[tail_start:tail_end]
                 if len(tail_b) > 0:
                     segments.append(tail_b)
 
@@ -1248,6 +1334,7 @@ class DJEngine:
         bridge_beat: "Optional[np.ndarray]" = None,
         bridge_gain: float = 0.38,
         transition_effect: str = "auto",
+        crossfade_type: str = "auto",
     ) -> np.ndarray:
         """
         Render a DJ mix with per-stem intelligent blending.
@@ -1320,38 +1407,11 @@ class DJEngine:
                 if stretched_b[s] is not None:
                     stretched_b[s] = pitch_shift_audio(stretched_b[s], sr, ps)
 
-        # ── Per-stem LUFS normalization (FxNorm-Automix scheme) ───────────
-        #
-        # Each stem type is normalized to its corpus-derived LUFS target
-        # (drums → ~-18.5, bass → ~-21.0, vocals → ~-19.5, other → ~-21.5).
-        # Using per-stem-type targets (not one flat -20 LUFS) preserves the
-        # natural loudness relationships between stem types while preventing
-        # inter-stem collisions when summing.  Falls back to -20 LUFS flat if
-        # no corpus cache exists (data/stem_lufs_targets.json).
-        #
-        # Reference: Steinmetz et al. ISMIR 2022 (FxNorm-Automix).
-        _corpus_targets = load_stem_targets()
-
-        stems_a_input = {
-            s: (stems_a[s], sr)
-            for s in _STEM_NAMES if stems_a.get(s) is not None
-        }
-        stems_b_input = {
-            s: (stretched_b[s], sr)
-            for s in _STEM_NAMES if stretched_b.get(s) is not None
-        }
-
-        if stems_a_input:
-            normed_a = normalize_stems_to_corpus_targets(stems_a_input, targets=_corpus_targets)
-            for s in normed_a:
-                stems_a[s] = normed_a[s]
-            log.info("FxNorm corpus-targets applied to Song A stems")
-
-        if stems_b_input:
-            normed_b = normalize_stems_to_corpus_targets(stems_b_input, targets=_corpus_targets)
-            for s in normed_b:
-                stretched_b[s] = normed_b[s]
-            log.info("FxNorm corpus-targets applied to Song B stems")
+        # ── Per-stem LUFS normalization (DISABLED) ────────────────────────
+        # FxNorm-Automix corpus-target normalization removed.
+        # Stems keep their original loudness balance.  Only final
+        # master_mix() applies LUFS normalization.
+        log.info("FxNorm skipped — stems retain original loudness")
 
         # ── Compute transition boundaries ─────────────────────────────────
         exit_sample_a = int(plan.exit_time_a * sr)

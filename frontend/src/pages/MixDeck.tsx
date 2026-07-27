@@ -3,7 +3,7 @@
    Dual-deck DJ UI: BPM/key display, compatibility score,
    transition preview → full remix job.
    ============================================================ */
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Clock,
   Loader2,
+  Upload,
 } from 'lucide-react'
 import { libraryApi, analysisApi, remixApi, audioApi } from '@/lib/api'
 import { useAppStore } from '@/stores/appStore'
@@ -24,6 +25,8 @@ import { WaveformDeck } from '@/components/WaveformDeck'
 import { TransitionTimeline } from '@/components/TransitionTimeline'
 import { RemixControls, RemixOptions, REMIX_DEFAULTS } from '@/components/RemixControls'
 import { CamelotWheel } from '@/components/CamelotWheel'
+import { TrackStructureView } from '@/components/TrackStructureView'
+import { EffectsPanel } from '@/components/EffectsPanel'
 import type { SongInfo, CompatibilityResult, SimilarTrack } from '@/types'
 import './PageBase.css'
 import './MixDeck.css'
@@ -164,6 +167,12 @@ function DeckCard({
           cueEnd={cueEnd}
           shortcutTarget={shortcutTarget}
         />
+      )}
+
+      {song && (
+        <div className="md-deck__structure">
+          <TrackStructureView songName={song} height={100} />
+        </div>
       )}
     </div>
   )
@@ -325,6 +334,9 @@ export default function MixDeck() {
   const [previewJobId, setPreviewJobId] = useState<string | null>(null)
   const [remixJobId, setRemixJobId]     = useState<string | null>(null)
   const [submitting, setSubmitting]     = useState(false)
+  const [dragOverDeck, setDragOverDeck] = useState<'A' | 'B' | null>(null)
+  const [analyzing, setAnalyzing] = useState<string | null>(null)
+  const [selectedEffect, setSelectedEffect] = useState('echo')
 
   const upsertJob  = useAppStore((s) => s.upsertJob)
   const remixJob   = useAppStore((s) => remixJobId ? s.jobs[remixJobId] : null)
@@ -343,13 +355,13 @@ export default function MixDeck() {
   })
 
   // Fetch full detail for each selected song (includes BPM / key / energy from analysis.json)
-  const { data: detailA, isLoading: loadingA } = useQuery<SongInfo>({
+  const { data: detailA, isLoading: loadingA, refetch: refetchA } = useQuery<SongInfo>({
     queryKey: ['song-detail', songA],
     queryFn: () => libraryApi.get(songA),
     enabled: !!songA,
     staleTime: 120_000,
   })
-  const { data: detailB, isLoading: loadingB } = useQuery<SongInfo>({
+  const { data: detailB, isLoading: loadingB, refetch: refetchB } = useQuery<SongInfo>({
     queryKey: ['song-detail', songB],
     queryFn: () => libraryApi.get(songB),
     enabled: !!songB,
@@ -389,6 +401,56 @@ export default function MixDeck() {
   const cueEndA    = compat?.transition_plan?.entry_time_b
   const cueStartB  = compat?.transition_plan?.entry_time_b
   const cueEndB    = cueStartB !== undefined ? cueStartB + (songInfoB?.duration ?? 0) * 0.1 : undefined
+
+  // ── Drag & Drop ──────────────────────────────────────────────
+  const handleDragOver = useCallback((e: React.DragEvent, deck: 'A' | 'B') => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOverDeck(deck)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverDeck(null)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, deck: 'A' | 'B') => {
+    e.preventDefault()
+    setDragOverDeck(null)
+    const songName = e.dataTransfer.getData('text/plain')
+    if (songName) {
+      if (deck === 'A') setSongA(songName)
+      else setSongB(songName)
+      setCompat(null)
+    }
+  }, [])
+
+  // ── Inline analyze ──────────────────────────────────────────
+  async function analyzeSong(name: string) {
+    if (!name || analyzing) return
+    setAnalyzing(name)
+    try {
+      await analysisApi.analyze(name)
+      // Poll until analysis is available
+      let attempts = 0
+      const poll = async () => {
+        attempts++
+        if (attempts > 30) { setAnalyzing(null); return }
+        try {
+          const info = await libraryApi.get(name)
+          if (info.has_analysis) {
+            setAnalyzing(null)
+            if (name === songA) refetchA()
+            else if (name === songB) refetchB()
+            return
+          }
+        } catch {}
+        setTimeout(poll, 2000)
+      }
+      setTimeout(poll, 2000)
+    } catch {
+      setAnalyzing(null)
+    }
+  }
 
   async function checkCompat() {
     if (!canCompare) return
@@ -439,6 +501,9 @@ export default function MixDeck() {
         bridge_beat_mode: remixOpts.bridge_beat_mode,
         bridge_beat_genre: remixOpts.bridge_beat_genre,
         bridge_beat_intensity: remixOpts.bridge_beat_intensity,
+        target_lufs: remixOpts.target_lufs,
+        eq_strategy: remixOpts.eq_strategy,
+        crossfade_type: remixOpts.crossfade_type,
       })
       setRemixJobId(res.job_id)
       upsertJob({ job_id: res.job_id, status: 'PENDING', type: 'dj_remix', progress: 0, message: 'Rendering full mix…', created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -464,18 +529,31 @@ export default function MixDeck() {
       <div className="page-base__body md-body">
         {/* Decks row */}
         <div className="md-decks-row">
-          <DeckCard
-            label="A"
-            song={songA}
-            songInfo={songInfoA}
-            songs={songNames}
-            onChange={(v) => { setSongA(v); setCompat(null) }}
-            audioUrl={audioUrlA}
-            cueStart={cueStartA}
-            cueEnd={cueEndA}
-            shortcutTarget={shortcutDeck === 'A'}
-            loadingSongInfo={loadingA}
-          />
+          <div
+            className={`md-deck-wrap ${dragOverDeck === 'A' ? 'md-deck-wrap--drag-over' : ''}`}
+            onDragOver={(e) => handleDragOver(e, 'A')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'A')}
+          >
+            <DeckCard
+              label="A"
+              song={songA}
+              songInfo={songInfoA}
+              songs={songNames}
+              onChange={(v) => { setSongA(v); setCompat(null) }}
+              audioUrl={audioUrlA}
+              cueStart={cueStartA}
+              cueEnd={cueEndA}
+              shortcutTarget={shortcutDeck === 'A'}
+              loadingSongInfo={loadingA}
+            />
+            {dragOverDeck === 'A' && (
+              <div className="md-drop-overlay">
+                <Upload size={24} />
+                <span>Drop track here</span>
+              </div>
+            )}
+          </div>
 
           <div className="md-center">
             <GitMerge size={20} strokeWidth={1.5} style={{ color: 'var(--color-text-faint)' }} />
@@ -487,21 +565,55 @@ export default function MixDeck() {
               {compatLoading ? <RefreshCw size={12} className="md-spin" /> : <Zap size={12} />}
               Check compatibility
             </button>
+            {/* Analyze buttons */}
+            {songA && !songInfoA?.has_analysis && (
+              <button
+                className="md-analyze-btn"
+                disabled={!!analyzing}
+                onClick={() => analyzeSong(songA)}
+              >
+                {analyzing === songA ? <Loader2 size={11} className="md-spin" /> : null}
+                Analyze A
+              </button>
+            )}
+            {songB && !songInfoB?.has_analysis && (
+              <button
+                className="md-analyze-btn"
+                disabled={!!analyzing}
+                onClick={() => analyzeSong(songB)}
+              >
+                {analyzing === songB ? <Loader2 size={11} className="md-spin" /> : null}
+                Analyze B
+              </button>
+            )}
           </div>
 
-          <DeckCard
-            label="B"
-            song={songB}
-            songInfo={songInfoB}
-            songs={songNames}
-            suggestedSongs={similarNamesForB}
-            onChange={(v) => { setSongB(v); setCompat(null) }}
-            audioUrl={audioUrlB}
-            cueStart={cueStartB}
-            cueEnd={cueEndB}
-            shortcutTarget={shortcutDeck === 'B'}
-            loadingSongInfo={loadingB}
-          />
+          <div
+            className={`md-deck-wrap ${dragOverDeck === 'B' ? 'md-deck-wrap--drag-over' : ''}`}
+            onDragOver={(e) => handleDragOver(e, 'B')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'B')}
+          >
+            <DeckCard
+              label="B"
+              song={songB}
+              songInfo={songInfoB}
+              songs={songNames}
+              suggestedSongs={similarNamesForB}
+              onChange={(v) => { setSongB(v); setCompat(null) }}
+              audioUrl={audioUrlB}
+              cueStart={cueStartB}
+              cueEnd={cueEndB}
+              shortcutTarget={shortcutDeck === 'B'}
+              loadingSongInfo={loadingB}
+            />
+            {dragOverDeck === 'B' && (
+              <div className="md-drop-overlay">
+                <Upload size={24} />
+                <span>Drop track here</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Compat result + transition timeline */}
@@ -525,6 +637,11 @@ export default function MixDeck() {
         {/* Remix options */}
         {canCompare && (
           <RemixControls value={remixOpts} onChange={setRemixOpts} />
+        )}
+
+        {/* Effects panel */}
+        {canCompare && (
+          <EffectsPanel value={selectedEffect} onChange={setSelectedEffect} />
         )}
 
         {/* Transition controls */}
@@ -593,7 +710,10 @@ export default function MixDeck() {
               Load two tracks to start mixing
             </p>
             <p className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
-              Pick a song in each deck — the engine will lock their downbeats, match tempo, and fade stems independently.
+              Drag & drop tracks from the library, or use the selectors above.
+            </p>
+            <p className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+              The engine will lock downbeats, match tempo, show structure (drops/breaks/builds), and fade stems independently.
             </p>
           </div>
         )}

@@ -16,7 +16,8 @@ export function useJobToasts() {
       if (job.status === 'COMPLETED') {
         push({ level: 'success', message: `✓ ${job.type} complete`, jobId: job.job_id })
       } else if (job.status === 'FAILED') {
-        push({ level: 'error', message: `✗ ${job.type} failed`, jobId: job.job_id })
+        const reason = job.error || job.message || 'unknown error'
+        push({ level: 'error', message: `✗ ${job.type} failed: ${reason}`, jobId: job.job_id })
       }
     })
   }, [jobs, push])

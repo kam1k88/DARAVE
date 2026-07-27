@@ -31,10 +31,14 @@ export interface SongInfo {
   key?: string
   camelot?: string
   duration?: number         // seconds
-  genre?: string
+  genre?: string | { genres?: Array<{ name: string; confidence: number }>; tags?: string[]; description?: string }
   energy?: number           // 0–1
   embedding?: number[]
   stems?: string[]          // e.g. ['vocals', 'drums', 'bass', 'other']
+  tempo_type?: string       // "half-time" | "full-time" | "downtempo" | "other"
+  el?: number               // Energy Level 1–5
+  drops?: number            // Number of drops in the track
+  breakdowns?: number       // Number of breakdowns in the track
 }
 
 export interface LibraryStats {
@@ -148,6 +152,9 @@ export interface DJRemixRequest {
   bridge_beat_mode?: string
   bridge_beat_genre?: string
   bridge_beat_intensity?: number
+  target_lufs?: number
+  eq_strategy?: string
+  crossfade_type?: string
 }
 
 export interface DJPreviewRequest {
@@ -217,15 +224,150 @@ export interface HealthStatus {
   uptime_seconds?: number
 }
 
+// --- Track Structure ---
+
+export interface TrackSection {
+  type: string       // intro | verse | chorus | drop | break | build | outro
+  start_time: number
+  end_time: number
+  start_bar: number
+  end_bar: number
+  avg_energy: number
+}
+
+export interface TrackStructure {
+  name: string
+  bpm: number | null
+  duration: number | null
+  key: string | null
+  camelot: string | null
+  total_bars: number | null
+  sections: TrackSection[]
+  energy_curve: number[] | null
+  phrase_boundaries: number[]
+}
+
+// --- Mix Plan ---
+
+export interface MixPlanTrack {
+  song_name: string
+  bpm: number
+  camelot: string
+  key: string
+  energy_mean: number
+  energy_std: number
+  total_bars: number
+}
+
+export interface MixPlanTransition {
+  pair_index: number
+  from_song: string
+  to_song: string
+  technique: string
+  effect: string
+  transition_bars: number
+  crossfade_type: string
+  confidence: number
+  reason: string
+  energy_from: number
+  energy_to: number
+  energy_delta: number
+  bpm_from: number
+  bpm_to: number
+  camelot_from: string
+  camelot_to: string
+  bridge_beat: boolean
+  key_compatible: boolean
+  tempo_ratio: number
+}
+
+export interface MixPlanEnergyArc {
+  song_index: number
+  song_name: string
+  energy_mean: number
+  energy_std: number
+  start_sec: number
+  end_sec: number
+  start_label: string
+  end_label: string
+}
+
+export interface MixPlanResult {
+  songs: string[]
+  track_order: number[]
+  structures: MixPlanTrack[]
+  transitions: MixPlanTransition[]
+  energy_arc: MixPlanEnergyArc[]
+  total_duration_sec: number
+  avg_confidence: number
+}
+
 // --- Navigation ---
 
 export type NavDestination =
-  | 'mission-control'
-  | 'library-atlas'
-  | 'mix-deck'
-  | 'set-builder'
-  | 'signal-search'
-  | 'ai-lab'
-  | 'mix-vault'
-  | 'operations'
-  | 'widget'
+  | 'strategy'
+  | 'library'
+  | 'solo'
+  | 'outputs'
+  | 'downloads'
+
+
+// --- DJ Techniques (Quick Mix) ---
+
+export interface TechniqueParam {
+  name: string               // "swap_start_bar"
+  label: string              // "Точка начала замены"
+  type: string               // "int" | "float" | "select"
+  min_val: number
+  max_val: number
+  default: number
+  unit: string               // "тактов" | "dB" | "%" | "x" | ""
+  options?: string[]         // for type="select"
+}
+
+export interface DJTechnique {
+  id: string                     // "DNB-01"
+  name: string                   // "Double Drop"
+  category: string               // "cut" | "eq" | "filter" | etc.
+  difficulty: number             // 1-5
+  level: string                  // "beginner" | "intermediate" | "advanced" | "experimental"
+  description: string
+  description_ru?: string
+  description_cn?: string
+  best_for: string
+  when_to_use: string
+  effects_used: string[]
+  bpm_range: number[]            // [160, 180]
+  key_compatibility: string
+  energy_delta: string
+  transition_bars: number
+  frequency_focus: string
+  parameters: TechniqueParam[]
+  steps: string[]
+}
+
+export interface PatternSearchTrack {
+  name: string
+  bpm: number
+  key?: string
+  mode?: string
+  camelot?: string
+  energy_mean: number
+  has_stems: boolean
+  score: number
+  reasons: string[]
+}
+
+export interface PatternSearchPair {
+  track_a: PatternSearchTrack
+  track_b: PatternSearchTrack
+  score: number
+  reasons: string[]
+}
+
+export interface PatternSearchResult {
+  technique_id: string
+  technique_name: string
+  tracks: PatternSearchTrack[]
+  pairs: PatternSearchPair[]
+}

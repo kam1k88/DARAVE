@@ -1,164 +1,153 @@
-# AI RemixMate — Codex Prompt
+# DARAVE — Agent Instructions
 
-## What this project is
+## What this is
 
-A real-time DJ engine built end-to-end in Python + React. Core capability: take two songs, analyze them for BPM/key/bar structure, lock downbeats at the sample level, time-stretch to match tempo, apply stem-aware crossfade (drums/bass/vocals fade independently), optionally synthesize a bridge beat, then master the output to −14 LUFS broadcast standard.
+A real-time DJ engine in Python + React. Two songs in, beat-locked stem-aware transition out, mastered to −14 LUFS. FastAPI backend with async job queue + SQLite, SSE live stream, React frontend (Vite + TypeScript, 9 pages).
 
-Wrapped around that: a FastAPI backend with async job queue + SQLite persistence, SSE live stream, and a React frontend (Vite + TypeScript) with 8 pages.
+## Commands
 
-## Architecture
+### Python
+
+```bash
+source remix-env/bin/activate          # always first
+./start.sh setup                       # first-time setup (creates venv, installs deps)
+./start.sh                             # full start (API on :8000 + React on :5173)
+./start.sh --skip-setup                # fast restart (skip pip/npm install)
+./start.sh api                         # API only (for GitHub Pages widget mode)
+./start.sh stop                        # kill everything
+
+ruff check scripts/                    # lint (faster than flake8)
+ruff format scripts/                   # format
+black scripts/                         # formatter (line-length 100)
+mypy scripts/                          # typecheck (ignore-missing-imports on)
+pre-commit run --all-files             # full pre-commit suite
+
+pytest                                 # all tests
+pytest -m "not dj_analysis"            # skip librosa-dependent tests (safe in CI)
+pytest -m "not dj_analysis and not integration"  # skip both marks
+pytest tests/test_behavioral.py        # behavioral correctness (36 tests)
+pytest tests/test_core_modules.py      # core module tests
+pytest -x                              # stop on first failure
+pytest --looponfail                    # watch mode
+
+# smoke test (API must be running)
+bash tests/smoke_e2e.sh
+
+# one-off analysis
+python -c "from scripts.core.dj_analysis import analyze_structure; print(analyze_structure('song.mp3'))"
+```
+
+### Frontend (from `frontend/`)
+
+```bash
+npm install                            # install deps
+npm run dev                            # Vite dev server (:5173)
+npm run build                          # tsc + vite build
+npm run lint                           # eslint
+npm run typecheck                      # tsc --noEmit
+npm run test                           # vitest
+```
+
+### Docker
+
+```bash
+docker compose up                      # API + Streamlit UI
+docker compose up api                  # API only
+```
+
+## Architecture (key files)
 
 ```
 scripts/
-├── api/
-│   ├── main.py              # FastAPI app — lifespan, CORS, request-ID middleware
-│   ├── jobs.py              # Write-through SQLite job store (data/jobs.db)
-│   ├── routes.py            # Thin aggregator — includes all routers
-│   ├── routers/             # 11 domain routers (system, library, downloads, stems,
-│   │                        #   analysis, remix, generative, spotify, jobs, crates, setlist)
-│   ├── task_modules/        # Async task functions: download, stems, remix, analysis,
-│   │                        #   generative, lab
-│   └── schemas.py           # Pydantic request/response models
-├── core/
-│   ├── dj_engine.py         # DJ renderer — beat-grid lock, stem crossfade, EQ fade
-│   ├── dj_analysis.py       # Song structure analysis, transition planning
-│   ├── mastering.py         # ITU-R BS.1770-4 LUFS metering + true-peak limiter
-│   ├── beat_synth.py        # Procedural bridge beat generator (6 genre presets)
-│   ├── setlist_planner.py   # Weighted greedy set optimizer (Camelot, BPM, energy arc)
-│   ├── music_index.py       # 35-dim embedding index (JSON-persisted, no FAISS)
-│   ├── style_transfer.py    # AI style transfer via DAC tokens
-│   ├── inpainting.py        # Audio inpainting via VampNet
-│   ├── stems.py             # Demucs stem separation wrapper
-│   ├── library.py           # Song library management
-│   ├── paths.py             # Canonical path constants (outputs/, models/, data/)
-│   └── config.py            # YAML config loader (config.yaml → config.local.yaml → env)
+  api/
+    main.py           # FastAPI app, lifespan, CORS, request-ID middleware
+    jobs.py           # SQLite write-through job store (data/jobs.db)
+    routes.py         # Thin aggregator — includes all routers
+    routers/          # 11 domain routers
+    task_modules/     # Async task functions (run in ThreadPoolExecutor)
+    schemas.py        # Pydantic request/response models
+  core/
+    dj_engine.py      # THE transition renderer — beat-grid lock, stem crossfade, EQ fade
+    dj_analysis.py    # SongStructure analysis, transition planning, bar-grid snapping
+    mastering.py      # ITU-R BS.1770-4 LUFS + true-peak limiter
+    beat_synth.py     # Procedural bridge beats (6 genre presets)
+    stems.py          # Demucs stem separation wrapper
+    beat_tracker.py   # BeatTracker protocol (librosa / BeatThis backends)
+    key_detection.py  # Camelot wheel, TIV scoring, pitch shift, consonance
+    music_index.py    # 35-D numpy embedding index (JSON-persisted)
+    crate_digger.py   # CLAP 512-D semantic search (lazy singleton)
+    energy_profiler.py # Essentia/numpy arousal/valence features
+    cue_export.py     # Rekordbox XML + Serato GEOB marker export
+    setlist_planner.py # Weighted greedy optimizer (Camelot, BPM, energy arc)
+    config.py         # YAML config loader (config.yaml → config.local.yaml → env)
+    paths.py          # Canonical path constants (outputs/, models/, data/)
+
 frontend/src/
-├── pages/                   # 8 pages: MissionControl, LibraryAtlas, MixDeck,
-│                            #   SetBuilder, SignalSearch, AILab, MixVault, Operations
-├── shell/                   # AppShell (3-zone grid), LeftRail, RightInspector
-├── stores/appStore.ts       # Zustand: nav, health, live jobs, activity log
-├── lib/api.ts               # Thin fetch wrapper for all API namespaces
-├── hooks/useSSE.ts          # SSE connection + job store hydration
-├── types/index.ts           # TypeScript types mirroring FastAPI schemas
-└── styles/tokens.css        # Full design token system (colors, spacing, type, radius)
+  pages/              # 9 pages (MissionControl, LibraryAtlas, MixDeck, SetBuilder,
+                      #   SignalSearch, AILab, MixVault, Operations, Widget)
+  shell/              # AppShell (3-zone grid), LeftRail, RightInspector
+  stores/appStore.ts  # Zustand store
+  lib/api.ts          # Thin fetch wrapper for all API namespaces
+  hooks/useSSE.ts     # SSE connection + job store hydration
+  types/index.ts      # TS types mirroring FastAPI schemas
+  styles/tokens.css   # Design tokens (no Tailwind)
+
+ai_remixmate_feature_lab/  # Sandboxed feature development area (see its AGENTS.md)
 ```
 
-## Key design decisions
+Runtime layout (gitignored): `library/` (songs), `outputs/` (renders), `data/` (DB, embeddings), `models/` (Demucs weights).
 
-**Beat-grid lock** — `dj_engine.py` computes bar-grid phases at cue points and applies a sample-level correction (clamped to ±half a bar). Entry sample index compensates for the stretch ratio: `entry_sample_b = int(entry_time_b * sr / stretch_ratio)`.
+## Key gotchas
 
-**Stem crossfade** — When Demucs stems exist, each stem fades on its own envelope. Drums/bass from Song B come in early. Vocals are delayed. This is what makes outputs sound intentional vs. automated.
+- **uvicorn hot-reload**: `start.sh` restricts `--reload-dir` to `scripts/` only. If you widen it to the project root, downloads/remixes write to `library/`, `outputs/`, `data/` and uvicorn restarts mid-job, killing the ThreadPoolExecutor worker. This causes "stuck at 90%" jobs.
 
-**Dynamic EQ** — Low-shelf filter pulls Song A's bass as Song B's rises. Prevents bass-clash from dual-track playback.
+- **Thread pool I/O**: `job_store.submit_job()` runs tasks in a `ThreadPoolExecutor`. Don't do async I/O inside task functions — use `asyncio.run()` if you need it.
 
-**Embedding index** — 35-dimensional numpy vectors (BPM, key, energy, spectral features). JSON-persisted, no external vector DB. `/library/similar/{name}` returns k nearest neighbours.
+- **Job progress normalization**: SSE frames use 0–100. REST `/jobs` returns 0–1. `normalizeJob()` in `api.ts` handles the conversion.
 
-**Job store** — SQLite write-through with in-memory dict for O(1) reads. Jobs recorded as RUNNING at process start are rolled back to FAILED on restart. Cancel via `DELETE /jobs/{id}`.
+- **Logger API**: `StructuredLogger.warning(msg, extra_dict=None)`, NOT `warning(msg, *args)`. Passing an exception as a positional arg crashes at `for key in extra:`.
 
-**SSE** — `GET /events/stream` pushes heartbeat, job_created, job_updated, job_completed, job_failed, library_changed. Frontend falls back to polling when SSE disconnects.
+- **SSE from worker threads**: Capture the event loop in `lifespan` with `asyncio.get_running_loop()`. Never call `asyncio.get_event_loop()` from a worker — Python 3.12 raises `RuntimeError`.
 
-## Running locally
+- **Camelot semitone table**: Canonical source is `CAMELOT` + `NOTE_NAMES` in `key_detection.py`. Don't maintain a separate inline dict — it will drift and produce wrong pitch shifts.
 
-```bash
-./start.sh               # install deps + start FastAPI (8000) + React (5173)
-./start.sh --skip-setup  # skip pip/npm install on fast restarts
-./start.sh api           # API only (for GitHub Pages widget mode)
-```
+- **JobResponse.status**: REST and SSE emit uppercase (`PENDING | RUNNING | COMPLETED | FAILED | CANCELLED`). Internal `JobStatus` enum uses lowercase. `_norm_status()` bridges them.
 
-React UI:    http://localhost:5173  
-API docs:    http://localhost:8000/docs  
-SSE stream:  http://localhost:8000/events/stream
+- **Config priority**: `config.yaml` → `config.local.yaml` (gitignored) → env vars `REMIXMATE_<SECTION>_<KEY>`.
 
-```bash
-docker compose up        # containerized (GPU not forwarded by default)
-```
+- **favoritesApi shape**: `GET /favorites` returns `{songs: string[], count: number}`, not a plain array. Frontend must unwrap `.songs`.
 
-Config override: copy `config.yaml` → `config.local.yaml` and edit. Env vars override both: `REMIXMATE_<SECTION>_<KEY>`.
+- **CLAP auto-download**: `_load_clap_model()` auto-downloads ~300 MB to `~/.cache/` on first call (30–60 s). Set `models.clap_model` in config to a local path to avoid re-downloading.
 
-## API surface
+- **Serato GEOB**: Requires `.mp3` source. Raises `ValueError` for WAV/FLAC. Use rekordbox XML for non-MP3 tracks.
 
-| Namespace | Key endpoints |
+- **Behavioral tests**: `tests/test_behavioral.py` (36 tests) assert *what you hear*, not just dtype/shape. They are the regression guard for correctness fixes. Don't remove them.
+
+## Testing marks
+
+| Mark | Meaning |
 |---|---|
-| Health | `GET /health/live`, `/health/ready` |
-| Library | `GET /library`, `GET /library/{name}`, `DELETE /library/{name}`, `POST /library/init` |
-| Downloads | `POST /download`, `/download-playlist`, `/spotify/import` |
-| Stems | `POST /stems/split`, `/stems/split-batch` |
-| Analysis | `POST /analyze`, `/compatibility`, `GET /recommend/{name}`, `/library/similar/{name}` |
-| Remix | `POST /dj-remix`, `/dj-remix/preview`, `/dj-chain` |
-| AI | `POST /ai/style-transfer`, `/ai/inpaint`, `/ai/tokenize`, `GET /ai/models` |
-| Jobs | `GET /jobs`, `GET /jobs/{id}`, `DELETE /jobs/{id}` (cancel) |
-| Crates | Full CRUD on `/crates`, `/crates/{id}/songs` |
-| Tags | `/library/{name}/tags`, `/tags` |
-| Favorites | `/favorites`, `/favorites/{name}` |
+| `dj_analysis` | Requires librosa/numba (auto-skipped when probe fails) |
+| `integration` | Spins up full FastAPI TestClient |
 
-All mutating endpoints return `{ job_id: string }` (202 Accepted). Poll `/jobs/{id}` or subscribe to SSE for updates.
+## API pattern
 
-## Frontend pages
+All mutating endpoints return `{ job_id: string }` (202 Accepted). Poll `/jobs/{id}` or subscribe to SSE for updates. Job store is SQLite write-through with in-memory dict for O(1) reads. Jobs recorded as RUNNING at process start are rolled back to FAILED on restart. Cancel via `DELETE /jobs/{id}`.
 
-| Page | Route | Status |
-|---|---|---|
-| Mission Control | `/mission-control` | ✅ Full — stats, live jobs, quick actions |
-| Library Atlas | `/library-atlas` | ✅ Full — sortable table, search, filters, favorites |
-| Mix Deck | `/mix-deck` | ✅ Full — dual deck, compat score, preview + remix |
-| Set Builder | `/set-builder` | ✅ Full — pool, ordered set, energy arc, chain remix |
-| Signal Search | `/signal-search` | ✅ Full — similarity search, score rings, breakdown |
-| AI Lab | `/ai-lab` | ✅ Full — style transfer, inpaint, tokenize |
-| Mix Vault | `/mix-vault` | ✅ Full — audio player, download, metadata |
-| Operations | `/operations` | ✅ Full — single/batch/playlist downloads |
-| DJ Widget | `/widget` | ✅ Floating PiP window for live mixing |
+## Frontend pattern
 
-## Design system
-
-All tokens in `frontend/src/styles/tokens.css`. Key values:
-
-- **Accents**: amber (`--color-amber-500: #f59e0b`), ice (`--color-ice-400: #38bdf8`), green (`--color-green-500: #34d399`), crimson (`--color-crimson-500: #f87171`), violet (`--color-violet-400: #a78bfa`)
-- **Surfaces**: void `#05050a` → base `#09090b` → surface `#111113` → elevated `#18181b` → overlay `#1c1c20`
-- **Fonts**: Space Grotesk (display), Inter (UI), JetBrains Mono (mono)
-- **Shell**: 64px left rail + variable right inspector (316px) + canvas
-
-New pages follow the `PageBase.css` layout pattern (`page-base` → `page-base__header` → `page-base__body`). Each page gets its own CSS file. No Tailwind.
-
-## Testing
-
-```bash
-pytest                          # all tests
-pytest -m "not dj_analysis"     # skip librosa-dependent tests
-pytest tests/test_core_modules.py
-bash tests/smoke_e2e.sh         # live smoke test (API must be running)
-```
-
-Tests requiring librosa are marked `@pytest.mark.dj_analysis` and auto-skipped if librosa fails to initialize (numba cache issues on some machines).
-
-## Common tasks
-
-**Add a new API endpoint:**
-1. Add route to the appropriate router in `scripts/api/routers/`
-2. Add task function to `scripts/api/task_modules/` if async work is needed
-3. Create a job via `job_store.create_job()` + `job_store.submit_job()`
-4. Add the API client call to `frontend/src/lib/api.ts`
-
-**Add a new frontend page:**
+New pages:
 1. Create `src/pages/MyPage.tsx` + `src/pages/MyPage.css`
-2. Add a `NavItem` entry to `shell/LeftRail.tsx`
-3. Add a `NavDestination` union type in `src/types/index.ts`
-4. Add a `<Route>` in `shell/AppShell.tsx`
+2. Add `NavItem` to `shell/LeftRail.tsx`
+3. Add `NavDestination` union type to `src/types/index.ts`
+4. Add `<Route>` in `shell/AppShell.tsx`
 
-**Run a one-off analysis:**
-```python
-from scripts.core.dj_analysis import analyze_structure
-structure = analyze_structure("path/to/song.mp3")
-```
+Follow `PageBase.css` layout (`page-base` → `page-base__header` → `page-base__body`). Each page gets its own CSS file.
 
-**Check job queue:**
-```bash
-curl http://localhost:8000/jobs | python3 -m json.tool
-```
+## Feature lab
 
-## Gotchas
+`ai_remixmate_feature_lab/` has its own `AGENTS.md` with strict scope rules. Work inside it must not touch root repo files. Do not run package managers from the repository root.
 
-- `job_store.submit_job()` runs the task in a `ThreadPoolExecutor`. Don't do async I/O inside task functions — use `asyncio.run()` if you need it.
-- The embedding index is rebuilt via `POST /index/rebuild`. It must be current before `/library/similar` returns meaningful results.
-- Demucs runs on CPU by default. Set `separation.device: mps` in config for Apple Silicon. Full stem separation takes 2–5× real time on CPU.
-- `config.local.yaml` is gitignored. Never commit API keys to `config.yaml`.
-- The React Vite proxy rewrites `/api/*` → `http://localhost:8000/*` in dev. In production (GitHub Pages), set `VITE_API_BASE=http://localhost:8000`.
-- Job progress is 0–100 in SSE frames and in the normalized frontend `Job` type. The REST `/jobs` endpoint returns 0–1 — `normalizeJob()` in `api.ts` handles the conversion.
+## GitHub Pages
+
+Frontend deploys to GitHub Pages and talks to your locally running backend. Enable: repo Settings → Pages → Source: "GitHub Actions". The `pages.yml` workflow builds and deploys on push to `main`. Set `VITE_API_BASE=http://localhost:8000` in production.

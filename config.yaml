@@ -81,7 +81,8 @@ api:                           # FastAPI backend (Phase 1)
   workers: 1
   reload: false                # set true in dev
   cors_origins:
-    - "*"                      # tighten this in production
+    - "http://localhost:5173"  # React dev server
+    - "http://localhost:3000"  # alternate dev port
 
 # ---------------------------------------------------------------------------
 generative:                    # AI Studio — generative model configuration

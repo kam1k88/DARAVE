@@ -63,6 +63,7 @@ def _song_info(song_dir: Path) -> SongInfo:
 
     analyzed = _has_analysis(song_dir)
     bpm = key = mode = camelot = genre = duration = energy = None
+    tempo_type = el = drops = breakdowns = None
     if analyzed:
         try:
             import json
@@ -73,6 +74,8 @@ def _song_info(song_dir: Path) -> SongInfo:
             camelot  = meta.get("camelot")
             genre    = meta.get("genre")
             energy   = meta.get("energy_mean")  # 0-1 already, matches frontend's expected scale
+            tempo_type = meta.get("tempo_type")  # "half-time" | "full-time" | "downtempo" | "other"
+            el       = meta.get("el")            # Energy Level 1-5
         except Exception:
             pass
         # duration isn't persisted to meta.json (only bpm/key/genre/etc are) —
@@ -81,6 +84,10 @@ def _song_info(song_dir: Path) -> SongInfo:
             import json
             analysis_doc = json.loads((song_dir / "analysis.json").read_text())
             duration = analysis_doc.get("duration")
+            # Count drops and breakdowns from sections
+            sections = analysis_doc.get("sections", [])
+            drops = sum(1 for s in sections if s.get("type") == "drop")
+            breakdowns = sum(1 for s in sections if s.get("type") in ("break", "build"))
         except Exception:
             pass
 
@@ -101,6 +108,10 @@ def _song_info(song_dir: Path) -> SongInfo:
         duration=duration,
         license_type=license_type,
         source=source,
+        tempo_type=tempo_type,
+        el=el,
+        drops=drops,
+        breakdowns=breakdowns,
     )
 
 

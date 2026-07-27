@@ -6,6 +6,8 @@ task_dj_chain          — render an N-song continuous DJ mix
 task_remix_preview     — render only the transition window for fast audition
 """
 
+import logging
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -21,6 +23,21 @@ from scripts.core.dj_engine import _analyze_impl, plan_transition, DJEngine
 from scripts.core.genre import auto_preset
 from scripts.core.paths import OUTPUTS_DIR, song_dir
 
+log = logging.getLogger(__name__)
+
+
+def _wav_to_mp3(wav_path: Path, mp3_path: Path, bitrate: str = "192k") -> bool:
+    """Convert WAV to MP3 via ffmpeg. Returns True on success."""
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(wav_path), "-codec:a", "libmp3lame", "-b:a", bitrate, str(mp3_path)],
+            check=True, capture_output=True, timeout=60,
+        )
+        return mp3_path.exists()
+    except Exception as e:
+        log.warning("MP3 conversion failed: %s", e)
+        return False
+
 
 def task_dj_remix(
     job_id: str,
@@ -33,6 +50,9 @@ def task_dj_remix(
     bridge_beat_intensity: float = 0.38,
     bridge_beat_path: Optional[str] = None,
     transition_effect: str = "auto",
+    target_lufs: float = -8.0,
+    eq_strategy: str = "auto",
+    crossfade_type: str = "auto",
 ) -> Dict[str, Any]:
     log_audit("dj_remix_start", resource=f"{song_a} → {song_b}", job_id=job_id,
               metadata={"transition_bars": transition_bars, "preset": preset, "effect": transition_effect})
@@ -118,6 +138,7 @@ def task_dj_remix(
             bridge_beat=bridge_audio,
             bridge_gain=bridge_beat_intensity,
             transition_effect=transition_effect,
+            crossfade_type=crossfade_type,
         )
     else:
         mix = engine.render(
@@ -126,12 +147,13 @@ def task_dj_remix(
             bridge_beat=bridge_audio,
             bridge_gain=bridge_beat_intensity,
             transition_effect=transition_effect,
+            crossfade_type=crossfade_type,
         )
 
     update_job(job_id, progress=0.80, message="Mastering output…")
 
     from scripts.core.mastering import master_mix
-    mix_mastered, quality_report = master_mix(mix, sr=sr, target_lufs=-8.0)   # DJ mix target
+    mix_mastered, quality_report = master_mix(mix, sr=sr, target_lufs=target_lufs)
 
     update_job(job_id, progress=0.90, message="Saving output…")
 
@@ -141,6 +163,11 @@ def task_dj_remix(
     out_path = out_dir / f"dj_{song_a[:20]}_{song_b[:20]}.wav"
 
     sf.write(str(out_path), mix_mastered, sr, subtype="PCM_24")
+
+    # Also create MP3 for lightweight streaming (keep WAV for master quality)
+    mp3_path = out_dir / f"{out_path.stem}.mp3"
+    mp3_ok = _wav_to_mp3(out_path, mp3_path, bitrate="320k")
+    stream_name = mp3_path.name if mp3_ok else out_path.name
 
     # Compute AI transition score if music intelligence features are available
     ts_data: dict = {}
@@ -169,7 +196,7 @@ def task_dj_remix(
         # Browser-playable URL — served by GET /outputs/{session_id}/{filename}.
         # NOTE: out_dir is named "dj_{session_id}", not bare session_id, so the
         # path segment here must match out_dir.name, not the raw session_id.
-        "stream_url":        f"/outputs/{out_dir.name}/{out_path.name}",
+        "stream_url":        f"/outputs/{out_dir.name}/{stream_name}",
         "song_a":            song_a,
         "song_b":            song_b,
         "bpm_a":             round(plan.bpm_a, 1),
@@ -204,6 +231,10 @@ def task_dj_chain(
     bridge_beat_intensity: float = 0.38,
     bridge_beat_path: Optional[str] = None,
     transition_effect: str = "auto",
+    smart_transitions: bool = True,
+    target_lufs: float = -8.0,
+    eq_strategy: str = "auto",
+    crossfade_type: str = "auto",
 ) -> Dict[str, Any]:
     """Render a continuous N-song DJ mix chain."""
     n = len(songs)
@@ -236,17 +267,37 @@ def task_dj_chain(
         plans.append(plan_transition(structures[i], structures[i + 1],
                                      transition_bars=transition_bars))
 
+    # ── Smart transition intel ───────────────────────────────────────────
+    intel = None
+    if smart_transitions:
+        from scripts.core.transition_intel import analyze_transition_pair
+        intel = []
+        for i in range(n - 1):
+            rec = analyze_transition_pair(structures[i], structures[i + 1])
+            intel.append(rec)
+            log.info(
+                "Chain intel [%d->%d]: %s %s bars=%d confidence=%.2f — %s",
+                i + 1, i + 2, rec.technique, rec.effect,
+                rec.transition_bars, rec.confidence, rec.reason[:60],
+            )
+
     # ── Bridge beats (one per transition) ───────────────────────────────
     bridge_audios: list = []
     for i, plan in enumerate(plans):
         bb = None
-        if bridge_beat_mode == "auto":
+        _rec = intel[i] if intel and i < len(intel) else None
+        # Auto-generate bridge beat if intel recommends it
+        _need_bridge = bridge_beat_mode == "auto" or (_rec and _rec.bridge_beat and bridge_beat_mode != "none")
+        if _need_bridge:
             try:
                 from scripts.core.beat_synth import render_beat
+                _genre = bridge_beat_genre
+                if _rec and _rec.bridge_beat and bridge_beat_genre == "auto":
+                    _genre = preset if preset != "auto" else "dnb"
                 bb = render_beat(
                     bpm=plan.bpm_a,
-                    genre=bridge_beat_genre,
-                    bars=max(4, transition_bars),
+                    genre=_genre,
+                    bars=max(4, _rec.transition_bars if _rec else transition_bars),
                     sr=sr,
                     intensity=bridge_beat_intensity,
                     build_up=True,
@@ -269,12 +320,14 @@ def task_dj_chain(
         bridge_beats=bridge_audios,
         bridge_gain=bridge_beat_intensity,
         transition_effect=transition_effect,
+        transition_intel=intel,
+        structures=structures,
     )
 
     update_job(job_id, progress=0.85, message="Mastering chain mix…")
 
     from scripts.core.mastering import master_mix as _master_mix
-    mix_mastered, quality_report = _master_mix(mix, sr=sr, target_lufs=-8.0)
+    mix_mastered, quality_report = _master_mix(mix, sr=sr, target_lufs=target_lufs)
 
     update_job(job_id, progress=0.92, message="Saving output…")
 
@@ -285,6 +338,11 @@ def task_dj_chain(
     out_path   = out_dir / f"chain_{chain_label}.wav"
 
     sf.write(str(out_path), mix_mastered, sr, subtype="PCM_24")
+
+    # Also create MP3 for lightweight streaming
+    mp3_path = out_dir / f"{out_path.stem}.mp3"
+    mp3_ok = _wav_to_mp3(out_path, mp3_path, bitrate="320k")
+    stream_name = mp3_path.name if mp3_ok else out_path.name
 
     # Per-transition summary (include harmonic scores + key data)
     transitions = []
@@ -299,6 +357,15 @@ def task_dj_chain(
             "tempo_ratio":      round(plan.tempo_shift_ratio, 4),
             "harmonic_score":   round(plan.harmonic_score, 3) if plan.harmonic_score >= 0 else None,
         }
+        _rec = intel[i] if intel and i < len(intel) else None
+        if _rec:
+            tr["technique"] = _rec.technique
+            tr["effect"] = _rec.effect
+            tr["confidence"] = round(_rec.confidence, 2)
+            tr["reason"] = _rec.reason
+            tr["crossfade_type"] = _rec.crossfade_type
+            tr["energy_delta"] = _rec.energy_delta
+            tr["bridge_beat"] = _rec.bridge_beat
         if i < len(structures) and structures[i].camelot:
             tr["camelot_from"] = structures[i].camelot
             tr["key_from"] = f"{structures[i].key_name} {structures[i].mode}".strip()
@@ -315,7 +382,7 @@ def task_dj_chain(
         "session_id":      session_id,
         # Browser-playable URL — out_dir is "chain_{session_id}", so the path
         # segment must match out_dir.name, not the raw session_id.
-        "stream_url":      f"/outputs/{out_dir.name}/{out_path.name}",
+        "stream_url":      f"/outputs/{out_dir.name}/{stream_name}",
         "songs":           songs,
         "n_songs":         n,
         "n_transitions":   n - 1,
@@ -391,14 +458,21 @@ def task_remix_preview(
     out_path = out_dir / "preview.wav"
     sf.write(str(out_path), preview_audio, sr, subtype="PCM_16")
 
+    # Convert to MP3 for lightweight streaming
+    mp3_path = out_dir / "preview.mp3"
+    mp3_ok = _wav_to_mp3(out_path, mp3_path)
+    if mp3_ok:
+        out_path = mp3_path  # serve MP3 instead of WAV
+
     duration_sec = round(len(preview_audio) / sr, 1)
     log_audit("remix_preview_complete", resource=str(out_path), job_id=job_id,
               metadata={"duration_sec": duration_sec, "transition_bars": transition_bars})
 
+    stream_filename = out_path.name
     return {
         "output":         str(out_path),
         "session_id":     session_id,
-        "filename":       "preview.wav",
+        "filename":       stream_filename,
         "song_a":         song_a,
         "song_b":         song_b,
         "transition_bars": plan.transition_bars,
@@ -406,11 +480,10 @@ def task_remix_preview(
         "bpm_a":          round(struct_a.bpm, 1),
         "bpm_b":          round(struct_b.bpm, 1),
         "harmonic_score": round(plan.harmonic_score, 3) if plan.harmonic_score >= 0 else None,
-        # Explainability — tell the user what was detected and why this transition point
         "exit_bar_a":     plan.exit_bar_a,
         "entry_bar_b":    plan.entry_bar_b,
         "camelot_a":      struct_a.camelot if hasattr(struct_a, "camelot") else None,
         "camelot_b":      struct_b.camelot if hasattr(struct_b, "camelot") else None,
         "tempo_ratio":    round(plan.tempo_shift_ratio, 4),
-        "stream_url":     f"/outputs/{session_id}/preview.wav",
+        "stream_url":     f"/outputs/{session_id}/{stream_filename}",
     }

@@ -21,6 +21,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAppStore, selectActiveJobs, selectRecentJobs } from '@/stores/appStore'
 import { healthApi, jobsApi, libraryApi } from '@/lib/api'
+import { useTranslation } from '@/i18n'
 import type { Job } from '@/types'
 import './MissionControl.css'
 
@@ -198,9 +199,10 @@ function HeartbeatWidget() {
       uptimeSeconds: s.uptimeSeconds,
     })),
   )
+  const { t } = useTranslation()
 
   function formatUptime(s: number): string {
-    if (s === 0) return 'unknown'
+    if (s === 0) return t('mc.unknown')
     const h = Math.floor(s / 3600)
     const m = Math.floor((s % 3600) / 60)
     return h > 0 ? `${h}h ${m}m` : `${m}m`
@@ -216,11 +218,11 @@ function HeartbeatWidget() {
       </div>
       <div className="mc-heartbeat__info">
         <span className="mc-heartbeat__status font-display">
-          {healthy ? 'System Online' : apiHealth === 'degraded' ? 'Degraded' : 'Offline'}
+          {healthy ? t('mc.systemOnline') : apiHealth === 'degraded' ? t('mc.degraded') : t('mc.offline')}
         </span>
         <span className="mc-heartbeat__sub text-muted">
-          {sseConnected ? 'Live stream · ' : 'Polling · '}
-          uptime {formatUptime(uptimeSeconds)}
+          {sseConnected ? t('inspector.connected') + ' · ' : t('inspector.off') + ' · '}
+          {t('inspector.uptime')} {formatUptime(uptimeSeconds)}
         </span>
       </div>
     </div>
@@ -233,7 +235,12 @@ export default function MissionControl() {
   const navigate = useNavigate()
   const activeJobs      = useAppStore(useShallow(selectActiveJobs))
   const recentJobs      = useAppStore(useShallow(selectRecentJobs))
-  const completionLog   = useAppStore((s) => s.completionLog)
+  const completionTimestamps = useAppStore(useShallow((s) =>
+    Object.values(s.jobs)
+      .filter((j) => j.status === 'COMPLETED' && new Date(j.created_at).getTime() >= s.sessionStartedAt)
+      .map((j) => new Date(j.updated_at).getTime()),
+  ))
+  const { t } = useTranslation()
 
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['health'],
@@ -267,9 +274,9 @@ export default function MissionControl() {
       {/* Page header */}
       <header className="mc-header">
         <div>
-          <h1 className="mc-header__title font-display">Mission Control</h1>
+          <h1 className="mc-header__title font-display">{t('mc.title')}</h1>
           <p className="mc-header__sub text-muted">
-            System health · Active pipeline · Quick actions
+            {t('mc.subtitle')}
           </p>
         </div>
         <HeartbeatWidget />
@@ -278,28 +285,28 @@ export default function MissionControl() {
       <div className="mc-body">
         {/* Stats row */}
         <section className="mc-section">
-          <h2 className="mc-section__label">Overview</h2>
+          <h2 className="mc-section__label">{t('mc.overview')}</h2>
           <div className="mc-stats-grid">
             <StatCard
-              label="Library"
+              label={t('mc.library')}
               value={statsLoading ? '—' : songCount}
-              sub="songs indexed"
+              sub={t('mc.songsIndexed')}
               accent="ice"
               icon={Music2}
               loading={statsLoading}
               onClick={() => navigate('/library-atlas')}
             />
             <StatCard
-              label="Active Jobs"
+              label={t('mc.activeJobs')}
               value={activeJobs.length}
-              sub={activeJobs.length > 0 ? 'processing now' : 'all clear'}
+              sub={activeJobs.length > 0 ? t('mc.processingNow') : t('mc.allClear')}
               accent={activeJobs.length > 0 ? 'amber' : 'green'}
               icon={Zap}
             />
             <StatCard
-              label="API"
-              value={health?.status ?? (healthLoading ? '…' : 'unknown')}
-              sub="backend status"
+              label={t('mc.api')}
+              value={health?.status ?? (healthLoading ? '…' : t('mc.unknown'))}
+              sub={t('mc.backendStatus')}
               accent={health?.status === 'ok' ? 'green' : 'crimson'}
               icon={Cpu}
               loading={healthLoading}
@@ -310,13 +317,13 @@ export default function MissionControl() {
                 <GitBranch size={14} strokeWidth={1.5} />
               </div>
               <div className="mc-stat-card__body">
-                <span className="mc-stat-card__label">Completions</span>
+                <span className="mc-stat-card__label">{t('mc.completions')}</span>
                 <span className="mc-stat-card__value font-display" style={{ fontSize: 'var(--text-lg)' }}>
-                  {completionLog.length}
+                  {completionTimestamps.length}
                 </span>
-                <span className="mc-stat-card__sub">last 60 min</span>
+                <span className="mc-stat-card__sub">{t('mc.last60min')}</span>
                 <div style={{ marginTop: 'var(--space-1)' }}>
-                  <Sparkline timestamps={completionLog} />
+                  <Sparkline timestamps={completionTimestamps} />
                 </div>
               </div>
             </div>
@@ -329,19 +336,19 @@ export default function MissionControl() {
             <div className="mc-section__header">
               <h2 className="mc-section__label">
                 <Clock size={12} style={{ display: 'inline', marginRight: 6 }} />
-                Recent Jobs
+                {t('mc.recentJobs')}
               </h2>
               <button
                 className="mc-section__action text-muted"
                 onClick={() => navigate('/operations')}
               >
-                View all
+                {t('mc.viewAll')}
               </button>
             </div>
             <div className="mc-jobs-list">
               {recentJobs.length === 0 ? (
                 <div className="mc-empty">
-                  <span className="text-muted">No jobs yet — start a mix or download</span>
+                  <span className="text-muted">{t('mc.noJobs')}</span>
                 </div>
               ) : (
                 recentJobs.slice(0, 8).map((job) => <JobRow key={job.job_id} job={job} />)
@@ -351,32 +358,32 @@ export default function MissionControl() {
 
           {/* Quick actions */}
           <section className="mc-section mc-section--actions">
-            <h2 className="mc-section__label">Quick Actions</h2>
+            <h2 className="mc-section__label">{t('mc.quickActions')}</h2>
             <div className="mc-quick-actions">
               <QuickAction
-                label="Mix two tracks"
-                description="DJ-style crossfade with harmonic matching"
+                label={t('mc.mixTwo')}
+                description={t('mc.mixTwoDesc')}
                 icon={Zap}
                 accent="amber"
                 onClick={() => navigate('/mix-deck')}
               />
               <QuickAction
-                label="Browse Library"
-                description="Search, filter and analyse your songs"
+                label={t('mc.browseLibrary')}
+                description={t('mc.browseLibraryDesc')}
                 icon={Music2}
                 accent="ice"
                 onClick={() => navigate('/library-atlas')}
               />
               <QuickAction
-                label="AI Lab"
-                description="Style transfer, inpainting, generation"
+                label={t('mc.aiLab')}
+                description={t('mc.aiLabDesc')}
                 icon={RefreshCw}
                 accent="green"
                 onClick={() => navigate('/ai-lab')}
               />
               <QuickAction
-                label="Build a Set"
-                description="Sequence songs for a DJ set or playlist"
+                label={t('mc.buildSet')}
+                description={t('mc.buildSetDesc')}
                 icon={GitBranch}
                 accent="ice"
                 onClick={() => navigate('/set-builder')}

@@ -56,8 +56,12 @@ class SongInfo(BaseModel):
     mode: Optional[str] = None
     camelot: Optional[str] = None
     energy: Optional[float] = None
-    genre: Optional[str] = None
+    genre: Optional[Any] = None   # str (old format) or dict {genres, tags, description}
     duration: Optional[float] = None
+    tempo_type: Optional[str] = None     # "half-time" | "full-time" | "downtempo" | "other"
+    el: Optional[int] = None             # Energy Level 1-5
+    drops: Optional[int] = None          # Number of drops in the track
+    breakdowns: Optional[int] = None     # Number of breakdowns in the track
 
 
 class StorageStatusResponse(BaseModel):
@@ -238,6 +242,21 @@ class DJRemixRequest(BaseModel):
         description="Effect on the outgoing track: 'auto' | 'echo' | 'filter' | 'reverb' | 'none'",
     )
 
+    # Advanced mixing controls
+    target_lufs: float = Field(
+        -8.0,
+        ge=-16.0, le=-6.0,
+        description="Target LUFS for final mastering (-8 = loud DJ mix, -14 = streaming standard)",
+    )
+    eq_strategy: str = Field(
+        "auto",
+        description="EQ strategy: 'auto' | 'default' | 'bass_heavy' | 'vocal_priority' | 'aggressive'",
+    )
+    crossfade_type: str = Field(
+        "auto",
+        description="Crossfade shape: 'auto' | 'standard' | 'extended' | 'sharp'",
+    )
+
 
 class DJChainRequest(BaseModel):
     songs: List[str] = Field(
@@ -258,6 +277,59 @@ class DJChainRequest(BaseModel):
         "auto",
         description="Effect on the outgoing track: 'auto' | 'echo' | 'filter' | 'reverb' | 'none'",
     )
+    smart_transitions: bool = Field(
+        True,
+        description="Use AI to select optimal technique per transition",
+    )
+
+    # Advanced mixing controls
+    target_lufs: float = Field(
+        -8.0,
+        ge=-16.0, le=-6.0,
+        description="Target LUFS for final mastering",
+    )
+    eq_strategy: str = Field(
+        "auto",
+        description="EQ strategy: 'auto' | 'default' | 'bass_heavy' | 'vocal_priority' | 'aggressive'",
+    )
+    crossfade_type: str = Field(
+        "auto",
+        description="Crossfade shape: 'auto' | 'standard' | 'extended' | 'sharp'",
+    )
+
+
+class TransitionIntelResponse(BaseModel):
+    """Per-transition technique recommendation."""
+    pair_index: int
+    from_song: str
+    to_song: str
+    technique: str
+    effect: str
+    transition_bars: int
+    crossfade_type: str
+    confidence: float
+    reason: str
+    energy_from: float
+    energy_to: float
+    energy_delta: float
+    bpm_from: float
+    bpm_to: float
+    camelot_from: str
+    camelot_to: str
+    bridge_beat: bool
+    key_compatible: bool
+    tempo_ratio: float
+
+
+class DJPlanResponse(BaseModel):
+    """Visual mix plan — analysis + per-transition recommendations."""
+    songs: list
+    track_order: list
+    structures: list
+    transitions: list
+    energy_arc: list
+    total_duration_sec: float
+    avg_confidence: float
 
 
 class DJPreviewRequest(BaseModel):
@@ -549,3 +621,121 @@ class ModelStatusResponse(BaseModel):
     mps_allocated_gb: float = 0.0
     max_vram_gb: float = 12.0
     models: List[ModelInfo] = []
+
+
+# ---------------------------------------------------------------------------
+# Quick Mix — DJ Techniques catalog
+# ---------------------------------------------------------------------------
+
+class TechniqueParamResponse(BaseModel):
+    """A single tunable parameter for a DJ technique."""
+    name: str
+    label: str
+    type: str                   # "int" | "float" | "select"
+    min_val: float
+    max_val: float
+    default: float
+    unit: str
+    options: List[str] = []
+
+
+class DJTechniqueResponse(BaseModel):
+    """A single DJ technique from the catalog."""
+    id: str                          # "DNB-01"
+    name: str                        # "Double Drop"
+    category: str                    # "cut" | "eq" | "filter" | etc.
+    difficulty: int                  # 1-5
+    level: str                       # "beginner" | "intermediate" | "advanced" | "experimental"
+    description: str
+    best_for: str
+    when_to_use: str
+    effects_used: List[str]
+    bpm_range: List[int]             # [160, 180]
+    key_compatibility: str
+    energy_delta: str
+    transition_bars: int
+    frequency_focus: str
+    parameters: List[TechniqueParamResponse] = []
+    steps: List[str] = []
+
+
+class DJTechniquesListResponse(BaseModel):
+    techniques: List[DJTechniqueResponse]
+    total: int
+
+
+# ---------------------------------------------------------------------------
+# Quick Mix — Pattern search
+# ---------------------------------------------------------------------------
+
+class PatternSearchRequest(BaseModel):
+    """Search library for tracks matching a technique's requirements."""
+    technique_id: str = Field(..., description="DJ technique ID (e.g. 'DNB-07')")
+    max_results: int = Field(20, ge=1, le=50)
+
+
+class PatternSearchTrack(BaseModel):
+    """One track result from pattern search."""
+    name: str
+    bpm: float
+    key: str = ""
+    mode: str = ""
+    camelot: str = ""
+    energy_mean: float = 0.5
+    has_stems: bool = False
+    score: float = 0.0
+    reasons: List[str] = []
+
+
+class PatternSearchPair(BaseModel):
+    """A pair of tracks for a technique."""
+    track_a: PatternSearchTrack
+    track_b: PatternSearchTrack
+    score: float = 0.0
+    reasons: List[str] = []
+
+
+class PatternSearchResponse(BaseModel):
+    technique_id: str
+    technique_name: str
+    tracks: List[PatternSearchTrack] = []
+    pairs: List[PatternSearchPair] = []
+
+
+# ---------------------------------------------------------------------------
+# Quick Mix — Quick preview
+# ---------------------------------------------------------------------------
+
+class QuickPreviewRequest(BaseModel):
+    """Render a fast 5-second transition preview."""
+    song_a: str = Field(..., description="First song name")
+    song_b: str = Field(..., description="Second song name")
+    technique_id: str = Field("DNB-04", description="DJ technique to apply")
+    transition_bars: int = Field(4, ge=2, le=8, description="Bars for preview (short for speed)")
+    effect: str = Field("auto", description="'auto' | 'echo' | 'filter' | 'none'")
+
+
+class QuickPreviewResponse(BaseModel):
+    """Response from a quick preview render."""
+    audio_url: str
+    duration_sec: float
+    technique_id: str
+    effect_used: str
+    song_a: str
+    song_b: str
+
+
+# ---------------------------------------------------------------------------
+# Quick Mix — Full quick mix
+# ---------------------------------------------------------------------------
+
+class QuickMixRequest(BaseModel):
+    """Render a full mix with user-selected tracks and techniques."""
+    tracks: List[str] = Field(..., min_length=2, max_length=8, description="Ordered track names")
+    technique_ids: Optional[List[Optional[str]]] = Field(
+        None,
+        description="Technique per transition (len = len(tracks)-1). None = auto."
+    )
+    transition_bars: int = Field(16, ge=8, le=32)
+    bridge_beat: bool = Field(False)
+    master: bool = Field(True, description="Apply LUFS mastering to final output")

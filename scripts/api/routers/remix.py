@@ -24,6 +24,12 @@ from scripts.api.schemas import (
     InstrumentLabRequest,
     JobResponse,
     JobType,
+    PatternSearchRequest,
+    PatternSearchResponse,
+    PatternSearchTrack,
+    PatternSearchPair,
+    QuickPreviewRequest,
+    QuickMixRequest,
 )
 from scripts.api.tasks import (
     task_dj_chain,
@@ -60,6 +66,9 @@ def dj_remix(req: DJRemixRequest, background_tasks: BackgroundTasks = None):
         bridge_beat_intensity=req.bridge_beat_intensity,
         bridge_beat_path=req.bridge_beat_path,
         transition_effect=req.transition_effect,
+        target_lufs=req.target_lufs,
+        eq_strategy=req.eq_strategy,
+        crossfade_type=req.crossfade_type,
     )
     return job_store.job_to_response(job_store.get_job(job_id))
 
@@ -136,6 +145,10 @@ def dj_chain(req: DJChainRequest, background_tasks: BackgroundTasks = None):
         bridge_beat_intensity=req.bridge_beat_intensity,
         bridge_beat_path=req.bridge_beat_path,
         transition_effect=req.transition_effect,
+        smart_transitions=req.smart_transitions,
+        target_lufs=req.target_lufs,
+        eq_strategy=req.eq_strategy,
+        crossfade_type=req.crossfade_type,
     )
     return job_store.job_to_response(job_store.get_job(job_id))
 
@@ -257,3 +270,161 @@ def instrument_lab_songs():
     from scripts.core.instrument_lab import get_songs_with_stems
     songs = get_songs_with_stems(min_stems=2)
     return {"songs": songs, "count": len(songs)}
+
+
+# ---------------------------------------------------------------------------
+# DJ Effects (list available effects)
+# ---------------------------------------------------------------------------
+
+@router.get("/effects", tags=["effects"])
+def list_effects():
+    """List all available DJ transition effects with descriptions."""
+    from scripts.core.dj_effects import EFFECTS
+    return {"effects": [{"name": k, "description": v} for k, v in EFFECTS.items()]}
+
+
+# ---------------------------------------------------------------------------
+# DJ Techniques catalog
+# ---------------------------------------------------------------------------
+
+@router.get("/techniques", tags=["techniques"])
+def list_techniques():
+    """List all 20 DJ techniques with metadata."""
+    from scripts.core.dj_techniques import list_techniques as _list
+    return {"techniques": _list(), "total": 20}
+
+
+@router.get("/techniques/{technique_id}", tags=["techniques"])
+def get_technique(technique_id: str):
+    """Get a specific DJ technique by ID (e.g. 'DNB-07')."""
+    from scripts.core.dj_techniques import get_technique as _get, list_techniques as _list
+    tech = _get(technique_id.upper())
+    if tech is None:
+        raise HTTPException(404, f"Technique '{technique_id}' not found. Use /techniques for the full list.")
+    return tech
+
+
+# ---------------------------------------------------------------------------
+# Pattern search — find tracks for a technique
+# ---------------------------------------------------------------------------
+
+@router.post("/library/pattern-search", tags=["search"])
+def pattern_search(req: PatternSearchRequest):
+    """
+    Search the library for tracks (and pairs) that match a technique's requirements.
+
+    Given a technique_id (e.g. 'DNB-07'), returns scored tracks that satisfy
+    its BPM range, key compatibility, energy, and stem requirements.
+    """
+    from scripts.core.pattern_search import search_for_technique, search_compatible_pairs
+    from scripts.core.dj_techniques import get_technique as _get
+
+    tech = _get(req.technique_id.upper())
+    if tech is None:
+        raise HTTPException(404, f"Technique '{req.technique_id}' not found")
+
+    tracks = search_for_technique(req.technique_id.upper(), max_results=req.max_results)
+    pairs = search_compatible_pairs(req.technique_id.upper(), max_results=min(10, req.max_results))
+
+    return PatternSearchResponse(
+        technique_id=tech.id,
+        technique_name=tech.name,
+        tracks=[
+            PatternSearchTrack(
+                name=m.track.name, bpm=m.track.bpm, key=m.track.key,
+                mode=m.track.mode, camelot=m.track.camelot,
+                energy_mean=m.track.energy_mean, has_stems=m.track.has_stems,
+                score=round(m.score, 3), reasons=m.reasons,
+            )
+            for m in tracks
+        ],
+        pairs=[
+            PatternSearchPair(
+                track_a=PatternSearchTrack(
+                    name=p.track_a.name, bpm=p.track_a.bpm, key=p.track_a.key,
+                    mode=p.track_a.mode, camelot=p.track_a.camelot,
+                    energy_mean=p.track_a.energy_mean, has_stems=p.track_a.has_stems,
+                ),
+                track_b=PatternSearchTrack(
+                    name=p.track_b.name, bpm=p.track_b.bpm, key=p.track_b.key,
+                    mode=p.track_b.mode, camelot=p.track_b.camelot,
+                    energy_mean=p.track_b.energy_mean, has_stems=p.track_b.has_stems,
+                ),
+                score=round(p.score, 3), reasons=p.reasons,
+            )
+            for p in pairs
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Quick Preview — fast 5-second transition preview
+# ---------------------------------------------------------------------------
+
+@router.post("/mix/quick-preview", response_model=JobResponse, status_code=202, tags=["quick-mix"])
+def quick_preview(req: QuickPreviewRequest):
+    """
+    Render a fast transition preview (~5 seconds) between two songs.
+
+    Uses a shorter transition window and skips mastering for speed.
+    Returns a streamable WAV URL once complete.
+    """
+    _check_job_cap()
+    _require_song(req.song_a)
+    _require_song(req.song_b)
+
+    job_id = job_store.create_job(
+        JobType.DJ_REMIX,
+        {"song_a": req.song_a, "song_b": req.song_b, "preview": True, "quick": True},
+    )
+    job_store.submit_job(
+        job_id,
+        task_remix_preview,
+        song_a=req.song_a,
+        song_b=req.song_b,
+        transition_bars=req.transition_bars,
+        transition_effect=req.effect,
+    )
+    return job_store.job_to_response(job_store.get_job(job_id))
+
+
+# ---------------------------------------------------------------------------
+# Quick Mix — full mix with user-selected tracks and techniques
+# ---------------------------------------------------------------------------
+
+@router.post("/mix/quick-mix", response_model=JobResponse, status_code=202, tags=["quick-mix"])
+def quick_mix(req: QuickMixRequest):
+    """
+    Render a full mix with user-selected tracks and per-transition techniques.
+
+    If technique_ids is None, uses AI auto-selection (transition_intel).
+    If technique_ids is provided, applies the specified technique per transition.
+    """
+    _check_job_cap()
+    for name in req.tracks:
+        _require_song(name)
+
+    # Pad technique_ids to match transitions count
+    n_transitions = len(req.tracks) - 1
+    techniques = req.technique_ids or [None] * n_transitions
+    if len(techniques) < n_transitions:
+        techniques.extend([None] * (n_transitions - len(techniques)))
+
+    job_id = job_store.create_job(
+        JobType.DJ_REMIX,
+        {"songs": req.tracks, "n": len(req.tracks), "techniques": techniques},
+    )
+    job_store.submit_job(
+        job_id, task_dj_chain,
+        songs=req.tracks,
+        transition_bars=req.transition_bars,
+        preset="auto",
+        bridge_beat_mode="auto" if req.bridge_beat else "none",
+        bridge_beat_genre="dnb",
+        bridge_beat_intensity=0.38,
+        bridge_beat_path=None,
+        transition_effect="auto",
+        smart_transitions=True,
+        target_lufs=req.master_target_lufs if hasattr(req, 'master_target_lufs') else -8.0,
+    )
+    return job_store.job_to_response(job_store.get_job(job_id))

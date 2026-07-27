@@ -1,21 +1,125 @@
-MIT License
+DARAVE Source-Available License (DSAL) v1.0
 
 Copyright (c) 2025 Aditya Chunduri
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. DEFINITIONS
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+   "License" shall mean the terms and conditions for use, reproduction,
+   and distribution as defined by Sections 1 through 10 of this document.
+
+   "Licensor" shall mean the copyright owner or entity authorized by the
+   copyright owner that is granting the License.
+
+   "Legal Entity" shall mean the union of the acting entity and all other
+   entities that control, are controlled by, or are under common control
+   with that entity. For the purposes of this definition, "control" means
+   (i) the power, direct or indirect, to cause the direction or management
+   of such entity, whether by contract or otherwise, or (ii) ownership
+   of fifty percent (50%) or more of the outstanding shares, or
+   (iii) beneficial ownership of such entity.
+
+   "You" (or "Your") shall mean an individual or Legal Entity exercising
+   permissions granted by this License.
+
+   "Source" form shall mean the preferred form for making modifications,
+   including but not limited to software source code, documentation source,
+   and configuration files.
+
+   "Object" form shall mean any form resulting from mechanical
+   transformation or translation of a Source form.
+
+   "Work" shall mean the work of authorship made available under this
+   License.
+
+   "Contribution" shall mean any work of authorship submitted to the
+   Licensor. "Contributor" shall mean Licensor and any Legal Entity on
+   behalf of whom a Contribution has been received by the Licensor.
+
+2. GRANT OF RIGHTS
+
+   Subject to the terms and conditions of this License, the Licensor
+   hereby grants to You a perpetual, worldwide, non-exclusive, no-charge,
+   royalty-free, irrevocable license to:
+
+   (a) use, copy, modify, and create derivative works of the Work solely
+       for personal, non-commercial purposes;
+
+   (b) run the Work for personal, non-commercial purposes;
+
+   (c) study the Work for educational and learning purposes.
+
+3. ANTI-FORK RESTRICTION
+
+   NOTWITHSTANDING ANYTHING TO THE CONTRARY IN THIS LICENSE, THE
+   FOLLOWING RESTRICTIONS APPLY:
+
+   (a) You SHALL NOT create, publish, or distribute any derivative work
+       that is substantially similar to or based primarily on this Work
+       and make it available on any code hosting platform (including but
+       not limited to GitHub, GitLab, Bitbucket, or any similar service).
+
+   (b) You SHALL NOT fork, mirror, or re-upload this repository or any
+       substantially similar copy of it to any public or private code
+       repository.
+
+   (c) You SHALL NOT distribute the Source form of the Work or any
+       derivative work in Source form to any third party.
+
+   (d) You SHALL NOT use the Licensor's name, trademarks, or project
+       names (including "DARAVE", "AI RemixMate", "RemixMate") to
+       endorse or promote any derivative work without express written
+       permission.
+
+4. COMMERCIAL USE RESTRICTION
+
+   (a) You SHALL NOT use the Work or any derivative thereof for any
+       commercial purpose, including but not limited to selling,
+       licensing, or offering as a paid service, without obtaining
+       a separate commercial license from the Licensor.
+
+   (b) "Commercial purpose" includes, but is not limited to:
+       - Offering the Work as a SaaS, PaaS, or any cloud-hosted service
+       - Incorporating the Work into a product that is sold or licensed
+       - Using the Work in a commercial consulting engagement
+       - Any revenue-generating activity that relies on the Work
+
+5. CONTRIBUTIONS
+
+   Any Contribution intentionally submitted for inclusion in the Work by
+   You to the Licensor shall be under the terms and conditions of this
+   License. You acknowledge that Contributions become part of the Work
+   and are subject to all restrictions herein.
+
+6. NO WARRANTY
+
+   THE WORK IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT
+   LIMITATION ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT,
+   MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+
+7. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE WORK OR THE USE OR
+   OTHER DEALINGS IN THE WORK.
+
+8. TERMINATION
+
+   This License and the rights granted hereunder will terminate
+   automatically if You breach any term of this License. Upon
+   termination, You must cease all use of the Work and destroy all
+   copies.
+
+9. GOVERNING LAW
+
+   This License shall be governed by and construed in accordance with
+   the laws of the United States of America.
+
+10. ENTIRE AGREEMENT
+
+    This License constitutes the entire agreement between the Licensor
+    and You regarding the Work, and supersedes all prior agreements
+    regarding its use.

@@ -181,41 +181,12 @@ def separate_song_stems(
         return StemResult(song=song_name, success=False,
                           error=f"Could not load audio: {exc}")
 
-    # ── 2. Enhancement chain ──────────────────────────────────────────────
+    # ── 2. Enhancement chain (DISABLED) ────────────────────────────────────
+    # Pre-Demucs LUFS normalization removed: tracks keep their original
+    # loudness so the DJ mix preserves dynamics.  Only final master_mix()
+    # applies LUFS normalization.
     demucs_input = wav_path
-    enhance_info: dict = {}
-
-    if enhance:
-        _prog(0.08, "Enhancing audio (HP · compress · air EQ · LUFS −14)…")
-        try:
-            from scripts.core.audio_enhance import enhance_audio, EnhanceOptions
-            opts = EnhanceOptions(
-                hp_filter      = True,
-                lp_filter      = True,
-                noise_gate     = True,
-                compression    = True,
-                air_eq         = True,
-                lufs_target    = -14.0,
-                true_peak_ceil = -1.0,
-            )
-            enh_audio, enh_report = enhance_audio(audio, sr, opts)
-            enh_path = dest_dir / "full_enhanced.wav"
-            sf.write(str(enh_path), enh_audio, sr, subtype="PCM_24")
-            demucs_input = enh_path
-            enhance_info = {
-                "lufs_before":  round(enh_report.lufs_before, 1),
-                "lufs_after":   round(enh_report.lufs_after, 1),
-                "gain_db":      round(enh_report.gain_applied_db, 1),
-                "stages":       enh_report.stages_applied,
-                "clipped":      enh_report.clipped,
-            }
-            _prog(0.18, f"Enhanced: {enhance_info['lufs_before']} → {enhance_info['lufs_after']} LUFS")
-        except Exception as exc:
-            log.warning("Enhancement failed for '%s': %s — using raw WAV", song_name, exc)
-            enhance_info = {"skipped": True, "error": str(exc)}
-            demucs_input = wav_path
-    else:
-        enhance_info = {"skipped": True}
+    enhance_info: dict = {"skipped": True, "reason": "pre-Demucs enhance disabled"}
 
     # ── 3. Demucs separation ──────────────────────────────────────────────
     python_exe = _venv_python()
@@ -297,33 +268,21 @@ def separate_song_stems(
                           enhance_info=enhance_info,
                           error="Demucs ran but produced no stem files.")
 
-    # ── 4. Per-stem LUFS normalisation ───────────────────────────────────
-    _prog(0.86, "Normalising stem levels…")
+    # ── 4. Stem info (no normalisation) ────────────────────────────────────
+    # Per-stem LUFS normalisation removed: stems keep their original
+    # loudness balance.  Only final master_mix() applies LUFS normalization.
+    _prog(0.86, "Collecting stem info…")
     stem_info: Dict[str, dict] = {}
 
-    try:
-        from scripts.core.audio_enhance import enhance_stems as _enhance_stems
-
-        stem_arrays: Dict[str, np.ndarray] = {}
-        for sname, spath in produced.items():
+    for sname, spath in produced.items():
+        try:
             arr, _ = librosa.load(str(spath), sr=sr, mono=True)
-            stem_arrays[sname] = arr
-
-        normalised = _enhance_stems(stem_arrays, sr)
-
-        for sname, arr in normalised.items():
-            out_path = produced[sname]
-            sf.write(str(out_path), arr, sr, subtype="PCM_24")
             rms_db = float(20 * np.log10(max(float(np.sqrt(np.mean(arr ** 2))), 1e-9)))
             stem_info[sname] = {
-                "path":   str(out_path),
+                "path":   str(spath),
                 "rms_db": round(rms_db, 1),
             }
-            log.info("[stems] ✓ normalised %s  rms=%.1f dB", sname, rms_db)
-
-    except Exception as exc:
-        log.warning("[stems] Stem normalisation failed: %s", exc)
-        for sname, spath in produced.items():
+        except Exception:
             stem_info[sname] = {"path": str(spath)}
 
     _prog(0.99, f"Done — {len(produced)} stems ready ✓")

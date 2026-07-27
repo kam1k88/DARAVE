@@ -112,12 +112,38 @@
   box-shadow: 0 0 8px var(--color-amber-glow-strong);
 }
 
-/* Footer: connection status */
+/* Footer: connection status + language switcher */
 .left-rail__footer {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: var(--space-2);
   padding-bottom: var(--space-2);
+}
+
+.left-rail__lang-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.left-rail__lang-btn:hover {
+  background: var(--color-surface-overlay);
+  color: var(--color-text-primary);
+  border-color: var(--color-amber-500);
+}
+
+.left-rail__lang-flag {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .left-rail__status-dot {

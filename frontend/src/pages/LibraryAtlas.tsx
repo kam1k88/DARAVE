@@ -22,7 +22,6 @@ import {
   Music2,
   Loader2,
   BarChart2,
-  Layers,
   ArrowRight,
 } from 'lucide-react'
 import { libraryApi, analysisApi, stemsApi, favoritesApi, cratesApi } from '@/lib/api'
@@ -64,14 +63,27 @@ function EnergyBar({ value }: { value?: number }) {
   )
 }
 
-function KeyBadge({ k, camelot }: { k?: string; camelot?: string }) {
-  if (!k && !camelot) return <span className="la-muted">—</span>
+function KeyBadge({ k: _k, camelot }: { k?: string; camelot?: string }) {
+  if (!camelot) return <span className="la-muted">—</span>
+  // Parse camelot: "8A" → number=8
+  const match = camelot.match(/^(\d+)([AB])$/)
+  if (!match) return <span className="la-badge la-badge--violet">{camelot}</span>
+  const num = parseInt(match[1], 10)
+  // Color by Camelot number 1-12
+  const hue = ((num - 1) / 12) * 360
+  const color = `hsl(${hue}, 70%, 55%)`
   return (
     <div className="la-key-wrap">
-      {k && <span className="la-badge la-badge--ice">{k}</span>}
-      {camelot && <span className="la-badge la-badge--violet">{camelot}</span>}
+      <span className="la-badge" style={{ background: color, color: '#fff' }}>{camelot}</span>
     </div>
   )
+}
+
+const TEMPO_LABELS: Record<string, string> = {
+  'half-time': 'HT',
+  'full-time': 'FT',
+  'downtempo': 'DT',
+  'other': '?',
 }
 
 interface SongRowProps {
@@ -91,7 +103,15 @@ interface SongRowProps {
 function SongRow({ song, isFav, expandedStems, selected, onFav, onAnalyze, onStems, onDelete, onSelect, onExpandStems, onToggleSelect }: SongRowProps) {
   const stemsExpanded = expandedStems === song.name
   return (
-    <tr className="la-row la-row--clickable" onClick={() => onSelect(song)}>
+    <tr
+      className="la-row la-row--clickable"
+      onClick={() => onSelect(song)}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', song.name)
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+    >
       <td className="la-cell" onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
@@ -112,12 +132,26 @@ function SongRow({ song, isFav, expandedStems, selected, onFav, onAnalyze, onSte
           <span className="la-name__text">{song.name}</span>
         </div>
       </td>
-      <td className="la-cell la-cell--mono">{fmt(song.bpm, 1)}</td>
+      <td className="la-cell la-cell--mono">
+        {fmt(song.bpm, 1)}
+        {song.tempo_type && (
+          <span className="la-tempo-badge" title={song.tempo_type}>
+            {TEMPO_LABELS[song.tempo_type] || song.tempo_type}
+          </span>
+        )}
+      </td>
       <td className="la-cell">
         <KeyBadge k={song.key} camelot={song.camelot} />
       </td>
       <td className="la-cell"><EnergyBar value={song.energy} /></td>
-      <td className="la-cell la-cell--mono">{fmtDuration(song.duration)}</td>
+      <td className="la-cell la-cell--mono">
+        {fmtDuration(song.duration)}
+        {(song.drops || song.breakdowns) ? (
+          <span className="la-structure-info" title={`Дропов: ${song.drops ?? 0}, Ям: ${song.breakdowns ?? 0}`}>
+            {song.drops ? `↓${song.drops}` : ''}{song.breakdowns ? ` ⤵${song.breakdowns}` : ''}
+          </span>
+        ) : null}
+      </td>
       <td className="la-cell">
         <div className="la-chips">
           {song.has_stems    && <span className="la-chip la-chip--violet">stems</span>}
@@ -259,6 +293,56 @@ function CratesSection({ song }: { song: SongInfo }) {
   )
 }
 
+// --- Library cleanup section (in drawer) ---
+
+function LibraryCleanupSection() {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ removed: string[]; kept: number } | null>(null)
+  const queryClient = useQueryClient()
+
+  async function handleCleanup() {
+    setBusy(true)
+    try {
+      const r = await libraryApi.cleanupStale()
+      setResult(r)
+      if (r.removed.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['library'] })
+      }
+    } catch {
+      // silent
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="la-drawer__section">
+      <span className="la-drawer__section-title">Анализ / классификация</span>
+      <p className="la-drawer__empty" style={{ marginBottom: 8 }}>
+        Удалить пустые записи (без аудиофайлов и стемов) из библиотеки
+      </p>
+      <button
+        className="la-drawer__deck-btn"
+        onClick={handleCleanup}
+        disabled={busy}
+        style={{ width: '100%', justifyContent: 'center' }}
+      >
+        {busy ? <Loader2 size={12} className="la-spin" /> : <Trash2 size={12} />}
+        {busy ? 'Очистка…' : 'Очистить библиотеку'}
+      </button>
+      {result && (
+        <div style={{ marginTop: 8, fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+          {result.removed.length > 0 ? (
+            <>Удалено: {result.removed.length} · Оставлено: {result.kept}</>
+          ) : (
+            <>Всё чисто · {result.kept} треков</>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SongDrawer({
   song,
   onClose,
@@ -305,7 +389,12 @@ function SongDrawer({
               {song.camelot               && <><span className="la-drawer__meta-label">Camelot</span><span className="font-mono">{song.camelot}</span></>}
               {song.energy   != null && <><span className="la-drawer__meta-label">Energy</span><span className="font-mono">{Math.round(song.energy * 100)}%</span></>}
               {song.duration != null && <><span className="la-drawer__meta-label">Duration</span><span className="font-mono">{fmtDuration(song.duration)}</span></>}
-              {song.genre                 && <><span className="la-drawer__meta-label">Genre</span><span>{song.genre}</span></>}
+              {song.genre && <><span className="la-drawer__meta-label">Жанр</span><span>
+                {typeof song.genre === 'object' && song.genre !== null
+                  ? <>{song.genre.description || song.genre.genres?.map((g: any) => g.name).join(' / ') || song.genre}</>
+                  : song.genre
+                }
+              </span></>}
             </div>
             <div className="la-chips" style={{ marginTop: 'var(--space-2)' }}>
               {song.has_stems    && <span className="la-chip la-chip--violet">stems</span>}
@@ -404,6 +493,9 @@ function SongDrawer({
 
           {/* Crates membership */}
           <CratesSection song={song} />
+
+          {/* Library cleanup */}
+          <LibraryCleanupSection />
         </div>
       )}
     </aside>
@@ -421,6 +513,8 @@ export default function LibraryAtlas() {
   const [selectedSong, setSelectedSong]   = useState<SongInfo | null>(null)
   const [expandedStems, setExpandedStems] = useState<string | null>(null)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
+  const stemModel                         = 'htdemucs'
+  const stemEnhance                       = true
   const headerCheckboxRef                 = useRef<HTMLInputElement>(null)
   const scrollRef                         = useRef<HTMLDivElement>(null)
 
@@ -516,7 +610,7 @@ export default function LibraryAtlas() {
   const handleStems = useCallback(
     async (name: string) => {
       try {
-        const res = await stemsApi.split(name)
+        const res = await stemsApi.split(name, { model: stemModel, enhance: stemEnhance })
         if (res?.job_id) {
           upsertJob({
             job_id: res.job_id, status: 'PENDING', type: 'stems',
@@ -526,7 +620,7 @@ export default function LibraryAtlas() {
         }
       } catch { /* silent */ }
     },
-    [upsertJob],
+    [upsertJob, stemModel, stemEnhance],
   )
 
   const handleDelete = useCallback(
@@ -582,24 +676,10 @@ export default function LibraryAtlas() {
     setSelected(new Set())
   }, [selected, upsertJob])
 
-  const handleBulkStems = useCallback(async () => {
+  const handleBuildSet = useCallback(() => {
     const names = Array.from(selected)
-    await Promise.allSettled(
-      names.map(async (name) => {
-        try {
-          const res = await stemsApi.split(name)
-          if (res?.job_id) {
-            upsertJob({
-              job_id: res.job_id, status: 'PENDING', type: 'stems',
-              progress: 0, message: `Splitting ${name}`,
-              created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-            })
-          }
-        } catch { /* silent */ }
-      }),
-    )
-    setSelected(new Set())
-  }, [selected, upsertJob])
+    navigate('/strategy', { state: { selectedTracks: names } })
+  }, [selected, navigate])
 
   // Songs missing BPM/key/energy — backend's has_analysis() check, mirrored
   // here from has_analysis flag on each row. Drives the "Analyze missing"
@@ -637,8 +717,8 @@ export default function LibraryAtlas() {
   const handleLoadDeck = useCallback(
     (name: string, deck: 'a' | 'b') => {
       setSelectedSong(null)
-      setActiveNav('mix-deck')
-      navigate(`/mix-deck?song_${deck}=${encodeURIComponent(name)}`)
+      setActiveNav('solo')
+      navigate(`/solo?song_${deck}=${encodeURIComponent(name)}`)
     },
     [navigate, setActiveNav],
   )
@@ -903,8 +983,8 @@ export default function LibraryAtlas() {
           <button className="la-bulk-btn" onClick={handleBulkAnalyze}>
             <BarChart2 size={12} /> Analyze
           </button>
-          <button className="la-bulk-btn" onClick={handleBulkStems}>
-            <Layers size={12} /> Split Stems
+          <button className="la-bulk-btn" onClick={handleBuildSet}>
+            <Music2 size={12} /> Собрать сет
           </button>
           <button className="la-bulk-btn la-bulk-btn--ghost" onClick={() => setSelected(new Set())}>
             Clear

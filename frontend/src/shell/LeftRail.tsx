@@ -1,24 +1,23 @@
 /* ============================================================
-   AI RemixMate — Left Navigation Rail
-   64px fixed-width column; icon + label; 8 destinations.
+   DARAVE — Left Navigation Rail
+   64px fixed-width column; icon + label; 4 destinations.
    ============================================================ */
 
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard,
   Library,
-  Sliders,
-  ListMusic,
-  Search,
-  FlaskConical,
-  Archive,
+  Headphones,
   Settings,
   Radio,
-  PictureInPicture2,
+  Map,
+  Bug,
+  Globe,
+  Folder,
   type LucideIcon,
 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/appStore'
+import { useTranslation, LANG_OPTIONS } from '@/i18n'
 import type { NavDestination } from '@/types'
 import './LeftRail.css'
 
@@ -26,74 +25,16 @@ interface NavItem {
   id: NavDestination
   path: string
   icon: LucideIcon
-  label: string
-  shortLabel: string
+  labelKey: string
+  shortKey: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'mission-control',
-    path: '/mission-control',
-    icon: LayoutDashboard,
-    label: 'Mission Control',
-    shortLabel: 'Control',
-  },
-  {
-    id: 'library-atlas',
-    path: '/library-atlas',
-    icon: Library,
-    label: 'Library Atlas',
-    shortLabel: 'Library',
-  },
-  {
-    id: 'mix-deck',
-    path: '/mix-deck',
-    icon: Sliders,
-    label: 'Mix Deck',
-    shortLabel: 'Mix',
-  },
-  {
-    id: 'set-builder',
-    path: '/set-builder',
-    icon: ListMusic,
-    label: 'Set Builder',
-    shortLabel: 'Sets',
-  },
-  {
-    id: 'signal-search',
-    path: '/signal-search',
-    icon: Search,
-    label: 'Signal Search',
-    shortLabel: 'Search',
-  },
-  {
-    id: 'ai-lab',
-    path: '/ai-lab',
-    icon: FlaskConical,
-    label: 'AI Lab',
-    shortLabel: 'AI Lab',
-  },
-  {
-    id: 'mix-vault',
-    path: '/mix-vault',
-    icon: Archive,
-    label: 'Mix Vault',
-    shortLabel: 'Vault',
-  },
-  {
-    id: 'operations',
-    path: '/operations',
-    icon: Settings,
-    label: 'Operations',
-    shortLabel: 'Ops',
-  },
-  {
-    id: 'widget',
-    path: '/widget',
-    icon: PictureInPicture2,
-    label: 'DJ Widget (floating)',
-    shortLabel: 'Widget',
-  },
+  { id: 'strategy',  path: '/strategy',  icon: Map,       labelKey: 'nav.strategy',  shortKey: 'nav.short.strategy' },
+  { id: 'library',   path: '/library',   icon: Library,    labelKey: 'nav.library',   shortKey: 'nav.short.library' },
+  { id: 'solo',      path: '/solo',      icon: Headphones,  labelKey: 'nav.solo',      shortKey: 'nav.short.solo' },
+  { id: 'outputs',   path: '/outputs',   icon: Folder,     labelKey: 'nav.outputs',   shortKey: 'nav.short.outputs' },
+  { id: 'downloads', path: '/downloads', icon: Settings,   labelKey: 'nav.import', shortKey: 'nav.short.import' },
 ]
 
 function ConnectionDot() {
@@ -103,6 +44,7 @@ function ConnectionDot() {
       sseConnected: s.sseConnected,
     })),
   )
+  const { t } = useTranslation()
 
   const cls =
     apiHealth === 'ok' && sseConnected
@@ -113,10 +55,10 @@ function ConnectionDot() {
 
   const title =
     apiHealth === 'ok' && sseConnected
-      ? 'Connected — live stream active'
+      ? t('inspector.connected') + ' — live stream active'
       : apiHealth === 'degraded'
-        ? 'Degraded — API reachable, no live stream'
-        : 'Disconnected'
+        ? t('inspector.off') + ' — API reachable, no live stream'
+        : t('inspector.off')
 
   return <span className={cls} title={title} />
 }
@@ -125,18 +67,26 @@ export function LeftRail() {
   const navigate = useNavigate()
   const location = useLocation()
   const setActiveNav = useAppStore((s) => s.setActiveNav)
+  const { lang, setLang, t } = useTranslation()
 
   function handleNav(item: NavItem) {
     setActiveNav(item.id)
     navigate(item.path)
   }
 
-  const currentPath = location.pathname.replace(/\/$/, '') || '/mission-control'
+  function cycleLang() {
+    const langs = LANG_OPTIONS.map((o) => o.value)
+    const idx = langs.indexOf(lang)
+    const next = langs[(idx + 1) % langs.length]
+    setLang(next)
+  }
+
+  const currentPath = location.pathname.replace(/\/$/, '') || '/strategy'
 
   return (
     <nav className="left-rail" aria-label="Primary navigation">
       {/* Wordmark / logo */}
-      <div className="left-rail__logo" title="AI RemixMate">
+      <div className="left-rail__logo" title="DARAVE">
         <Radio size={22} strokeWidth={1.5} className="left-rail__logo-icon" />
       </div>
 
@@ -152,12 +102,12 @@ export function LeftRail() {
               <button
                 className={`left-rail__item ${isActive ? 'left-rail__item--active' : ''}`}
                 onClick={() => handleNav(item)}
-                title={item.label}
-                aria-label={item.label}
+                title={t(item.labelKey)}
+                aria-label={t(item.labelKey)}
                 aria-current={isActive ? 'page' : undefined}
               >
                 <Icon size={18} strokeWidth={isActive ? 2 : 1.5} />
-                <span className="left-rail__item-label">{item.shortLabel}</span>
+                <span className="left-rail__item-label">{t(item.shortKey)}</span>
                 {isActive && <span className="left-rail__item-indicator" aria-hidden="true" />}
               </button>
             </li>
@@ -165,8 +115,25 @@ export function LeftRail() {
         })}
       </ul>
 
-      {/* Bottom: connection status dot */}
+      {/* Bottom: debug toggle + language + connection status */}
       <div className="left-rail__footer">
+        <button
+          className="left-rail__lang-btn"
+          onClick={cycleLang}
+          title={LANG_OPTIONS.find((o) => o.value === lang)?.label}
+          aria-label="Change language"
+        >
+          <Globe size={14} />
+          <span className="left-rail__lang-flag">{LANG_OPTIONS.find((o) => o.value === lang)?.flag}</span>
+        </button>
+        <button
+          className="left-rail__lang-btn"
+          onClick={() => useAppStore.getState().toggleInspector()}
+          title="Debug Mode"
+          aria-label="Toggle debug inspector"
+        >
+          <Bug size={14} />
+        </button>
         <div className="left-rail__status-dot">
           <ConnectionDot />
         </div>

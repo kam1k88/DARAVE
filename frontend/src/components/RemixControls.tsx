@@ -11,6 +11,9 @@ export interface RemixOptions {
   bridge_beat_mode: 'none' | 'auto'
   bridge_beat_genre: string
   bridge_beat_intensity: number
+  target_lufs: number
+  eq_strategy: string
+  crossfade_type: string
 }
 
 export const REMIX_DEFAULTS: RemixOptions = {
@@ -20,15 +23,24 @@ export const REMIX_DEFAULTS: RemixOptions = {
   bridge_beat_mode: 'none',
   bridge_beat_genre: 'auto',
   bridge_beat_intensity: 0.38,
+  target_lufs: -8,
+  eq_strategy: 'auto',
+  crossfade_type: 'auto',
 }
 
 const BAR_OPTIONS: Array<8 | 16 | 32> = [8, 16, 32]
-const PRESETS   = ['auto', 'techno', 'house', 'hiphop', 'trap', 'dnb', 'ambient']
-const EFFECTS   = ['auto', 'echo', 'filter', 'reverb', 'none']
-const GENRES    = ['auto', 'techno', 'house', 'hiphop', 'trap', 'dnb', 'ambient']
+const PRESETS       = ['auto', 'techno', 'house', 'hiphop', 'trap', 'dnb', 'ambient']
+const EFFECTS       = ['auto', 'echo', 'filter', 'reverb', 'none']
+const GENRES        = ['auto', 'techno', 'house', 'hiphop', 'trap', 'dnb', 'ambient']
+const EQ_STRATEGIES = ['auto', 'default', 'bass_heavy', 'vocal_priority', 'aggressive']
+const CROSSFADE_TYPES = ['auto', 'standard', 'extended', 'sharp']
 
 function label(s: string) {
-  return s === 'dnb' ? 'DnB' : s === 'hiphop' ? 'Hip-Hop' : s.charAt(0).toUpperCase() + s.slice(1)
+  if (s === 'dnb') return 'DnB'
+  if (s === 'hiphop') return 'Hip-Hop'
+  if (s === 'bass_heavy') return 'Bass Heavy'
+  if (s === 'vocal_priority') return 'Vocal Priority'
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 interface RemixControlsProps {
@@ -130,6 +142,52 @@ export function RemixControls({ value, onChange }: RemixControlsProps) {
           </div>
         </div>
       )}
+
+      {/* Advanced mixing controls */}
+      <div className="rc-grid rc-grid--advanced">
+        {/* Target LUFS */}
+        <div className="rc-field rc-field--wide">
+          <label className="rc-label">
+            Target LUFS — {value.target_lufs}
+          </label>
+          <input
+            type="range" min={-16} max={-6} step={1}
+            value={value.target_lufs}
+            onChange={(e) =>
+              onChange(patch(value, 'target_lufs', parseInt(e.target.value)))
+            }
+            className="rc-slider"
+          />
+          <div className="rc-slider-hints">
+            <span>quieter</span>
+            <span>louder</span>
+          </div>
+        </div>
+
+        {/* EQ Strategy */}
+        <div className="rc-field">
+          <label className="rc-label">EQ strategy</label>
+          <select
+            className="rc-select"
+            value={value.eq_strategy}
+            onChange={(e) => onChange(patch(value, 'eq_strategy', e.target.value))}
+          >
+            {EQ_STRATEGIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+          </select>
+        </div>
+
+        {/* Crossfade type */}
+        <div className="rc-field">
+          <label className="rc-label">Crossfade type</label>
+          <select
+            className="rc-select"
+            value={value.crossfade_type}
+            onChange={(e) => onChange(patch(value, 'crossfade_type', e.target.value))}
+          >
+            {CROSSFADE_TYPES.map((t) => <option key={t} value={t}>{label(t)}</option>)}
+          </select>
+        </div>
+      </div>
     </div>
   )
 }

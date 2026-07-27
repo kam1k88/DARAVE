@@ -1,0 +1,178 @@
+/* ============================================================
+   TransitionCard — per-transition visual card
+   ============================================================ */
+
+.tc-card {
+  position: relative;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 260px;
+  max-width: 320px;
+  flex-shrink: 0;
+}
+
+.tc-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tc-card__song {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.tc-card__song-idx {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-surface-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.tc-card__song-name {
+  font-size: var(--text-xs);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-card__song--to .tc-card__song-idx {
+  background: var(--color-amber-500);
+  color: var(--color-void);
+}
+
+.tc-card__arrow {
+  color: var(--color-text-faint);
+  flex-shrink: 0;
+}
+
+.tc-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid;
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  align-self: flex-start;
+}
+
+.tc-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+}
+
+.tc-card__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tc-card__stat-label {
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+
+.tc-card__stat-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-primary);
+}
+
+.tc-card__energy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-faint);
+}
+
+.tc-card__energy-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--color-surface-overlay);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tc-card__energy-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.tc-card__energy-delta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 30px;
+  text-align: right;
+}
+
+.tc-card__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tc-card__conf {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.tc-card__conf-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.tc-card__reason {
+  font-size: 10px;
+  color: var(--color-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-card__bridge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 10px;
+  color: var(--color-amber-500);
+}
+
+.tc-card__connector {
+  position: absolute;
+  bottom: -16px;
+  left: 50%;
+  width: 1px;
+  height: 16px;
+  background: var(--color-border-subtle);
+}

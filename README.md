@@ -1,94 +1,125 @@
-# AI RemixMate
 
-A real-time DJ engine that takes two songs and renders a beat-locked transition between them. BPM-matched, key-aware, stem-separated, mastered to broadcast LUFS standards. Built end-to-end in Python — analysis, mixing, the audio math, the API, the web UI, all of it.
+# DARAVE — Перевернутая парадигма DAW
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/api-FastAPI-009688) ![PyTorch](https://img.shields.io/badge/ml-PyTorch-EE4C2C) ![License](https://img.shields.io/badge/license-MIT-green)
+## 🧠 Концепция: от результата  к процессу
 
-> Personal portfolio project. Active development. The library on my machine has 681 tracks and the system handles them.
+Классические DAW работают по линейному принципу **«Сырьё → Обработка → Результат»**. 
+Продюсер берёт семплы, накладывает десятки плагинов, выстраивает сложные цепочки эффектов, тратит годы на изучение теории музыки и акустики — и только в самом конце получает готовый микс.
+
+**DARAVE ломает этот порядок.**
+
+Мы внедряем **реверсивную (обратную) парадигму**: 
+> Точкой входа становится не семпл, а готовый, финальный продукт.
+
+Вы даёте программе уже сведённый трек или эталонный микс. DARAVE выступает в роли аудио-детектива: она проводит **полноценный реверс-инжиниринг** аудиопотока, выявляет все использованные инструменты, цепочки эффектов, частотную динамику, ритмические паттерны и структурные приёмы, которые привели к такому звучанию.
+
+---
+
+## 🤖 Главная фича: Уникальный RL-агент (Reinforcement Learning Agent)
+
+Сердце DARAVE — это **самообучающийся агент с подкреплением**. Это не статичный алгоритм и не набор заранее заданных эвристик.
+
+Агент работает в связке с **Feature Store** (хранилищем аудиопризнаков) и выполняет три ключевые задачи:
+
+1. **Анализ в реальном времени** (или пакетно) — выявляет DJ-техники, микшерные приёмы, спецэффекты и структурные переходы на уровне спектра и транзиентов.
+2. **Персонализация через RLHF** — агент учится на вашей субъективной оценке. Вы ставите лайк или дизлайк предложенным паттернам, корректируете результаты, и агент пересчитывает политику (policy) своего поведения. С каждой итерацией он всё точнее понимает ваш вкус и продакшн-стиль.
+3. **Генерация миксов/сценариев** — на основе извлечённых признаков и накопленного пользовательского опыта агент автоматически строит оптимальные цепочки действий (например, предлагает конкретные комбинации плагинов, порядок обработки и точки переходов), которые приведут к созданию вашего идеального звука.
+
+---
+
+## 🔄 Как это работает (User Flow)
+
+| Шаг | Действие |
+|-----|----------|
+| **1. Загрузка** | Пользователь загружает любой готовый аудиофайл (референс, мастер-запись, собственный сведённый трек). |
+| **2. Реверс-инжиниринг** | Система разлагает аудио на сотни признаков (BPM, ключ, частотный баланс, огибающая, динамика, стерео-панорама, эффекты). Признаки сохраняются в **Feature Store** для мгновенного доступа в будущем. |
+| **3. Интерпретация агентом** | RL-агент сопоставляет извлечённую «цифровую ДНК» трека с историей ваших предыдущих оценок и предлагает интерпретацию: какие инструменты и техники были задействованы. |
+| **4. Обратная связь** | Вы оцениваете выводы агента. На основе вашей оценки агент корректирует свою внутреннюю модель (обновление Q-функции или градиента политики). |
+| **5. Создание микса** | Агент генерирует готовые рекомендации по построению вашего собственного микса или автоматически собирает новую аранжировку на основе найденных паттернов. |
+
+---
+
+## ⚡ Почему это переворот в индустрии
+
+- **Никакого порога входа** — не нужно музыкальное образование, чтобы анализировать профессионалов.
+- **Сокращение времени** — вы перестаёте гадать, какие 10 плагинов стоят в цепочке у любимого саунд-дизайнера.
+- **Постоянная адаптация** — ваш личный RL-агент становится вашим цифровым ассистентом, который идеально знает ваши предпочтения быстрее, чем вы сами.
+- **Автономность** — после достаточного обучения агент способен самостоятельно предлагать миксы без вашего участия (автономный режим).
+
+---
+
+## 🏗 Техническая архитектура (Core)
+
+- **Аудио-движок**: Работает на основе собственных алгоритмов FFT, фильтрации и детекции транзиентов (без внешних зависимостей, где это критично).
+- **Feature Store**: Векторное хранилище признаков, оптимизированное для быстрого сравнения треков и поиска аналогов.
+- **RL-алгоритм**: Гибридный подход (Deep Q-Learning + Policy Gradient), адаптированный под временные ряды аудиоданных.
+- **Интерфейс**: Интуитивно понятный дашборд, где вы видите «вскрытую» структуру трека и управляете действиями агента через простые лайки/дизлайки.
+
+---
+
+**DARAVE** — это не просто очередной плагин. Это **смена парадигмы**: 
+> Мы не учим вас пользоваться инструментами. Мы учим инструменты понимать ваши музыкальные цели через анализ того, что уже звучит великолепно.
+
+---
+
+# DARAVE
+
+**DAW paradigm in reverse.** Traditional music production takes samples, runs them through tools that require years of study, and produces a finished track. DARAVE flips this: you give it finished music, and the system decomposes, analyzes, and recombines it — learning from human judgment (RLHF) to find the right patterns.
+
+---
+
+## The paradigm shift
+
+### How it works classically
+
+```
+Samples (1, 2, or more)
+    → Human operator
+    → DAW tools (mixing, mastering, production)
+    → Music education required
+    → Finished track
+```
+
+A producer loads samples into a DAW, learns EQ, compression, sidechain, harmonic mixing, arrangement theory — then manually sculpts a finished piece. The barrier to entry is steep. The tool is passive; the intelligence is entirely human.
+
+### How DARAVE works
+
+```
+Finished track (any genre, any complexity)
+    → DARAVE analysis engine
+    → Decomposes into instruments, patterns, structure
+    → Recommends transitions, effects, arrangements
+    → Learns from human feedback (RLHF)
+    → Remix / mashup / set / mastered output
+```
+
+The user provides the **end product**. DARAVE identifies what's in it — tempo, key, energy profile, bar structure, stem separation, genre classification — and then finds the right musical patterns for transitions, sequencing, and effects. Human preference feedback (RLHF) refines the recommendations over time.
+
+No music theory prerequisite. No DAW learning curve. The intelligence is in the system.
 
 ---
 
 ## What it does
 
-Give it two tracks. It analyzes both for tempo, key, energy, and bar structure. Picks the right exit and entry cue points at musical phrase boundaries. Time-stretches Song B to match Song A's BPM through librosa's phase vocoder. Phase-locks Song B's downbeat onto Song A's bar grid at the sample level. Renders a stem-aware crossfade where drums, bass, and vocals fade independently — the way a real DJ would do it. Optionally synthesizes a bridge beat from scratch with numpy. Masters the output to ITU-R BS.1770-4 (-14 LUFS, true-peak limited).
+### Stem-aware DJ engine
 
-That's the transition engine. Wrapped around it: a full setlist planner that takes a playlist (or an Exportify CSV export from your Spotify) and figures out the best play order — harmonic transitions scored against the Camelot wheel, BPM continuity, energy arc shaping (mountain, ramp, wave), and a Markov model trained on historical setlist patterns. There's also a wordplay layer that uses Genius API to find where one song's closing lyrics share phrases with the next song's opening — the move mixtape curators actually use.
+Give it two tracks. DARAVE analyzes both for tempo, key, energy, and bar structure. Picks exit/entry cue points at musical phrase boundaries. Time-stretches to match BPM. Phase-locks the downbeat at the sample level. Renders a stem-aware crossfade — drums, bass, and vocals fade independently, the way a real DJ would do it. Optionally synthesizes bridge beats from scratch with numpy. Masters the output to ITU-R BS.1770-4 (−14 LUFS, true-peak limited).
 
-The infrastructure: FastAPI backend with an async job queue, SQLite persistence, structured JSON logging, an immutable audit trail, and a Streamlit web UI.
+### Intelligent transitions
 
----
+20 DJ techniques (Double Drop, Bass Swap, Filter Sweep, Echo Cut, EQ Roller, etc.) are selected by 8 priority rules based on BPM type, energy level, Camelot key compatibility, and energy delta. Each transition gets EQ strategy, crossfade shape, and effect recommendations.
 
-## Quick start
+### Setlist intelligence
 
-See [PREREQUISITES.md](PREREQUISITES.md) for full system requirements (Python 3.10+, Node 18+, ffmpeg).
+A weighted greedy optimizer with Camelot wheel harmony, BPM continuity, energy arc shaping, and a Markov model trained on historical setlist patterns. Wordplay layer uses Genius API to find where one song's closing lyrics share phrases with the next song's opening.
 
-```bash
-git clone https://github.com/Chunduri-Aditya/ai-remixmate.git
-cd ai-remixmate
-python -m venv remix-env && source remix-env/bin/activate   # optional but recommended
-./start.sh          # installs/updates packages + starts API + React UI
-```
+### Genre classification v2
 
-Faster restarts (skip package reinstall):
+Multi-label classification: top-5 genres with confidence scores. DnB substyles: liquid, jump_up, techstep, neurofunk, darkstep, jungle, minimal, dancefloor. Russian-language descriptions with tags. Genre data stored as `{genres, tags, description}` in meta.json.
 
-```bash
-./start.sh --skip-setup
-```
+### Music library
 
-Then open:
-- **React UI** → <http://localhost:5173>
-- **DJ Widget (floating)** → <http://localhost:5173/widget>
-- **Downloads** → <http://localhost:5173/operations>
-- **API docs** → <http://localhost:8000/docs>
-- **Legacy Streamlit UI** → `./start.sh ui` → <http://localhost:8501>
-
-Docker also works:
-```bash
-docker compose up
-```
-
-### Floating DJ widget (GitHub Pages + local API)
-
-The React frontend deploys to GitHub Pages and talks to your **locally
-running** backend — the 60 GB library never leaves your machine.
-
-```bash
-./start.sh api          # start only the API on http://localhost:8000
-```
-
-Then open <https://chunduri-aditya.github.io/ai-remixmate/widget> in
-Chrome/Edge and hit the pop-out button — the widget becomes a small
-**always-on-top floating window** (Document Picture-in-Picture) that shows
-harmonic/BPM-matched next-track recommendations while you mix. Queue tracks
-into the set list and suggestions always follow the last queued song.
-
-One-time setup: repo **Settings → Pages → Source: "GitHub Actions"**. The
-[`pages.yml`](.github/workflows/pages.yml) workflow builds and deploys the
-frontend on every push to `main`.
-
----
-
-## The parts that are actually interesting
-
-Most "AI DJ" projects do a crossfade and call it done. The thing I cared about was making mixes that don't sound automated — and that meant getting four core problems right, plus the setlist intelligence layer on top.
-
-**Beat-grid lock at the sample level.** A naive crossfade lines up two waveforms and hopes for the best. Real DJs land Song B's downbeat exactly on Song A's grid. The engine computes both bar-grid phases at the cue points and applies a sample-level correction (clamped to ±half a bar so it can't overshoot). After time-stretching, the entry sample index has to compensate for the stretch ratio:
-
-```python
-entry_sample_b = int(entry_time_b * sr / stretch_ratio)
-```
-
-Easy to get wrong. I got it wrong about six times before it locked.
-
-**Stem-aware crossfading.** When Demucs stems are available (vocals, drums, bass, other), the engine fades each one on its own envelope. Drums and bass from Song B come in earlier in the window. Vocals are delayed. This is the move that makes the output sound like a person did it.
-
-**Dynamic EQ fade.** Two tracks playing simultaneously stack low frequencies and the result sounds like mud. A low-shelf filter pulls Song A's bass down as Song B's bass rises. Solves the bass-clash problem that breaks most automated mixes.
-
-**Procedural bridge beats.** When the two songs need a connector, the engine synthesizes a drum loop from scratch in numpy — sine-envelope kick, filtered-noise snare, highpass hi-hats — across six genre presets (techno, house, hip-hop, trap, DnB, ambient). No sample files. The whole bridge volume follows a bell curve so it rises into the transition and falls out the other side. You can also export the pattern as Strudel code and tweak it live in the browser.
-
-**Setlist intelligence.** The harder problem turns out not to be the mix itself but the order. `setlist_planner.py` runs a weighted greedy optimizer (50% harmonic, 30% BPM, 20% energy arc) over a playlist, with optional Markov chain blending to add human-feel sequencing from historical DJ setlists. Camelot modulations are classified into nine named types — energy boost (+2 positions), diagonal (cross-ring ±1), relative shift (same number cross-ring), add four protocol, and so on — each with a psychoacoustic cost and a blend recommendation. The energy metric is computed locally with spectral flux + RMS rather than the Spotify audio features API, which deprecated in 2024.
-
-The mastering chain runs ITU-R BS.1770-4 LUFS measurement with K-weighting and a true-peak look-ahead limiter. -14 LUFS, broadcast standard. The output won't blow up your speakers if you crank it.
+681+ tracks in the local library. Semantic search via 35-dimensional numpy vector index. Compatibility scoring across BPM, key, energy, timbre, and vocal clash. CLAP-based 512-D semantic search. Serato/Rekordbox export.
 
 ---
 
@@ -100,33 +131,50 @@ scripts/
 │   ├── main.py             # Lifespan, CORS, request-ID middleware
 │   ├── jobs.py             # SQLite job persistence, ETA, cancel/retry
 │   ├── routers/            # /library, /download, /stems, /analyze,
-│   │                       #  /dj-remix, /spotify, /jobs, /crates,
-│   │                       #  /setlist (optimize, import-csv, camelot, wordplay)
+│   │                       #  /dj-remix, /setlist, /crates, /jobs
 │   └── task_modules/       # Long-running task functions
 │
 ├── core/                   # Audio engine — 41 modules
 │   ├── dj_engine.py        # Transition renderer (the heart)
 │   ├── dj_analysis.py      # Beat / Section / SongStructure / TransitionPlan
+│   ├── transition_intel.py # 20 DJ techniques, 8 priority rules
 │   ├── stems.py            # Demucs separation + stem-aware mixer
 │   ├── beat_synth.py       # Procedural drum synthesis + Strudel export
 │   ├── mastering.py        # ITU-R BS.1770-4 LUFS + true-peak limiter
 │   ├── key_detection.py    # Krumhansl-Schmuckler + camelot_modulation()
-│   ├── setlist_planner.py  # Greedy optimizer, Markov model, Exportify CSV parser
-│   ├── wordplay.py         # Genius API lyrics + NLTK n-gram similarity
-│   ├── gpu.py              # MPS / CUDA / CPU auto-detection
+│   ├── genre.py            # Multi-label genre classifier v2
+│   ├── setlist_planner.py  # Greedy optimizer, Markov model, Exportify CSV
 │   ├── music_index.py      # 35-dim numpy vector index for semantic search
-│   └── ...                 # genre, recommend, audit, paths, audio_enhance, ...
+│   ├── crate_digger.py     # CLAP 512-D semantic search
+│   └── ...                 # energy_profiler, cue_export, audio_enhance, ...
 │
 └── ui/
-    └── app.py              # Streamlit dashboard (primary UI)
+    └── app.py              # Streamlit dashboard
 
-frontend/                    # React + Vite + TypeScript (next-gen UI, in progress)
+frontend/                    # React + Vite + TypeScript (9 pages)
 tests/                       # pytest + librosa probe guard + e2e suite
-docs/                        # Architecture notes, DJ theory, tokenization roadmap
-archive/                     # Frozen first-generation scripts
+docs/                        # Architecture notes, DJ theory, feature gaps
 ```
 
-The runtime layout (gitignored): `library/` for downloaded songs, `outputs/` for rendered mixes, `data/` for SQLite stores and the audit log, `models/` for Demucs weights.
+Runtime layout (gitignored): `library/` for songs, `outputs/` for mixes, `data/` for SQLite/embeddings, `models/` for Demucs weights.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/Chunduri-Aditya/ai-remixmate.git
+cd ai-remixmate
+python -m venv remix-env && source remix-env/bin/activate
+./start.sh          # installs deps + starts API + React UI
+```
+
+Then open:
+- **React UI** → http://localhost:5173
+- **API docs** → http://localhost:8000/docs
+- **Streamlit UI** → `./start.sh ui` → http://localhost:8501
+
+Docker: `docker compose up`
 
 ---
 
@@ -137,89 +185,46 @@ The runtime layout (gitignored): `library/` for downloaded songs, `outputs/` for
 | Audio analysis | librosa, numpy, scipy |
 | Stem separation | Demucs (Meta AI), PyTorch (MPS / CUDA / CPU) |
 | Mastering | ITU-R BS.1770-4 LUFS, true-peak limiter |
-| Semantic search | 35-dim numpy vector index, weighted cosine similarity, JSON-persisted |
-| Setlist planning | Greedy + Markov optimizer, Camelot wheel, spectral flux energy |
-| Lyric matching | lyricsgenius (Genius API), NLTK, scikit-learn TF-IDF |
-| Backend | FastAPI, Uvicorn, Pydantic v2 |
-| Persistence | SQLite (jobs, crates, tags, favorites) + JSONL audit log |
-| Download | yt-dlp, ytmusicapi, Spotify OAuth |
-| UI | Streamlit (current), React + Vite (next) |
-| Testing | pytest, pytest-asyncio |
-| Packaging | pyproject.toml (PEP 517), Docker, docker-compose |
+| Genre classification | Multi-label classifier, DnB substyles, RU descriptions |
+| Semantic search | 35-dim numpy vector index, CLAP 512-D, weighted cosine |
+| Setlist planning | Greedy + Markov optimizer, Camelot wheel, spectral flux |
+| Backend | FastAPI, Uvicorn, Pydantic v2, SQLite |
+| Frontend | React + Vite + TypeScript (9 pages) |
+| Testing | pytest (226+ tests), vitest |
+| Packaging | pyproject.toml (PEP 517), Docker |
 
-Python 3.10+. Runs on Apple Silicon, NVIDIA, or CPU. The GPU layer auto-detects.
+Python 3.10+. Apple Silicon, NVIDIA, or CPU — GPU auto-detected.
 
 ---
 
 ## Try it
 
-The minimum interesting thing to do with this is download two tracks and render a transition.
-
 ```bash
-# Download a song (Demucs stems optional)
+# Download + stem-split + analyze
 curl -X POST http://localhost:8000/download \
   -H "Content-Type: application/json" \
   -d '{"query": "Anyma Voices In My Head", "separate": true}'
 
-# Render the transition
+# Render a transition
 curl -X POST http://localhost:8000/dj-remix \
   -H "Content-Type: application/json" \
   -d '{
     "song_a": "Anyma - Voices In My Head",
     "song_b": "Dom Dolla - Define",
-    "transition_bars": 16,
-    "use_stems": true,
-    "output_format": "flac"
+    "transition_bars": 16
   }'
 
-# Poll for the result
+# Check job status
 curl http://localhost:8000/jobs/{job_id}
 ```
 
-Want to audition the crossfade window without committing to a full render? Use `/dj-remix/preview` instead — it renders only the transition and returns BPM data, Camelot positions, harmonic score, and a stream URL.
-
-To optimize a playlist, export it from [exportify.net](https://exportify.net) and POST the CSV:
-
-```bash
-curl -X POST http://localhost:8000/setlist/import-csv \
-  -F "file=@my_playlist.csv" \
-  -F "arc=mountain"
-```
-
-Or check the harmonic compatibility of two Camelot keys instantly:
-
-```bash
-curl "http://localhost:8000/setlist/camelot/modulation?from_key=8A&to_key=9B"
-# → { "modulation_type": "energy_boost", "cost": 0.30, "safe_to_blend": true, ... }
-```
-
-For everything else — compatibility scoring, smart search, crates and tags, Spotify import, the whole thing — the interactive Swagger UI lives at <http://localhost:8000/docs>.
+Interactive Swagger UI at http://localhost:8000/docs for everything else.
 
 ---
 
-## Why I built this
+## Feature gap documentation
 
-Two reasons.
-
-The first is simple. I wanted to learn audio DSP and ML deployment at the same time, and music is the domain I care about most. Reading papers about phase vocoders is one thing. Implementing one and then debugging it for a week because the bass-clash is killing your transitions is a different kind of learning.
-
-The second is the part I think about more. There's a gap between "the model works in a notebook" and "the system works in a real product, on a real library, with a real interface." Almost everything I learned on this project happened in that gap. The audio quality work, the job queue, the lifespan refactor, the GPU detection, the stem-aware crossfade math — none of it is hard in isolation. All of it is hard when it has to coexist.
-
-That's the version of this project that matters to me. Not the algorithms in isolation. The system that holds them together.
-
----
-
-## Status
-
-Active. Currently pushing on:
-- Splitting the Streamlit UI into modular pages
-- Building out the React frontend (`frontend/`) as the long-term UI
-- Tightening test coverage on the core engine
-- Streamlit UI for the setlist planner (export, arc visualization, Camelot wheel view)
-
-The backend is stable. The mastering output passes the thresholds in `tests/test_report.json` (LUFS within ±1 dB, beat alignment under 40 ms). 681 tracks in my local library, no issues.
-
-Full history in [CHANGELOG.md](CHANGELOG.md).
+See [docs/FEATURE_GAP.md](docs/FEATURE_GAP.md) for what the backend computes vs. what the frontend renders.
 
 ---
 
@@ -227,42 +232,15 @@ Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 pytest tests/ -v
-pytest tests/ -x              # stop on first failure
-pytest -m "not dj_analysis"   # skip librosa-dependent tests
+pytest tests/ -x                    # stop on first failure
+pytest -m "not dj_analysis"         # skip librosa-dependent tests
 ```
-
-`conftest.py` includes a librosa probe guard that auto-skips `dj_analysis`-marked tests when librosa or numba can't initialize, so the suite never crashes on a broken environment.
 
 ---
 
 ## Configuration
 
-`config.yaml` exposes the tuneable parameters. Override locally with `config.local.yaml` (gitignored).
-
-```yaml
-audio:
-  sample_rate: 22050
-  transition_bars: 16
-  output_format: wav        # "flac" for ~60% smaller files
-
-bridge_beat:
-  default_intensity: 0.38
-  default_genre: auto
-
-api:
-  max_active_jobs: 3        # rate-limit cap
-  worker_threads: 2
-
-stems:
-  enabled: false            # off by default; Demucs is slow
-  model: htdemucs
-```
-
----
-
-## Caveats
-
-This is a personal portfolio project, not a product. The download integrations (yt-dlp, Spotify) are for personal use on tracks you have rights to. Don't use this to redistribute copyrighted material. All music rights remain with the original creators.
+`config.yaml` → `config.local.yaml` (gitignored) → env vars `REMIXMATE_<SECTION>_<KEY>`.
 
 ---
 
@@ -272,4 +250,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Author
 
-**Aditya Chunduri** · [github.com/Chunduri-Aditya](https://github.com/Chunduri-Aditya) · chunduri@usc.edu · chunduriaditya2@gmail.com
+**Aditya Chunduri** · [github.com/Chunduri-Aditya](https://github.com/Chunduri-Aditya) · chunduri@usc.edu

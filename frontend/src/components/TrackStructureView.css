@@ -1,0 +1,53 @@
+/* ============================================================
+   TrackStructureView — track structure visualization
+   ============================================================ */
+
+.tsv-root {
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+}
+
+.tsv-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tsv-section-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.tsv-time-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  fill: var(--color-text-faint);
+}
+
+.tsv-loading,
+.tsv-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+}
+
+.tsv-spin {
+  animation: tsv-spin 1s linear infinite;
+}
+
+@keyframes tsv-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

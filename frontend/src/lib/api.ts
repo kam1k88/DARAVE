@@ -17,8 +17,12 @@ import type {
   SimilarTrack,
   DJRemixRequest,
   DJPreviewRequest,
+  MixPlanResult,
+  TrackStructure,
   Crate,
   HealthStatus,
+  DJTechnique,
+  PatternSearchResult,
 } from '@/types'
 
 // In dev the Vite proxy rewrites /api/* → http://localhost:8000/*.
@@ -136,19 +140,30 @@ export const libraryApi = {
     get<{ songs: SongInfo[] }>('/library?per_page=5000').then((r) => r.songs ?? []),
   get:     (name: string) => get<SongInfo>(`/library/${encodeURIComponent(name)}`),
   delete:  (name: string) => del<void>(`/library/${encodeURIComponent(name)}`),
-  stats:   ()           => get<LibraryStats>('/library/init'),   // reuses init endpoint for stats
-  initRun: (opts: Record<string, unknown>) => post<{ job_id: string }>('/library/init', opts),
+  stats:   ()           => get<{ stats: LibraryStats }>('/library').then((r) => r.stats),
+  structure: (name: string) =>
+    get<TrackStructure>(`/library/${encodeURIComponent(name)}/structure`),
+  initRun: (opts: Record<string, unknown>) => post<{ job_id: string }>('/library/initialize', opts),
   // Segregates the library into fully-processed / stems-only / analysis-only /
   // unprocessed buckets. Cheap file-existence scan — safe to poll every ~1s.
   processingStatus: () => get<ProcessingStatus>('/library/processing-status'),
+  importLocal: (folder?: string) =>
+    post<{ imported: number; skipped: number; files: string[] }>(
+      `/library/import-local${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`,
+      {},
+    ),
+  cleanupStale: () => post<{ removed: string[]; kept: number }>('/library/cleanup-stale', {}),
 }
 
 // --- Storage (size cap, pruning, eviction, library location) ---
 
 export const storageApi = {
   status: () => get<StorageStatus>('/library/storage'),
-  // Deletes full.wav for every song that already has all 4 stems. Safe —
-  // stems are preserved, only the redundant pre-split source is removed.
+  scanFolder: (folder?: string) =>
+    post<{ folder: string; total_files: number; already_in_library: number; new_files: number; total_size_mb: number; files: Array<{ name: string; filename: string; ext: string; size_mb: number; already_in_library: boolean }> }>(
+      `/library/storage/scan${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`,
+      {},
+    ),
   prune:  () => post<StoragePruneResult>('/library/storage/prune', {}),
   // dry_run defaults true server-side; pass false explicitly to actually delete.
   evict:  (targetGb?: number, dryRun = true) =>
@@ -229,6 +244,10 @@ export const remixApi = {
     post<{ job_id: string }>('/dj-remix/preview', req),
   chain:   (songs: string[], opts?: Record<string, unknown>) =>
     post<{ job_id: string }>('/dj-chain', { songs, ...opts }),
+  plan:    (songs: string[], transitionBars = 16) =>
+    post<MixPlanResult>('/mix/plan', { songs, transition_bars: transitionBars, smart_transitions: true }),
+  effects: () =>
+    get<{ effects: { name: string; description: string }[] }>('/effects'),
 }
 
 // --- Jobs ---
@@ -306,4 +325,58 @@ export const aiApi = {
   // Separate endpoint — was previously (incorrectly) faked via inpaint(tokenize:true).
   tokenize: (songName: string, opts?: Record<string, unknown>) =>
     post<{ job_id: string }>('/ai/tokenize', { song_name: songName, ...opts }),
+}
+
+// --- DJ Techniques (Quick Mix) ---
+
+export const techniquesApi = {
+  list:   () =>
+    get<{ techniques: DJTechnique[]; total: number }>('/techniques').then((r) => r.techniques),
+  get:    (id: string) =>
+    get<DJTechnique>(`/techniques/${encodeURIComponent(id)}`),
+}
+
+// --- Pattern Search ---
+
+export const patternSearchApi = {
+  search: (techniqueId: string, maxResults = 20) =>
+    post<PatternSearchResult>('/library/pattern-search', {
+      technique_id: techniqueId,
+      max_results: maxResults,
+    }),
+}
+
+// --- Quick Mix ---
+
+export const quickMixApi = {
+  preview: (songA: string, songB: string, techniqueId = 'DNB-04', effect = 'auto') =>
+    post<{ job_id: string }>('/mix/quick-preview', {
+      song_a: songA,
+      song_b: songB,
+      technique_id: techniqueId,
+      transition_bars: 4,
+      effect,
+    }),
+  mix:     (tracks: string[], techniqueIds?: (string | null)[], opts?: Record<string, unknown>) =>
+    post<{ job_id: string }>('/mix/quick-mix', {
+      tracks,
+      technique_ids: techniqueIds || null,
+      transition_bars: 16,
+      bridge_beat: false,
+      master: true,
+      ...opts,
+    }),
+}
+
+// --- Strategy ---
+
+export const strategyApi = {
+  planSmart: (arcMode = 'dynamic') =>
+    post<{ songs: string[]; structures: any[]; transitions: any[]; energy_arc: any[]; total_duration_sec: number; avg_confidence: number; ordering: string }>(`/mix/plan/smart?arc_mode=${encodeURIComponent(arcMode)}`),
+
+  planAll: () =>
+    post<{ songs: string[]; structures: any[]; transitions: any[]; energy_arc: any[]; total_duration_sec: number; avg_confidence: number }>('/mix/plan/all'),
+
+  alternatives: (songA: string, songB: string) =>
+    post<{ alternatives: any[] }>(`/mix/plan/alternatives?song_a=${encodeURIComponent(songA)}&song_b=${encodeURIComponent(songB)}`),
 }

@@ -17,7 +17,7 @@ Only the current release is actively maintained. If you're on an older version, 
 Instead, use one of these:
 
 - **GitHub private advisory** (preferred) — [Report a vulnerability](../../security/advisories/new) via GitHub's private channel. I'll get notified privately and we can discuss it there.
-- **Email** — chunduriaditya2@gmail.com. Put "SECURITY: DARAVE" in the subject line so it doesn't get buried.
+- **Email** — kam1k88@gmail.com. Put "SECURITY: DARAVE" in the subject line so it doesn't get buried.
 
 ## What to include
 

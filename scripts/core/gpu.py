@@ -376,6 +376,55 @@ def log_device_info() -> str:
 
 
 # ---------------------------------------------------------------------------
+# torch.compile wrapper
+# ---------------------------------------------------------------------------
+
+_compile_cache: dict = {}
+
+
+def gpu_compile(
+    mode: str = "reduce-overhead",
+    dynamic: bool = True,
+):
+    """
+    Decorator that applies torch.compile with automatic fallback.
+
+    Usage:
+        @gpu_compile()
+        def my_gpu_function(x: torch.Tensor) -> torch.Tensor:
+            ...
+
+    Parameters
+    ----------
+    mode    : "default" | "reduce-overhead" | "max-autotune"
+    dynamic : True for dynamic shapes (variable-length audio)
+
+    Returns
+    -------
+    Decorated function (compiled on first call, cached thereafter)
+    """
+    def decorator(func):
+        torch = _import_torch()
+        if torch is None or not hasattr(torch, "compile"):
+            return func  # no torch or torch < 2.0
+
+        key = (func.__module__, func.__qualname__)
+        if key in _compile_cache:
+            return _compile_cache[key]
+
+        try:
+            compiled = torch.compile(func, mode=mode, dynamic=dynamic)
+            _compile_cache[key] = compiled
+            log.info("[gpu] Compiled %s (mode=%s)", func.__qualname__, mode)
+            return compiled
+        except Exception as e:
+            log.debug("[gpu] torch.compile failed for %s: %s, using eager", func.__qualname__, e)
+            return func
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # GPU-accelerated envelope followers & dynamics processing
 # ---------------------------------------------------------------------------
 

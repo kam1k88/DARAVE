@@ -8,6 +8,7 @@ import { Map, Loader2, ChevronDown, ChevronUp, Zap, RotateCcw, GripVertical, Inf
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { libraryApi, strategyApi, quickMixApi, remixApi } from '@/lib/api'
 import { useAppStore } from '@/stores/appStore'
+import { WebAudioPlayer } from '@/components/WebAudioPlayer'
 import type { SongInfo } from '@/types'
 import './PageBase.css'
 import './Strategy.css'
@@ -386,6 +387,16 @@ export default function Strategy() {
                 </div>
                 <span className="strategy-render-progress__pct">{Math.round((renderJob.progress || 0))}%</span>
               </div>
+            )}
+
+            {/* Real-time Web Audio player */}
+            {trackOrder.length >= 2 && (
+              <WebAudioPlayer
+                tracks={trackOrder.map((name, i) => ({
+                  id: `track-${i}`,
+                  name,
+                }))}
+              />
             )}
             {renderJob && renderJob.status === 'COMPLETED' && (
               <div className="strategy-render-done">

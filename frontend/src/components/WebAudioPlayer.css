@@ -1,0 +1,211 @@
+/* ============================================================
+   WebAudioPlayer.css — Real-time audio player styles
+   ============================================================ */
+
+.web-audio-player {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* --- Header --- */
+.wap-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wap-header__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.wap-header__badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-amber-glow);
+  color: var(--color-amber-400);
+}
+
+/* --- Visualizer --- */
+.wap-visualizer {
+  height: 64px;
+  background: var(--color-bg-base);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.wap-visualizer canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* --- Transport controls --- */
+.wap-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--color-bg-overlay);
+  color: var(--color-text-secondary);
+  width: 32px;
+  height: 32px;
+}
+
+.wap-btn:hover {
+  background: var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.wap-btn--primary {
+  background: var(--color-amber-500);
+  color: var(--color-text-inverse);
+}
+
+.wap-btn--primary:hover {
+  background: var(--color-amber-400);
+}
+
+.wap-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Progress bar --- */
+.wap-progress {
+  flex: 1;
+  height: 4px;
+  background: var(--color-bg-overlay);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+}
+
+.wap-progress:hover {
+  height: 6px;
+}
+
+.wap-progress__fill {
+  height: 100%;
+  background: var(--color-amber-500);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+/* --- Time display --- */
+.wap-time {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  min-width: 80px;
+  text-align: right;
+}
+
+/* --- Volume --- */
+.wap-volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wap-volume input[type="range"] {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-bg-overlay);
+  border-radius: 2px;
+  outline: none;
+}
+
+.wap-volume input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-amber-400);
+  cursor: pointer;
+}
+
+/* --- Track list --- */
+.wap-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.wap-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--color-bg-base);
+  font-size: 12px;
+}
+
+.wap-track--loaded {
+  border-left: 2px solid var(--color-amber-500);
+}
+
+.wap-track__name {
+  flex: 1;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wap-track__status {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.wap-track__status--loaded {
+  color: var(--color-amber-400);
+}
+
+/* --- Loading spinner --- */
+.wap-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.wap-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border-default);
+  border-top-color: var(--color-amber-400);
+  border-radius: 50%;
+  animation: wap-spin 0.6s linear infinite;
+}
+
+@keyframes wap-spin {
+  to { transform: rotate(360deg); }
+}

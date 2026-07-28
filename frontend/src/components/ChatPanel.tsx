@@ -380,8 +380,14 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
 
           const result = await executeFrontendTool(tc, agentCallbacks)
 
+          // Truncate long tool results to avoid overwhelming the model context
+          const MAX_TOOL_RESULT = 500
+          const toolResult = result.result.length > MAX_TOOL_RESULT
+            ? result.result.slice(0, MAX_TOOL_RESULT) + '... [truncated]'
+            : result.result
+
           addToolMessage(
-            result.success ? result.result : `Error: ${result.result}`,
+            result.success ? toolResult : `Error: ${toolResult}`,
             result.id,
           )
 

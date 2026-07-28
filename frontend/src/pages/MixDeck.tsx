@@ -285,6 +285,12 @@ export default function MixDeck() {
   const [effectA, setEffectA] = useState('none')
   const [loadedTracks, setLoadedTracks] = useState<{ a: boolean; b: boolean }>({ a: false, b: false })
 
+  // Refs to track current song values for agent callbacks (avoids stale closures)
+  const songARef = useRef(songA)
+  const songBRef = useRef(songB)
+  useEffect(() => { songARef.current = songA }, [songA])
+  useEffect(() => { songBRef.current = songB }, [songB])
+
   const [showLibrary, setShowLibrary] = useState(true)
   const [showChat, setShowChat] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -532,8 +538,10 @@ export default function MixDeck() {
       return `Deck ${deck} effect set to ${effect}`
     },
     checkCompatibility: async () => {
-      if (!songA || !songB) return 'Need two tracks loaded to check compatibility'
-      const res = await analysisApi.compatibility(songA, songB)
+      const a = songARef.current
+      const b = songBRef.current
+      if (!a || !b) return 'Need two tracks loaded to check compatibility'
+      const res = await analysisApi.compatibility(a, b)
       if ('overall' in res) {
         const r = res as import('@/types').CompatibilityResult
         setCompat(r)
@@ -542,14 +550,18 @@ export default function MixDeck() {
       return 'Compatibility check completed'
     },
     startRemix: async () => {
-      if (!songA || !songB) return 'Need two tracks loaded to start remix'
+      const a = songARef.current
+      const b = songBRef.current
+      if (!a || !b) return 'Need two tracks loaded to start remix'
       await launchRemix()
       return 'Remix started — check jobs panel for progress'
     },
     getDeckInfo: async () => {
+      const a = songARef.current
+      const b = songBRef.current
       return JSON.stringify({
-        deckA: { track: songA || 'empty', bpm: songInfoA?.bpm, playing: audio.state === 'playing' },
-        deckB: { track: songB || 'empty', bpm: songInfoB?.bpm, playing: audio.state === 'playing' },
+        deckA: { track: a || 'empty', bpm: songInfoA?.bpm, playing: audio.state === 'playing' },
+        deckB: { track: b || 'empty', bpm: songInfoB?.bpm, playing: audio.state === 'playing' },
         crossfader: audio.crossfadeValue,
       }, null, 2)
     },
@@ -558,7 +570,7 @@ export default function MixDeck() {
       if (songs.length === 0) return 'Library is empty — upload some tracks first!'
       return `Library contains ${songs.length} tracks:\n` + songs.map((s) => `- ${s.name} | BPM: ${s.bpm ?? '—'} | Key: ${s.key ?? '—'}`).join('\n')
     },
-  }), [songA, songB, songInfoA, songInfoB, audio, setSongA, setSongB, setVolumeA, setVolumeB, setEffectA, launchRemix])
+  }), [songInfoA, songInfoB, audio, setSongA, setSongB, setVolumeA, setVolumeB, setEffectA, launchRemix])
 
   return (
     <div className="page-base">

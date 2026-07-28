@@ -106,13 +106,38 @@ export function extractToolCalls(text: string): FrontendToolCall[] {
   return calls
 }
 
-const KNOWN_TOOL_NAMES_RE = '(?:load_track_to_deck|play_deck|pause_deck|stop_deck|set_crossfader|set_volume|set_effect|check_compatibility|start_remix|get_deck_info|list_library)'
-
 export function stripToolCallJson(text: string): string {
+  const knownToolNames = new Set(FRONTEND_TOOLS.map((t) => t.name))
+  const removeRanges: Array<[number, number]> = []
+
+  // Find all JSON objects and check if they're tool calls
+  let pos = 0
+  while (pos < text.length) {
+    const braceIdx = text.indexOf('{', pos)
+    if (braceIdx === -1) break
+
+    const jsonStr = extractBalancedJson(text, braceIdx)
+    if (!jsonStr) { pos = braceIdx + 1; continue }
+
+    try {
+      const parsed = JSON.parse(jsonStr)
+      // Match standalone tool calls: {"name": "TOOL_NAME", ...} or {"tool_call": {...}}
+      if (parsed.name && typeof parsed.name === 'string' && knownToolNames.has(parsed.name)) {
+        removeRanges.push([braceIdx, braceIdx + jsonStr.length])
+      } else if (parsed.tool_call && parsed.tool_call.name && knownToolNames.has(parsed.tool_call.name)) {
+        removeRanges.push([braceIdx, braceIdx + jsonStr.length])
+      }
+    } catch { /* skip */ }
+
+    pos = braceIdx + jsonStr.length
+  }
+
+  // Remove ranges in reverse order to preserve indices
   let result = text
-  // Remove {"tool_call": {...}} blocks (supports nested braces)
-  result = result.replace(new RegExp(`\\{"tool_call"\\s*:\\s*\\{(?:[^{}]|\\{[^{}]*\\})*\\}\\s*\\}`, 'g'), '')
-  // Remove standalone {"name": "TOOL_NAME", ...} blocks (supports one level of nesting)
-  result = result.replace(new RegExp(`\\{"name"\\s*:\\s*"${KNOWN_TOOL_NAMES_RE}"\\s*,\\s*(?:\\{(?:[^{}]|\\{[^{}]*\\})*\\}|[^}])*\\}`, 'g'), '')
+  for (let i = removeRanges.length - 1; i >= 0; i--) {
+    const [start, end] = removeRanges[i]
+    result = result.slice(0, start) + result.slice(end)
+  }
+
   return result.trim()
 }

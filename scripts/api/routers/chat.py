@@ -1,7 +1,7 @@
 """
 scripts/api/routers/chat.py — AI Chat endpoints.
 
-POST /chat              — Stream chat response via SSE (tool-calling agent loop)
+POST /chat              — Stream chat response via SSE (simple Ollama pass-through)
 GET  /chat/history      — Recent conversation history (in-memory)
 DELETE /chat/history    — Clear conversation history
 GET  /chat/status       — Check Ollama connection status
@@ -43,7 +43,7 @@ def _msg_to_dict(msg: ChatMessage) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# POST /chat — SSE streaming response
+# POST /chat — SSE streaming response (simple Ollama pass-through)
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -51,8 +51,8 @@ def _msg_to_dict(msg: ChatMessage) -> Dict[str, Any]:
     summary="Stream chat response (SSE)",
     description=(
         "Send a conversation and receive a streaming response via Server-Sent Events. "
-        "Supports tool-calling: the AI can call DJ tools (list_library, check_compatibility, etc.) "
-        "and the results are streamed back as they complete."
+        "The backend is a simple pass-through to Ollama. "
+        "All tool execution is handled by the frontend."
     ),
 )
 async def chat_stream(req: ChatRequest):
@@ -93,7 +93,7 @@ async def chat_stream(req: ChatRequest):
                 if chunk is None:
                     break
 
-                # Parse and store assistant/tool messages in history
+                # Parse and store assistant messages in history
                 try:
                     parsed = json.loads(chunk)
                     msg_type = parsed.get("type", "")
@@ -103,20 +103,6 @@ async def chat_stream(req: ChatRequest):
                         _history.append({
                             "role": "assistant",
                             "content": data["content"],
-                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        })
-                    elif msg_type == "tool_call":
-                        _history.append({
-                            "role": "assistant",
-                            "content": f"[calling tool: {data.get('name', '?')}]",
-                            "tool_calls": [{"id": data.get("id"), "name": data.get("name"), "arguments": data.get("arguments", {})}],
-                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        })
-                    elif msg_type == "tool_result":
-                        _history.append({
-                            "role": "tool",
-                            "content": data.get("result", "")[:500],
-                            "tool_call_id": data.get("id"),
                             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                         })
                 except (json.JSONDecodeError, KeyError):

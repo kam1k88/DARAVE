@@ -6,7 +6,7 @@ song validation, stem file lookup, and rate limiting.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import HTTPException
 
@@ -157,3 +157,33 @@ def _check_job_cap() -> None:
                 f"Wait for one to finish before submitting another."
             ),
         )
+
+
+def _check_duplicate_job(job_type: str, meta: Optional[Dict] = None) -> None:
+    """Raise 409 if an active job with the same type and matching meta already exists."""
+    if meta is None:
+        return
+    active = [j for j in job_store.list_jobs() if j["status"] == "running"]
+    for j in active:
+        if j.get("job_type") != job_type:
+            continue
+        jmeta = j.get("meta") or {}
+        # For stem splits, match on song name
+        if job_type == "analyze" and jmeta.get("type") == meta.get("type"):
+            if meta.get("song") and jmeta.get("song") == meta.get("song"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Active {meta.get('type')} job already running for '{meta.get('song')}'.",
+                )
+            if meta.get("type") == "batch_stem_split" and jmeta.get("type") == "batch_stem_split":
+                raise HTTPException(
+                    status_code=409,
+                    detail="A batch stem split job is already running.",
+                )
+        # For DJ remix, match on song pair
+        if job_type == "dj_remix":
+            if jmeta.get("song_a") == meta.get("song_a") and jmeta.get("song_b") == meta.get("song_b"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A remix job for '{meta.get('song_a')}' → '{meta.get('song_b')}' is already running.",
+                )

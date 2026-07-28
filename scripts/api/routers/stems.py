@@ -10,7 +10,7 @@ POST /stems/compress-batch     — compress stems for all library songs (queued 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from scripts.api import jobs as job_store
-from scripts.api.routers._helpers import _require_song, _check_job_cap
+from scripts.api.routers._helpers import _require_song, _check_job_cap, _check_duplicate_job
 from scripts.api.schemas import (
     BatchStemSplitRequest,
     JobResponse,
@@ -35,6 +35,7 @@ def stem_split(req: StemSplitRequest, background_tasks: BackgroundTasks = None):
     vocals / drums / bass / other stems.  Takes 2–5 minutes per song.
     """
     _check_job_cap()
+    _check_duplicate_job("analyze", {"type": "stem_split", "song": req.song})
     _require_song(req.song)
     job_id = job_store.create_job(JobType.ANALYZE, {"song": req.song, "type": "stem_split"})
     job_store.submit_job(
@@ -53,6 +54,7 @@ def stem_split_batch(req: BatchStemSplitRequest, background_tasks: BackgroundTas
     Songs that already have vocals.wav are skipped unless skip_existing=false.
     """
     _check_job_cap()
+    _check_duplicate_job("analyze", {"type": "batch_stem_split"})
     songs = req.songs
     if not songs:
         # Default: all library songs that have a full.wav
@@ -87,6 +89,7 @@ def compress_stems_single(
     Runs as an async job.
     """
     _check_job_cap()
+    _check_duplicate_job("analyze", {"type": "compress_stems", "song": song})
     _require_song(song)
     job_id = job_store.create_job(JobType.ANALYZE, {"song": song, "type": "compress_stems"})
     job_store.submit_job(job_id, task_compress_stems, song=song, delete_wav=delete_wav)
@@ -105,6 +108,7 @@ def compress_stems_batch(
     Poll /jobs/{job_id} for per-song progress.
     """
     _check_job_cap()
+    _check_duplicate_job("analyze", {"type": "batch_compress_stems"})
     job_id = job_store.create_job(
         JobType.ANALYZE, {"type": "batch_compress_stems"}
     )

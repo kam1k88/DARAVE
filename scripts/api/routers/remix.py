@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 
 from scripts.api import jobs as job_store
-from scripts.api.routers._helpers import _require_song, _check_job_cap
+from scripts.api.routers._helpers import _require_song, _check_job_cap, _check_duplicate_job
 from scripts.api.schemas import (
     DJChainRequest,
     DJPreviewRequest,
@@ -49,6 +49,7 @@ router = APIRouter()
 @router.post("/dj-remix", response_model=JobResponse, status_code=202, tags=["remix"])
 def dj_remix(req: DJRemixRequest, background_tasks: BackgroundTasks = None):
     _check_job_cap()
+    _check_duplicate_job("dj_remix", {"song_a": req.song_a, "song_b": req.song_b})
     _require_song(req.song_a)
     _require_song(req.song_b)
     job_id = job_store.create_job(

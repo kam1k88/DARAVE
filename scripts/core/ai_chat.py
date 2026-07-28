@@ -46,11 +46,11 @@ class AIChatEngine:
             from scripts.core.config import cfg
             ollama_cfg = getattr(cfg, "ollama", None)
             self._host = getattr(ollama_cfg, "host", "http://localhost:11501") if ollama_cfg else "http://localhost:11501"
-            self._model = model or (getattr(ollama_cfg, "model", "llama3.1:8b") if ollama_cfg else "llama3.1:8b")
+            self._model = model or (getattr(ollama_cfg, "model", "qwen2.5:7b") if ollama_cfg else "qwen2.5:7b")
             self._timeout = getattr(ollama_cfg, "timeout_sec", 120) if ollama_cfg else 120
         except Exception:
             self._host = "http://localhost:11501"
-            self._model = model or "llama3.1:8b"
+            self._model = model or "qwen2.5:7b"
             self._timeout = 120
 
     def _call_ollama_chat(

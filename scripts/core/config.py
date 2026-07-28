@@ -135,7 +135,7 @@ class LoggingConfig:
 @dataclass
 class OllamaConfig:
     host: str                   = "http://localhost:11501"
-    model: str                  = "llama3.1:8b"
+    model: str                  = "qwen2.5:7b"
     timeout_sec: int            = 120
     max_context_messages: int   = 40
     max_tool_rounds: int        = 5

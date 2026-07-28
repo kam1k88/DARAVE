@@ -303,7 +303,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
     if (agentLoopRef.current) return
     agentLoopRef.current = true
 
-    const MAX_ROUNDS = 5
+    const MAX_ROUNDS = 3
     let round = 0
 
     try {

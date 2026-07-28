@@ -156,7 +156,7 @@ const Turntable: React.FC<TurntableProps> = ({
     const resize = () => {
       const parent = canvas.parentElement
       if (!parent) return
-      const size = Math.min(parent.clientWidth, 240)
+      const size = Math.min(parent.clientWidth * 0.4, 140)
       canvas.width = size * 2
       canvas.height = size * 2
       canvas.style.width = `${size}px`

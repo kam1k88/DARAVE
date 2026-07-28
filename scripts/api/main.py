@@ -71,6 +71,11 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
     register_sse_hook(_sync_emit)
     start_heartbeat()
+
+    # Start WebSocket deck-state heartbeat
+    from scripts.api.routers.websocket import start_ws_heartbeat  # noqa: PLC0415
+    start_ws_heartbeat()
+
     logger.info("AI RemixMate API started — SSE backbone active")
 
     yield  # application runs here

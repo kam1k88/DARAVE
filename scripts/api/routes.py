@@ -22,6 +22,7 @@ from scripts.api.routers import (
     spotify,
     stems,
     system,
+    websocket,
 )
 
 router = APIRouter()
@@ -39,3 +40,4 @@ router.include_router(events.router)
 router.include_router(setlist.router)
 router.include_router(mix_plan.router)
 router.include_router(chat.router)
+router.include_router(websocket.router)

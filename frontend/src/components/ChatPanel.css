@@ -354,3 +354,65 @@
 .chat-toolbar__dot--err {
   background: var(--color-crimson-500);
 }
+
+/* --- Voice input --- */
+
+.chat-voice-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-voice-toggle:hover {
+  border-color: var(--color-crimson-500);
+  color: var(--color-crimson-500);
+}
+
+.chat-voice-toggle--active {
+  background: var(--color-crimson-glow);
+  border-color: var(--color-crimson-500);
+  color: var(--color-crimson-400);
+  animation: voice-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(248, 113, 113, 0); }
+}
+
+.chat-voice-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-crimson-glow);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.2);
+  font-size: 10px;
+  color: var(--color-crimson-400);
+}
+
+.chat-voice-pulse {
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.chat-voice-text {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}

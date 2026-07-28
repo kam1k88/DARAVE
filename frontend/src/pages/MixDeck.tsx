@@ -285,6 +285,10 @@ export default function MixDeck() {
   const [effectA, setEffectA] = useState('none')
   const [loadedTracks, setLoadedTracks] = useState<{ a: boolean; b: boolean }>({ a: false, b: false })
 
+  // Per-deck static waveforms (generated from AudioBuffer on load)
+  const [deckAWaveform, setDeckAWaveform] = useState<Float32Array | null>(null)
+  const [deckBWaveform, setDeckBWaveform] = useState<Float32Array | null>(null)
+
   // Refs to track current song values for agent callbacks (avoids stale closures)
   const songARef = useRef(songA)
   const songBRef = useRef(songB)
@@ -349,16 +353,28 @@ export default function MixDeck() {
   const canCompare = songA && songB && songA !== songB
 
   useEffect(() => {
-    if (!songA) { setLoadedTracks((p) => ({ ...p, a: false })); return }
+    if (!songA) { setLoadedTracks((p) => ({ ...p, a: false })); setDeckAWaveform(null); return }
     let cancelled = false
-    audio.loadTrack('deckA', songA).then(() => { if (!cancelled) setLoadedTracks((p) => ({ ...p, a: true })) })
+    audio.loadTrack('deckA', songA).then(() => {
+      if (cancelled) return
+      setLoadedTracks((p) => ({ ...p, a: true }))
+      // Generate static waveform from loaded AudioBuffer
+      const wf = audio.getWaveformData('deckA', 200)
+      if (!cancelled) setDeckAWaveform(wf)
+    })
     return () => { cancelled = true }
   }, [songA]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!songB) { setLoadedTracks((p) => ({ ...p, b: false })); return }
+    if (!songB) { setLoadedTracks((p) => ({ ...p, b: false })); setDeckBWaveform(null); return }
     let cancelled = false
-    audio.loadTrack('deckB', songB).then(() => { if (!cancelled) setLoadedTracks((p) => ({ ...p, b: true })) })
+    audio.loadTrack('deckB', songB).then(() => {
+      if (cancelled) return
+      setLoadedTracks((p) => ({ ...p, b: true }))
+      // Generate static waveform from loaded AudioBuffer
+      const wf = audio.getWaveformData('deckB', 200)
+      if (!cancelled) setDeckBWaveform(wf)
+    })
     return () => { cancelled = true }
   }, [songB]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -646,7 +662,7 @@ export default function MixDeck() {
                 />
                 {loadedTracks.a ? (
                   <WaveformTimeline
-                    waveformData={audio.waveform}
+                    waveformData={deckAWaveform}
                     frequencyData={null}
                     currentTime={audio.currentTime}
                     duration={audio.duration}
@@ -689,7 +705,7 @@ export default function MixDeck() {
                 />
                 {loadedTracks.b ? (
                   <WaveformTimeline
-                    waveformData={audio.waveform}
+                    waveformData={deckBWaveform}
                     frequencyData={null}
                     currentTime={audio.currentTime}
                     duration={audio.duration}

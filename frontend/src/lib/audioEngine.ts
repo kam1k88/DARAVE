@@ -232,16 +232,16 @@ export class AudioEngine {
     slot.loaded = slot.buffers.size > 0
     this.tracks.set(trackId, slot)
 
-    // Update duration
+    // Update duration — use the longest track
     let maxLen = 0
     for (const buf of slot.buffers.values()) {
       maxLen = Math.max(maxLen, buf.duration)
     }
-    if (trackId === this.getTrackIds()[0]) {
-      this._duration = maxLen
-    }
+    this._duration = Math.max(this._duration, maxLen)
 
     this.events.onTrackLoaded?.(trackId)
+    // Fire time update so React state gets duration immediately
+    this.events.onTimeUpdate?.(this.currentTime, this._duration)
     if (this._state === 'loading' && this.tracks.size > 0) {
       this.setState('idle')
     }

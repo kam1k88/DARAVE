@@ -9,10 +9,10 @@ import { Send, Square, Trash2, BotMessageSquare, Wrench, Mic, MicOff } from 'luc
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/appStore'
 import { chatApi } from '@/lib/api'
+import { extractToolCalls, stripToolCallJson } from '@/lib/toolCallParser'
 import {
   FRONTEND_TOOLS,
   executeFrontendTool,
-  type FrontendToolCall,
   type AgentCallbacks,
 } from '@/lib/agentTools'
 import type { ChatMessage, ChatToolCall } from '@/types'
@@ -107,102 +107,13 @@ function VoiceIndicator({ active, transcript }: { active: boolean; transcript: s
   )
 }
 
-// --- Tool call extraction — handles ANY JSON format the AI might output ---
-
-function extractBalancedJson(text: string, startIdx: number): string | null {
-  let start = startIdx
-  while (start < text.length && text[start] !== '{') start++
-  if (start >= text.length) return null
-
-  let depth = 0
-  let end = start
-  let inString = false
-  let escape = false
-
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]
-    if (escape) { escape = false; continue }
-    if (ch === '\\' && inString) { escape = true; continue }
-    if (ch === '"') { inString = !inString; continue }
-    if (inString) continue
-    if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) { end = i; break }
-    }
-  }
-
-  if (depth !== 0) return null
-  return text.slice(start, end + 1)
-}
-
-function extractToolCalls(text: string): FrontendToolCall[] {
-  const calls: FrontendToolCall[] = []
-  const knownToolNames = new Set(FRONTEND_TOOLS.map((t) => t.name))
-
-  // Strategy 1: find {"tool_call": {...}} format
-  const toolCallMarker = '"tool_call"'
-  let searchFrom = 0
-  while (true) {
-    const idx = text.indexOf(toolCallMarker, searchFrom)
-    if (idx === -1) break
-
-    const jsonStr = extractBalancedJson(text, idx)
-    if (!jsonStr) { searchFrom = idx + toolCallMarker.length; continue }
-
-    try {
-      const parsed = JSON.parse(jsonStr)
-      const tc = parsed.tool_call
-      if (tc && tc.name && typeof tc.name === 'string') {
-        calls.push({
-          id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          name: tc.name,
-          arguments: tc.arguments || tc.parameters || {},
-        })
-      }
-    } catch { /* skip */ }
-
-    searchFrom = idx + jsonStr.length
-  }
-
-  if (calls.length > 0) return calls
-
-  // Strategy 2: find standalone JSON objects with "name" field matching a known tool
-  // Handles: {"name": "load_track_to_deck", "parameters": {...}}
-  //          {"name": "play_deck", "arguments": {}}
-  //          {"name": "set_crossfader", "parameters": {"position": 0.5}}
-  let pos = 0
-  while (pos < text.length) {
-    const braceIdx = text.indexOf('{', pos)
-    if (braceIdx === -1) break
-
-    const jsonStr = extractBalancedJson(text, braceIdx)
-    if (!jsonStr) { pos = braceIdx + 1; continue }
-
-    try {
-      const parsed = JSON.parse(jsonStr)
-      if (parsed.name && typeof parsed.name === 'string' && knownToolNames.has(parsed.name)) {
-        calls.push({
-          id: parsed.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          name: parsed.name,
-          arguments: parsed.arguments || parsed.parameters || {},
-        })
-      }
-    } catch { /* skip */ }
-
-    pos = braceIdx + jsonStr.length
-  }
-
-  return calls
-}
-
 // --- Store helpers ---
 
 function addAssistantMessage(content: string, toolCalls?: ChatToolCall[]) {
   useAppStore.setState((s) => {
     const msgs = [...s.chatMessages]
     for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === 'assistant' && !msgs[i].content && (!msgs[i].toolCalls || msgs[i].toolCalls!.length === 0)) {
+      if (msgs[i].role === 'assistant' && (!msgs[i].toolCalls || msgs[i].toolCalls!.length === 0)) {
         msgs[i] = { ...msgs[i], content, toolCalls }
         return { chatMessages: msgs }
       }
@@ -255,6 +166,15 @@ async function streamLLMResponse(
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let chunkBuffer = ''
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+  const flushChunks = () => {
+    if (chunkBuffer) {
+      onChunk(chunkBuffer)
+      chunkBuffer = ''
+    }
+  }
 
   while (true) {
     const { done, value } = await reader.read()
@@ -273,12 +193,23 @@ async function streamLLMResponse(
       try {
         const parsed = JSON.parse(data)
         if (parsed.type === 'chunk' && parsed.data?.content) {
-          onChunk(parsed.data.content)
+          chunkBuffer += parsed.data.content
           fullText += parsed.data.content
+          // Throttle: flush at most every 80ms
+          if (!flushTimer) {
+            flushTimer = setTimeout(() => {
+              flushChunks()
+              flushTimer = null
+            }, 80)
+          }
         }
       } catch { /* skip */ }
     }
   }
+
+  // Final flush
+  if (flushTimer) clearTimeout(flushTimer)
+  flushChunks()
 
   return fullText
 }
@@ -375,7 +306,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
     if (agentLoopRef.current) return
     agentLoopRef.current = true
 
-    const MAX_ROUNDS = 10
+    const MAX_ROUNDS = 5
     let round = 0
 
     try {
@@ -440,7 +371,8 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
             break
           }
 
-          addAssistantMessage(responseText, [{
+          const cleanText = stripToolCallJson(responseText)
+          addAssistantMessage(cleanText || `${tc.name}(...)`, [{
             id: tc.id,
             name: tc.name,
             arguments: tc.arguments,
@@ -455,6 +387,9 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
 
           if (!result.success) break
         }
+
+        // Yield to main thread between rounds to prevent page freeze
+        await new Promise((r) => setTimeout(r, 50))
       }
     } catch (err: any) {
       if (err?.name !== 'AbortError') {

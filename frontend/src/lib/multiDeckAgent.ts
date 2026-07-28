@@ -13,7 +13,8 @@
    ============================================================ */
 
 import { DJWebSocket, getDJWebSocket } from '@/lib/websocket'
-import { FRONTEND_TOOLS, executeFrontendTool, type AgentCallbacks, type FrontendToolCall } from '@/lib/agentTools'
+import { FRONTEND_TOOLS, executeFrontendTool, type AgentCallbacks } from '@/lib/agentTools'
+import { extractToolCalls } from '@/lib/toolCallParser'
 
 const OLLAMA_BASE = import.meta.env.VITE_OLLAMA_BASE || 'http://localhost:11501'
 const OLLAMA_MODEL = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.1:8b'
@@ -177,7 +178,12 @@ export class MultiDeckAgent {
         try {
           responseText = await this.streamLLM(apiMessages, (chunk) => {
             responseText += chunk
-            this._onMessage?.(deckId, { role: 'assistant', content: responseText })
+            // Strip JSON tool calls from displayed content
+            let displayText = responseText
+              .replace(/\{"tool_call"\s*:\s*\{[^}]*\}\s*\}/g, '')
+              .replace(/\{"name"\s*:\s*"(load_track_to_deck|play_deck|pause_deck|stop_deck|set_crossfader|set_volume|set_effect|check_compatibility|start_remix|get_deck_info|list_library)"\s*,[^}]*\}/g, '')
+              .trim()
+            this._onMessage?.(deckId, { role: 'assistant', content: displayText || '...' })
           }, abort.signal)
         } catch (err: any) {
           if (err?.name === 'AbortError') break
@@ -186,11 +192,15 @@ export class MultiDeckAgent {
           break
         }
 
-        // Add assistant response to history
-        agent.messages.push({ role: 'assistant', content: responseText })
+        // Add assistant response to history (cleaned of JSON)
+        const cleanHistory = responseText
+          .replace(/\{"tool_call"\s*:\s*\{[^}]*\}\s*\}/g, '')
+          .replace(/\{"name"\s*:\s*"(load_track_to_deck|play_deck|pause_deck|stop_deck|set_crossfader|set_volume|set_effect|check_compatibility|start_remix|get_deck_info|list_library)"\s*,[^}]*\}/g, '')
+          .trim()
+        agent.messages.push({ role: 'assistant', content: cleanHistory || '...' })
 
         // Check for tool calls
-        const toolCalls = this.extractToolCalls(responseText)
+        const toolCalls = extractToolCalls(responseText)
 
         if (toolCalls.length === 0) {
           // No tool calls — agent is done
@@ -314,94 +324,6 @@ export class MultiDeckAgent {
     }
 
     return fullText
-  }
-
-  // -----------------------------------------------------------------------
-  // Extract tool calls from LLM response text
-  // -----------------------------------------------------------------------
-
-  private extractToolCalls(text: string): FrontendToolCall[] {
-    const calls: FrontendToolCall[] = []
-    const knownToolNames = new Set(FRONTEND_TOOLS.map((t) => t.name))
-
-    // Strategy 1: find {"tool_call": {...}} format
-    const toolCallMarker = '"tool_call"'
-    let searchFrom = 0
-    while (true) {
-      const idx = text.indexOf(toolCallMarker, searchFrom)
-      if (idx === -1) break
-
-      const jsonStr = this.extractBalancedJson(text, idx)
-      if (!jsonStr) { searchFrom = idx + toolCallMarker.length; continue }
-
-      try {
-        const parsed = JSON.parse(jsonStr)
-        const tc = parsed.tool_call
-        if (tc && tc.name && typeof tc.name === 'string') {
-          calls.push({
-            id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            name: tc.name,
-            arguments: tc.arguments || tc.parameters || {},
-          })
-        }
-      } catch { /* skip */ }
-
-      searchFrom = idx + jsonStr.length
-    }
-
-    if (calls.length > 0) return calls
-
-    // Strategy 2: standalone JSON with "name" matching a known tool
-    let pos = 0
-    while (pos < text.length) {
-      const braceIdx = text.indexOf('{', pos)
-      if (braceIdx === -1) break
-
-      const jsonStr = this.extractBalancedJson(text, braceIdx)
-      if (!jsonStr) { pos = braceIdx + 1; continue }
-
-      try {
-        const parsed = JSON.parse(jsonStr)
-        if (parsed.name && typeof parsed.name === 'string' && knownToolNames.has(parsed.name)) {
-          calls.push({
-            id: parsed.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            name: parsed.name,
-            arguments: parsed.arguments || parsed.parameters || {},
-          })
-        }
-      } catch { /* skip */ }
-
-      pos = braceIdx + jsonStr.length
-    }
-
-    return calls
-  }
-
-  private extractBalancedJson(text: string, startIdx: number): string | null {
-    let start = startIdx
-    while (start < text.length && text[start] !== '{') start++
-    if (start >= text.length) return null
-
-    let depth = 0
-    let end = start
-    let inString = false
-    let escape = false
-
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i]
-      if (escape) { escape = false; continue }
-      if (ch === '\\' && inString) { escape = true; continue }
-      if (ch === '"') { inString = !inString; continue }
-      if (inString) continue
-      if (ch === '{') depth++
-      else if (ch === '}') {
-        depth--
-        if (depth === 0) { end = i; break }
-      }
-    }
-
-    if (depth !== 0) return null
-    return text.slice(start, end + 1)
   }
 
   // -----------------------------------------------------------------------

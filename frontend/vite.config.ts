@@ -6,7 +6,7 @@ import path from 'path'
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'jsdom',
+    environment: 'happy-dom',
     setupFiles: ['./src/test-setup.ts'],
   },
   // For GitHub Pages project sites set VITE_BASE=/DARAVE/ at build time

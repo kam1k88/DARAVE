@@ -412,14 +412,24 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
 # ---------------------------------------------------------------------------
 
 async def _deck_state_heartbeat():
-    """Background task: push deck state to all clients every 500ms for real-time sync."""
+    """Background task: push deck state to all clients every 2s for real-time sync.
+
+    Only sends if state actually changed since last push to avoid flooding.
+    """
+    _last_state: dict[str, str] = {}  # session_id -> last serialized state hash
     while True:
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(2)
         for session_id, session in manager._sessions.items():
             if session_id in manager._connections:
+                import hashlib
+                state_dict = session.to_dict()
+                state_hash = hashlib.md5(json.dumps(state_dict, default=str).encode()).hexdigest()
+                if _last_state.get(session_id) == state_hash:
+                    continue  # state unchanged, skip
+                _last_state[session_id] = state_hash
                 await manager.broadcast_to_session(session_id, {
                     "type": "deck_state",
-                    "data": session.to_dict(),
+                    "data": state_dict,
                 })
 
 

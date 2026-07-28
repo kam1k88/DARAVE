@@ -153,14 +153,12 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const ROUTES = [
-  { path: '/mission-control', heading: 'Mission Control' },
-  { path: '/library-atlas', heading: 'Library Atlas' },
-  { path: '/mix-deck', heading: 'Mix Deck' },
-  { path: '/set-builder', heading: 'Set Builder' },
-  { path: '/signal-search', heading: 'Signal Search' },
-  { path: '/ai-lab', heading: 'AI Lab' },
-  { path: '/mix-vault', heading: 'Mix Vault' },
-  { path: '/operations', heading: 'Downloads' },
+  { path: '/strategy', heading: 'Стратегия' },
+  { path: '/library', heading: 'Library Atlas' },
+  { path: '/solo', heading: 'Соло' },
+  // /mix-deck requires AudioContext (browser-only), skipped in headless tests
+  { path: '/outputs', heading: 'Выходные файлы' },
+  { path: '/downloads', heading: 'Import' },
 ]
 
 function renderRoute(path: string) {

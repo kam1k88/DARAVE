@@ -37,7 +37,11 @@ export function useWebSocket(sessionId: string = 'default'): UseWebSocketReturn 
     const unsubState = ws.onStateChange(setConnState)
     const unsubMsg = ws.onMessage((msg: WSMessage) => {
       if (msg.type === 'session_state' || msg.type === 'deck_state' || msg.type === 'deck_update') {
-        setSession(msg.data)
+        setSession((prev) => {
+          // Skip re-render if data is unchanged
+          if (prev && JSON.stringify(prev) === JSON.stringify(msg.data)) return prev
+          return msg.data
+        })
       }
     })
 

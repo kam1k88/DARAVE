@@ -1,3 +1,4 @@
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/aaa77c12-9ae9-449f-a372-2ff16cd85b8b" />
 # DARAVE — Реверсивная парадигма DAW + RL DJ-движок
 
 **DARAVE** — это real-time DJ engine, который переворачивает классический DAW-подход.

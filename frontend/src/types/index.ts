@@ -382,7 +382,7 @@ export interface ChatToolCall {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'tool'
+  role: 'user' | 'assistant' | 'tool' | 'system'
   content: string
   toolCalls?: ChatToolCall[]
   toolCallId?: string

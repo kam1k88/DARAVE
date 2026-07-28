@@ -1,21 +1,37 @@
 /* ============================================================
-   AI Chat Panel — DJ Assistant in the Right Inspector
+   DARAVE — AI Chat Panel (Agent Mode)
    Streams responses from Ollama via SSE, supports tool calls.
+   Agent mode: AI can control decks, load tracks, play, mix.
    ============================================================ */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Trash2, BotMessageSquare, Wrench } from 'lucide-react'
+import { Send, Square, Trash2, BotMessageSquare, Wrench, Zap, ZapOff } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/appStore'
 import { chatApi } from '@/lib/api'
+import {
+  FRONTEND_TOOLS,
+  executeFrontendTool,
+  type FrontendToolCall,
+  type AgentCallbacks,
+} from '@/lib/agentTools'
 import type { ChatMessage, ChatToolCall } from '@/types'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
-  { label: 'List my library', text: 'List all tracks in my library' },
+  { label: 'Load & play', text: 'Load the first track from my library into Deck A and play it' },
+  { label: 'Mix two tracks', text: 'Load two tracks, check compatibility, and start a mix' },
+  { label: 'List library', text: 'List all tracks in my library' },
   { label: 'Recommend a transition', text: 'Recommend a transition for my two most recent tracks' },
-  { label: 'What effects are available?', text: 'What DJ effects are available?' },
-  { label: 'Optimize my set', text: 'Optimize a setlist from my library' },
+]
+
+const AGENT_PROMPTS = [
+  'Load the first track from my library into Deck A and play it',
+  'Load two tracks and start mixing them',
+  'Check compatibility between the loaded tracks',
+  'Set crossfader to the center',
+  'Stop playback',
+  'What tracks are in my library?',
 ]
 
 // --- Sub-components ---
@@ -88,7 +104,11 @@ function StreamingDots() {
 
 // --- Main component ---
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  agentCallbacks?: AgentCallbacks
+}
+
+export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
   const {
     chatMessages, chatStreaming, chatError,
     addChatMessage, appendToLastAssistantMessage,
@@ -107,6 +127,7 @@ export function ChatPanel() {
   )
 
   const [input, setInput] = useState('')
+  const [agentMode, setAgentMode] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -136,17 +157,37 @@ export function ChatPanel() {
     setChatError(null)
     setChatStreaming(true)
 
+    // Build system prompt with agent capabilities
+    const agentSystemPrompt = agentMode && agentCallbacks ? [
+      'You are DARAVE AI DJ Agent. You can control the DJ interface directly.',
+      'You have access to these frontend tools that execute actions in the browser:',
+      ...FRONTEND_TOOLS.map((t) => `- ${t.name}: ${t.description}`),
+      '',
+      'When the user asks you to do something with the decks, use the appropriate tool.',
+      'For example, to load a track: call load_track_to_deck with deck="A" and track_name="..."',
+      'To play: call play_deck. To mix: call load_track_to_deck for both decks then check_compatibility.',
+      '',
+      'IMPORTANT: When you want to use a frontend tool, respond with a JSON tool call like:',
+      '{"tool_call": {"id": "call_123", "name": "tool_name", "arguments": {...}}}',
+      'The frontend will execute it and send you the result. Then continue your response.',
+    ].join('\n') : ''
+
     // Add placeholder for assistant response
     const assistantMsg: ChatMessage = { role: 'assistant', content: '', timestamp: new Date().toISOString() }
     addChatMessage(assistantMsg)
 
     try {
-      // Build messages for the API (include conversation history)
-      const apiMessages = [...chatMessages, userMsg].map((m) => ({
-        role: m.role,
+      // Build messages for the API
+      const apiMessages: ChatMessage[] = [...chatMessages, userMsg].map((m) => ({
+        role: m.role as ChatMessage['role'],
         content: m.content,
-        tool_call_id: m.toolCallId,
+        toolCallId: m.toolCallId,
       }))
+
+      // Prepend system prompt if agent mode
+      if (agentSystemPrompt) {
+        apiMessages.unshift({ role: 'system', content: agentSystemPrompt })
+      }
 
       const body = await chatApi.stream(apiMessages)
       const reader = body.getReader()
@@ -204,7 +245,36 @@ export function ChatPanel() {
             } else if (type === 'error') {
               setChatError(d.message || 'Unknown error')
             } else if (type === 'done') {
-              // Stream complete
+              // Stream complete — check if last message has a frontend tool call
+              if (agentMode && agentCallbacks) {
+                const store = useAppStore.getState()
+                const lastAssistant = [...store.chatMessages].reverse().find((m) => m.role === 'assistant')
+                if (lastAssistant?.content) {
+                  // Look for JSON tool call in the response
+                  const toolCallMatch = lastAssistant.content.match(/\{"tool_call"\s*:\s*(\{[^}]+\})\}/)
+                  if (toolCallMatch) {
+                    try {
+                      const toolCall = JSON.parse(toolCallMatch[1]) as FrontendToolCall
+                      // Execute the frontend tool
+                      const result = await executeFrontendTool(toolCall, agentCallbacks)
+                      // Add tool result message
+                      const toolMsg: ChatMessage = {
+                        role: 'tool',
+                        content: `[${result.name}] ${result.result}`,
+                        toolCallId: result.id,
+                        timestamp: new Date().toISOString(),
+                      }
+                      useAppStore.setState((s) => ({
+                        chatMessages: [...s.chatMessages, toolMsg],
+                      }))
+                      // Send result back to AI for follow-up
+                      // (This creates a loop — AI sees result and responds)
+                    } catch {
+                      // Not a valid tool call, ignore
+                    }
+                  }
+                }
+              }
             }
           } catch {
             // Skip unparseable lines
@@ -219,7 +289,7 @@ export function ChatPanel() {
       setChatStreaming(false)
       abortRef.current = null
     }
-  }, [chatMessages, chatStreaming, addChatMessage, appendToLastAssistantMessage, setChatStreaming, setChatError])
+  }, [chatMessages, chatStreaming, addChatMessage, appendToLastAssistantMessage, setChatStreaming, setChatError, agentMode, agentCallbacks])
 
   const handleSend = () => sendMessage(input)
 
@@ -250,6 +320,14 @@ export function ChatPanel() {
       {/* Toolbar */}
       <div className="chat-toolbar">
         <button
+          className={`chat-agent-toggle ${agentMode ? 'chat-agent-toggle--active' : ''}`}
+          onClick={() => setAgentMode(!agentMode)}
+          title={agentMode ? 'Agent mode ON — AI controls decks' : 'Agent mode OFF — AI only suggests'}
+        >
+          {agentMode ? <Zap size={10} /> : <ZapOff size={10} />}
+          {agentMode ? 'Agent' : 'Chat'}
+        </button>
+        <button
           className="chat-toolbar__btn"
           onClick={handleClear}
           title="Clear chat history"
@@ -266,19 +344,23 @@ export function ChatPanel() {
             <div className="chat-splash__icon">
               <BotMessageSquare size={20} />
             </div>
-            <div className="chat-splash__title">DJ Assistant</div>
+            <div className="chat-splash__title">
+              {agentMode ? 'DJ Agent' : 'DJ Assistant'}
+            </div>
             <div className="chat-splash__hint">
-              Ask about mixing, transitions, track compatibility, or let me optimize your set.
+              {agentMode
+                ? 'I can control the decks, load tracks, play, mix — just ask!'
+                : 'Ask about mixing, transitions, track compatibility, or let me optimize your set.'}
             </div>
             <div className="chat-splash__prompts">
-              {QUICK_PROMPTS.map((p) => (
+              {(agentMode ? AGENT_PROMPTS : QUICK_PROMPTS.map((p) => p.text)).map((text, i) => (
                 <button
-                  key={p.label}
+                  key={i}
                   className="chat-prompt-btn"
-                  onClick={() => handleQuickPrompt(p.text)}
+                  onClick={() => handleQuickPrompt(text)}
                   disabled={chatStreaming}
                 >
-                  {p.label}
+                  {text.length > 40 ? text.slice(0, 40) + '...' : text}
                 </button>
               ))}
             </div>
@@ -305,7 +387,7 @@ export function ChatPanel() {
         <textarea
           ref={textareaRef}
           className="chat-input__textarea"
-          placeholder="Ask the DJ assistant..."
+          placeholder={agentMode ? 'Tell the agent what to do...' : 'Ask the DJ assistant...'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}

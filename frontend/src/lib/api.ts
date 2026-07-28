@@ -154,6 +154,13 @@ export const libraryApi = {
       `/library/import-local${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`,
       {},
     ),
+  upload: (files: File[], autoAnalyze = true) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files', f))
+    fd.append('auto_analyze', String(autoAnalyze))
+    return fetch(`${BASE}/library/upload`, { method: 'POST', body: fd })
+      .then((r) => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json() })
+  },
   cleanupStale: () => post<{ removed: string[]; kept: number }>('/library/cleanup-stale', {}),
 }
 

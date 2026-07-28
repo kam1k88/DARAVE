@@ -836,3 +836,72 @@ def task_analyze_imported(song_name: str):
         log.info("Analyzed imported song: %s", song_name)
     except Exception as exc:
         log.error("Failed to analyze %s: %s", song_name, exc)
+
+
+@router.post("/library/upload", tags=["library"])
+async def upload_tracks(
+    files: List[UploadFile] = File(..., description="Audio files to upload"),
+    auto_analyze: bool = True,
+):
+    """
+    Upload audio files directly into the library.
+    Accepts multiple files (mp3, wav, flac, ogg, m4a, etc.).
+    """
+    from shutil import copy2
+    from scripts.core.paths import LIBRARY_DIR
+
+    imported = []
+    skipped = 0
+    errors = []
+
+    for uf in files:
+        if not uf.filename:
+            continue
+        ext = Path(uf.filename).suffix.lower()
+        if ext not in AUDIO_EXTS:
+            errors.append(f"{uf.filename}: unsupported format")
+            continue
+
+        song_name = Path(uf.filename).stem
+        dest_dir = LIBRARY_DIR / song_name
+
+        if dest_dir.exists():
+            skipped += 1
+            continue
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_wav = dest_dir / "full.wav"
+
+        try:
+            content = await uf.read()
+            if ext == ".wav":
+                dest_wav.write_bytes(content)
+            else:
+                import io, tempfile
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                    tmp.write(content)
+                    tmp_path = tmp.name
+                try:
+                    import librosa, soundfile as sf
+                    y, sr = librosa.load(tmp_path, sr=None, mono=False)
+                    sf.write(str(dest_wav), y, sr)
+                finally:
+                    Path(tmp_path).unlink(missing_ok=True)
+            imported.append(song_name)
+        except Exception as exc:
+            errors.append(f"{uf.filename}: {exc}")
+            import shutil as _shutil
+            _shutil.rmtree(dest_dir, ignore_errors=True)
+            continue
+
+    if auto_analyze and imported:
+        for name in imported:
+            jid = job_store.create_job(JobType.ANALYZE, {"song": name, "type": "upload"})
+            job_store.submit_job(jid, task_analyze_imported, song_name=name)
+
+    return {
+        "imported": len(imported),
+        "skipped": skipped,
+        "files": imported,
+        "errors": errors,
+    }

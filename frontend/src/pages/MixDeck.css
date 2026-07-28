@@ -154,6 +154,32 @@
   color: var(--color-text-faint);
 }
 
+/* ── Upload button ── */
+.md-upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-upload-btn:hover:not(:disabled) {
+  border-color: var(--color-green-500);
+  color: var(--color-green-500);
+}
+
+.md-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Turntables row ── */
 .md-turntables-row {
   display: grid;

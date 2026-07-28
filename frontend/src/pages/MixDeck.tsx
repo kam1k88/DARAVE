@@ -290,8 +290,10 @@ export default function MixDeck() {
   const [effectA, setEffectA] = useState('none')
   const [loadedTracks, setLoadedTracks] = useState<{ a: boolean; b: boolean }>({ a: false, b: false })
 
-  const [showLibrary, setShowLibrary] = useState(false)
+  const [showLibrary, setShowLibrary] = useState(true)
   const [showChat, setShowChat] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [cuePointsA, setCuePointsA] = useState<{ id: number; time: number; color: string; label?: string }[]>([])
   const [cuePointsB, setCuePointsB] = useState<{ id: number; time: number; color: string; label?: string }[]>([])
   const cueIdRef = useRef(0)
@@ -397,6 +399,22 @@ export default function MixDeck() {
     return audioCtxRef.current
   }, [])
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      await libraryApi.upload(Array.from(files))
+      // Refresh library
+      window.dispatchEvent(new Event('library-changed'))
+    } catch (err) {
+      console.error('Upload failed:', err)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   async function analyzeSong(name: string) {
     if (!name || analyzing) return
     setAnalyzing(name)
@@ -485,6 +503,68 @@ export default function MixDeck() {
   const levelA = audio.levels.get('deckA') ?? 0
   const levelB = audio.levels.get('deckB') ?? 0
 
+  // ── Agent callbacks for AI control ──
+  const agentCallbacks: import('@/lib/agentTools').AgentCallbacks = useMemo(() => ({
+    loadTrack: async (deck: 'A' | 'B', trackName: string) => {
+      if (deck === 'A') setSongA(trackName)
+      else setSongB(trackName)
+      return `Loaded "${trackName}" into Deck ${deck}`
+    },
+    play: async () => {
+      audio.play()
+      return 'Playback started'
+    },
+    pause: async () => {
+      audio.pause()
+      return 'Playback paused'
+    },
+    stop: async () => {
+      audio.stop()
+      return 'Playback stopped'
+    },
+    setCrossfader: async (position: number) => {
+      audio.setCrossfade(position)
+      return `Crossfader set to ${position.toFixed(2)}`
+    },
+    setVolume: async (deck: 'A' | 'B', volume: number) => {
+      if (deck === 'A') { setVolumeA(volume); audio.setTrackVolume('deckA', volume) }
+      else { setVolumeB(volume); audio.setTrackVolume('deckB', volume) }
+      return `Deck ${deck} volume set to ${Math.round(volume * 100)}%`
+    },
+    setEffect: async (deck: 'A' | 'B', effect: string) => {
+      if (deck === 'A') setEffectA(effect)
+      audio.setEffect(deck === 'A' ? 'deckA' : 'deckB', effect)
+      return `Deck ${deck} effect set to ${effect}`
+    },
+    checkCompatibility: async () => {
+      if (!songA || !songB) return 'Need two tracks loaded to check compatibility'
+      const res = await analysisApi.compatibility(songA, songB)
+      if ('overall' in res) {
+        const r = res as import('@/types').CompatibilityResult
+        setCompat(r)
+        return `Compatibility: ${Math.round(r.overall * 100)}% — ${r.compatible ? 'Good match!' : 'Mismatch, mix with caution'}`
+      }
+      return 'Compatibility check completed'
+    },
+    startRemix: async () => {
+      if (!songA || !songB) return 'Need two tracks loaded to start remix'
+      await launchRemix()
+      return 'Remix started — check jobs panel for progress'
+    },
+    getDeckInfo: async () => {
+      return JSON.stringify({
+        deckA: { track: songA || 'empty', bpm: songInfoA?.bpm, playing: audio.state === 'playing' },
+        deckB: { track: songB || 'empty', bpm: songInfoB?.bpm, playing: audio.state === 'playing' },
+        crossfader: audio.crossfadeValue,
+      }, null, 2)
+    },
+    listLibrary: async () => {
+      const songs = await libraryApi.list()
+      if (songs.length === 0) return 'Library is empty — upload some tracks first!'
+      return `Library contains ${songs.length} tracks:\n` + songs.map((s) => `- ${s.name} | BPM: ${s.bpm ?? '—'} | Key: ${s.key ?? '—'}`).join('\n')
+    },
+  }), [songA, songB, songInfoA, songInfoB, audio, setSongA, setSongB, setVolumeA, setVolumeB, setEffectA, launchRemix])
+
   return (
     <div className="page-base">
       <header className="page-base__header">
@@ -502,6 +582,23 @@ export default function MixDeck() {
             </span>
           )}
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileUpload}
+        />
+        <button
+          className="md-upload-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          title="Upload audio files"
+        >
+          {uploading ? <Loader2 size={14} className="md-spin" /> : <Upload size={14} />}
+          <span>{uploading ? 'Uploading...' : 'Upload'}</span>
+        </button>
         <button
           className={`md-chat-toggle ${showChat ? 'md-chat-toggle--active' : ''}`}
           onClick={() => setShowChat(!showChat)}
@@ -872,7 +969,7 @@ export default function MixDeck() {
           {/* ── AI Chat sidebar (always visible when showChat) ── */}
           {showChat && (
             <div className="md-chat-sidebar">
-              <ChatPanel />
+              <ChatPanel agentCallbacks={agentCallbacks} />
             </div>
           )}
         </div>

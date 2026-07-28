@@ -1,7 +1,7 @@
 .sampler-container {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .sampler-header {
@@ -11,34 +11,33 @@
 }
 
 .sampler-title {
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--text-dim, #888);
+  text-transform: uppercase;
 }
 
 .sampler-pads {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  display: flex;
   gap: 2px;
 }
 
 .sampler-pad {
-  aspect-ratio: 1;
-  min-width: 24px;
-  min-height: 24px;
-  border-radius: 3px;
+  width: 28px;
+  height: 20px;
+  border-radius: 2px;
   border: 1px solid var(--border, #333);
   background: var(--surface-2, #1a1a2e);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.1s;
+  transition: all 0.08s;
   position: relative;
   overflow: hidden;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .sampler-pad:hover {
@@ -47,19 +46,18 @@
 }
 
 .sampler-pad.loaded {
-  opacity: 0.9;
+  background: color-mix(in srgb, var(--pad-color, #666) 20%, var(--surface-2, #1a1a2e));
 }
 
 .sampler-pad.active {
   background: var(--pad-color, #666);
   border-color: var(--pad-color, #666);
-  transform: scale(0.95);
 }
 
 .sampler-pad-label {
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 700;
-  color: var(--text, #ccc);
+  color: var(--text, #888);
   line-height: 1;
 }
 
@@ -73,10 +71,10 @@
 
 .sampler-pad-playing {
   position: absolute;
-  bottom: 2px;
+  bottom: 1px;
   left: 50%;
   transform: translateX(-50%);
-  width: 10px;
+  width: 8px;
   height: 2px;
   border-radius: 1px;
   background: var(--pad-color, #fff);
@@ -84,6 +82,6 @@
 }
 
 @keyframes sampler-pulse {
-  from { opacity: 0.5; transform: translateX(-50%) scaleX(0.7); }
-  to { opacity: 1; transform: translateX(-50%) scaleX(1); }
+  from { opacity: 0.5; }
+  to { opacity: 1; }
 }

@@ -36,7 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'solo',      path: '/solo',      icon: Headphones,  labelKey: 'nav.solo',      shortKey: 'nav.short.solo' },
   { id: 'mix-deck',  path: '/mix-deck',  icon: Disc3,      labelKey: 'nav.mixdeck',   shortKey: 'nav.short.mixdeck' },
   { id: 'outputs',   path: '/outputs',   icon: Folder,     labelKey: 'nav.outputs',   shortKey: 'nav.short.outputs' },
-  { id: 'downloads', path: '/downloads', icon: Settings,   labelKey: 'nav.import', shortKey: 'nav.short.import' },
+  { id: 'downloads', path: '/downloads', icon: Settings, labelKey: 'nav.downloads', shortKey: 'nav.short.downloads' },
 ]
 
 function ConnectionDot() {

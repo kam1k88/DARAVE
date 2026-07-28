@@ -477,4 +477,37 @@
   to   { transform: rotate(360deg); }
 }
 
+/* --- URL import row --- */
+
+.ops-url-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ops-url-input {
+  flex: 1;
+  background: var(--color-bg-base);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.ops-url-input:focus {
+  border-color: var(--color-amber-500);
+}
+
+.ops-url-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.ops-url-input:disabled {
+  opacity: 0.5;
+}
+
 .ops-job__timer { font-size: var(--text-xs); display: block; margin-top: 2px; }

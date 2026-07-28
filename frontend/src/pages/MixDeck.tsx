@@ -507,8 +507,9 @@ export default function MixDeck() {
   // ── Agent callbacks for AI control ──
   const agentCallbacks: import('@/lib/agentTools').AgentCallbacks = useMemo(() => ({
     loadTrack: async (deck: 'A' | 'B', trackName: string) => {
-      if (deck === 'A') setSongA(trackName)
-      else setSongB(trackName)
+      // Update refs immediately (before React re-render) so startRemix can read them
+      if (deck === 'A') { songARef.current = trackName; setSongA(trackName) }
+      else { songBRef.current = trackName; setSongB(trackName) }
       return `Loaded "${trackName}" into Deck ${deck}`
     },
     play: async (deck?: 'A' | 'B') => {

@@ -2,9 +2,14 @@
    DARAVE — AI Chat Panel (Unified Agent)
    One smart agent that decides: respond with text OR execute tools.
    No toggle — the AI figures it out from the prompt.
+
+   PERFORMANCE: Streaming text accumulates in a ref and commits
+   to the Zustand store only ONCE when streaming finishes. This
+   prevents 80ms×N store updates from re-rendering the entire
+   MixDeck component tree (turntables, waveforms, etc.).
    ============================================================ */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { Send, Square, Trash2, BotMessageSquare, Wrench, Mic, MicOff } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/appStore'
@@ -49,7 +54,7 @@ function ToolCallBlock({ tc }: { tc: ChatToolCall }) {
   )
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage }) {
   const [showToolDetail, setShowToolDetail] = useState(false)
 
   return (
@@ -85,7 +90,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       )}
     </div>
   )
-}
+})
 
 function StreamingDots() {
   return (
@@ -101,13 +106,13 @@ function VoiceIndicator({ active, transcript }: { active: boolean; transcript: s
   if (!active) return null
   return (
     <div className="chat-voice-indicator">
-      <Mic size={12} className="chat-voice-pulse" />
+      <Mic size={12} className="chat-chat-voice-pulse" />
       <span className="chat-voice-text">{transcript || 'Слушаю...'}</span>
     </div>
   )
 }
 
-// --- Store helpers ---
+// --- Store helpers (batched, not per-chunk) ---
 
 function addAssistantMessage(content: string, toolCalls?: ChatToolCall[]) {
   useAppStore.setState((s) => {
@@ -152,12 +157,12 @@ function addUserMessage(content: string) {
 
 function getMessages(): ChatMessage[] {
   return useAppStore.getState().chatMessages
-
 }
 
+// Stream LLM response — returns full text WITHOUT touching the store.
+// The caller is responsible for committing the result.
 async function streamLLMResponse(
   messages: ChatMessage[],
-  onChunk: (text: string) => void,
   abortSignal?: AbortSignal,
 ): Promise<string> {
   let fullText = ''
@@ -166,15 +171,6 @@ async function streamLLMResponse(
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let chunkBuffer = ''
-  let flushTimer: ReturnType<typeof setTimeout> | null = null
-
-  const flushChunks = () => {
-    if (chunkBuffer) {
-      onChunk(chunkBuffer)
-      chunkBuffer = ''
-    }
-  }
 
   while (true) {
     const { done, value } = await reader.read()
@@ -193,23 +189,11 @@ async function streamLLMResponse(
       try {
         const parsed = JSON.parse(data)
         if (parsed.type === 'chunk' && parsed.data?.content) {
-          chunkBuffer += parsed.data.content
           fullText += parsed.data.content
-          // Throttle: flush at most every 80ms
-          if (!flushTimer) {
-            flushTimer = setTimeout(() => {
-              flushChunks()
-              flushTimer = null
-            }, 80)
-          }
         }
       } catch { /* skip */ }
     }
   }
-
-  // Final flush
-  if (flushTimer) clearTimeout(flushTimer)
-  flushChunks()
 
   return fullText
 }
@@ -244,9 +228,22 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
   const agentLoopRef = useRef(false)
   const recognitionRef = useRef<any>(null)
 
+  // Streaming preview — stored in ref, NOT in Zustand store
+  const streamingTextRef = useRef('')
+
+  // Debounced scroll — max once per 300ms
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const scrollToBottom = useCallback(() => {
+    if (scrollTimerRef.current) return
+    scrollTimerRef.current = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollTimerRef.current = undefined
+    }, 300)
+  }, [])
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages, chatStreaming])
+    scrollToBottom()
+  }, [chatMessages, chatStreaming, scrollToBottom])
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -348,19 +345,22 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
 
         apiMessages.unshift({ role: 'system', content: systemPrompt })
 
-        addAssistantMessage('')
+        // Stream WITHOUT touching the store — accumulate in ref
+        streamingTextRef.current = ''
 
-        const { appendToLastAssistantMessage } = useAppStore.getState()
         const responseText = await streamLLMResponse(
           apiMessages,
-          (chunk) => appendToLastAssistantMessage(chunk),
           abortRef.current?.signal,
         )
+
+        // Clear streaming preview
+        streamingTextRef.current = ''
 
         const toolCalls = extractToolCalls(responseText)
 
         if (toolCalls.length === 0) {
-          // No tool calls — AI chose to respond with text. Done.
+          // No tool calls — AI chose to respond with text. Commit to store once.
+          addAssistantMessage(responseText)
           break
         }
 
@@ -388,7 +388,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
           if (!result.success) break
         }
 
-        // Yield to main thread between rounds to prevent page freeze
+        // Yield to main thread between rounds
         await new Promise((r) => setTimeout(r, 50))
       }
     } catch (err: any) {
@@ -396,6 +396,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         setChatError(err?.message || 'Agent loop failed')
       }
     } finally {
+      streamingTextRef.current = ''
       agentLoopRef.current = false
       setChatStreaming(false)
       abortRef.current = null
@@ -427,10 +428,6 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
 
         await streamLLMResponse(
           apiMessages,
-          (chunk) => {
-            const store = useAppStore.getState()
-            store.appendToLastAssistantMessage(chunk)
-          },
           abortRef.current?.signal,
         )
       } catch (err: any) {
@@ -441,7 +438,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         setChatStreaming(false)
       }
     }
-  }, [chatMessages, chatStreaming, agentCallbacks, agentLoop, setChatStreaming, setChatError])
+  }, [chatStreaming, agentCallbacks, agentLoop, setChatStreaming, setChatError])
 
   const handleSend = () => sendMessage(input)
   const handleKeyDown = (e: React.KeyboardEvent) => {

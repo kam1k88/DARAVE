@@ -47,8 +47,31 @@ const WaveformTimeline: React.FC<WaveformTimelineProps> = ({
   const [zoom, setZoom] = useState(1)
   const [scrollX, setScrollX] = useState(0)
   const isDragging = useRef(false)
+  const sizeRef = useRef({ w: 0, h: 70 })
 
   const pixelsPerSecond = 80 * zoom
+
+  // Resize canvas ONLY when container size changes (not every frame)
+  useEffect(() => {
+    const container = containerRef.current
+    const canvas = canvasRef.current
+    if (!container || !canvas) return
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const w = Math.floor(entry.contentRect.width)
+      const h = Math.floor(entry.contentRect.height) || 70
+      if (w === sizeRef.current.w && h === sizeRef.current.h) return
+      sizeRef.current = { w, h }
+      canvas.width = w * 2
+      canvas.height = h * 2
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -57,14 +80,10 @@ const WaveformTimeline: React.FC<WaveformTimelineProps> = ({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const w = container.clientWidth
-    const h = container.clientHeight || 70
-    canvas.width = w * 2
-    canvas.height = h * 2
-    canvas.style.width = `${w}px`
-    canvas.style.height = `${h}px`
-    ctx.scale(2, 2)
+    const { w, h } = sizeRef.current
+    if (w === 0) return
 
+    ctx.setTransform(2, 0, 0, 2, 0, 0)
     ctx.fillStyle = '#0a0a15'
     ctx.fillRect(0, 0, w, h)
 

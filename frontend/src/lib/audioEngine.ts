@@ -736,13 +736,24 @@ export class AudioEngine {
     return { waveform, frequency }
   }
 
+  private _lastAnalyserTime = 0
+  private _analyserFrame = 0
+
   private startAnalyserLoop() {
-    const loop = () => {
+    const loop = (now: number) => {
       const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
       if (!anyPlaying) return
-      const data = this.getAnalyserData()
-      if (data) this.events.onAnalyser?.(data)
-      this.events.onTimeUpdate?.(this.currentTime, this._duration)
+      // Throttle analyser to ~30fps
+      if (now - this._lastAnalyserTime >= 33) {
+        this._lastAnalyserTime = now
+        const data = this.getAnalyserData()
+        if (data) this.events.onAnalyser?.(data)
+      }
+      // Time update every frame (needed for smooth playhead) but throttle React updates
+      this._analyserFrame++
+      if (this._analyserFrame % 2 === 0) {
+        this.events.onTimeUpdate?.(this.currentTime, this._duration)
+      }
       this._rafId = requestAnimationFrame(loop)
     }
     this._rafId = requestAnimationFrame(loop)
@@ -765,15 +776,21 @@ export class AudioEngine {
     return Math.sqrt(sum / data.length)
   }
 
+  private _lastLevelTime = 0
+
   private startLevelLoop() {
-    const loop = () => {
+    const loop = (now: number) => {
       const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
       if (!anyPlaying) return
-      const levels = new Map<string, number>()
-      for (const [id] of this.tracks) {
-        levels.set(id, this.getTrackLevel(id))
+      // Throttle to ~10fps (100ms)
+      if (now - this._lastLevelTime >= 100) {
+        this._lastLevelTime = now
+        const levels = new Map<string, number>()
+        for (const [id] of this.tracks) {
+          levels.set(id, this.getTrackLevel(id))
+        }
+        this.events.onLevels?.(levels)
       }
-      this.events.onLevels?.(levels)
       this._levelRafId = requestAnimationFrame(loop)
     }
     this._levelRafId = requestAnimationFrame(loop)

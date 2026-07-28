@@ -107,40 +107,49 @@ function VoiceIndicator({ active, transcript }: { active: boolean; transcript: s
   )
 }
 
-// --- Tool call extraction (bracket-counting for nested JSON) ---
+// --- Tool call extraction — handles ANY JSON format the AI might output ---
+
+function extractBalancedJson(text: string, startIdx: number): string | null {
+  let start = startIdx
+  while (start < text.length && text[start] !== '{') start++
+  if (start >= text.length) return null
+
+  let depth = 0
+  let end = start
+  let inString = false
+  let escape = false
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (escape) { escape = false; continue }
+    if (ch === '\\' && inString) { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) { end = i; break }
+    }
+  }
+
+  if (depth !== 0) return null
+  return text.slice(start, end + 1)
+}
 
 function extractToolCalls(text: string): FrontendToolCall[] {
   const calls: FrontendToolCall[] = []
-  const marker = '"tool_call"'
-  let searchFrom = 0
+  const knownToolNames = new Set(FRONTEND_TOOLS.map((t) => t.name))
 
+  // Strategy 1: find {"tool_call": {...}} format
+  const toolCallMarker = '"tool_call"'
+  let searchFrom = 0
   while (true) {
-    const idx = text.indexOf(marker, searchFrom)
+    const idx = text.indexOf(toolCallMarker, searchFrom)
     if (idx === -1) break
 
-    let start = idx - 1
-    while (start >= 0 && text[start] !== '{') start--
-    if (start < 0) { searchFrom = idx + marker.length; continue }
+    const jsonStr = extractBalancedJson(text, idx)
+    if (!jsonStr) { searchFrom = idx + toolCallMarker.length; continue }
 
-    let depth = 0
-    let end = start
-    let inString = false
-    let escape = false
-
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i]
-      if (escape) { escape = false; continue }
-      if (ch === '\\' && inString) { escape = true; continue }
-      if (ch === '"') { inString = !inString; continue }
-      if (inString) continue
-      if (ch === '{') depth++
-      else if (ch === '}') {
-        depth--
-        if (depth === 0) { end = i; break }
-      }
-    }
-
-    const jsonStr = text.slice(start, end + 1)
     try {
       const parsed = JSON.parse(jsonStr)
       const tc = parsed.tool_call
@@ -148,12 +157,40 @@ function extractToolCalls(text: string): FrontendToolCall[] {
         calls.push({
           id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           name: tc.name,
-          arguments: tc.arguments || {},
+          arguments: tc.arguments || tc.parameters || {},
         })
       }
     } catch { /* skip */ }
 
-    searchFrom = end + 1
+    searchFrom = idx + jsonStr.length
+  }
+
+  if (calls.length > 0) return calls
+
+  // Strategy 2: find standalone JSON objects with "name" field matching a known tool
+  // Handles: {"name": "load_track_to_deck", "parameters": {...}}
+  //          {"name": "play_deck", "arguments": {}}
+  //          {"name": "set_crossfader", "parameters": {"position": 0.5}}
+  let pos = 0
+  while (pos < text.length) {
+    const braceIdx = text.indexOf('{', pos)
+    if (braceIdx === -1) break
+
+    const jsonStr = extractBalancedJson(text, braceIdx)
+    if (!jsonStr) { pos = braceIdx + 1; continue }
+
+    try {
+      const parsed = JSON.parse(jsonStr)
+      if (parsed.name && typeof parsed.name === 'string' && knownToolNames.has(parsed.name)) {
+        calls.push({
+          id: parsed.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: parsed.name,
+          arguments: parsed.arguments || parsed.parameters || {},
+        })
+      }
+    } catch { /* skip */ }
+
+    pos = braceIdx + jsonStr.length
   }
 
   return calls
@@ -368,8 +405,11 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
           '- If user gives a command like "загрузи", "включи", "поставь" → use a tool.',
           '- You can BOTH answer AND use tools in the same response if needed.',
           '',
-          'TOOL FORMAT (when you need to act):',
-          '  {"tool_call": {"id": "call_N", "name": "TOOL_NAME", "arguments": {}}}',
+          'TOOL FORMAT — output ONE JSON object per action:',
+          '  {"name": "TOOL_NAME", "parameters": {}}',
+          '',
+          'IMPORTANT: Each tool call MUST be a separate JSON object on its own line.',
+          'Do NOT wrap in {"tool_call": ...}. Just output the plain JSON.',
           '',
           'You control Deck A and Deck B. If a deck is empty, load a track first.',
           'Be concise in answers. Be fast in actions.',

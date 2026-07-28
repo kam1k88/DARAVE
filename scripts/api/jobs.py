@@ -143,7 +143,7 @@ def _upsert_row(conn: sqlite3.Connection, job: Dict[str, Any]) -> None:
 _jobs: Dict[str, Dict[str, Any]] = {}
 _cancelled: set[str] = set()          # job IDs that were cancelled before starting
 _lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="remixmate-worker")
+_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="darave-worker")
 
 # SSE hook — registered by scripts.api.routers.events on startup.
 # Signature: (event_type: str, job_dict: dict) -> None  (sync callable)
@@ -248,6 +248,41 @@ def _load_from_db() -> None:
 
 
 _load_from_db()
+
+
+# ---------------------------------------------------------------------------
+# Watchdog — detect stuck jobs and mark them failed
+# ---------------------------------------------------------------------------
+
+_WATCHDOG_INTERVAL = 30  # seconds between checks
+_STUCK_TIMEOUT = 600     # 10 minutes — jobs running longer than this are stuck
+
+def _watchdog_loop():
+    """Background thread that periodically checks for stuck RUNNING jobs."""
+    import time as _time
+    while True:
+        _time.sleep(_WATCHDOG_INTERVAL)
+        now = _time.time()
+        with _lock:
+            for job in _jobs.values():
+                if _status_value(job["status"]) != "running":
+                    continue
+                started = job.get("started_at")
+                if started and (now - started) > _STUCK_TIMEOUT:
+                    job["status"] = JobStatus.FAILED
+                    job["finished_at"] = now
+                    job["error"] = f"Job stuck (running for {int(now - started)}s, timeout {_STUCK_TIMEOUT}s)"
+                    job["message"] = "Failed: stuck/timeout"
+                    try:
+                        with closing(_get_conn()) as conn:
+                            _upsert_row(conn, job)
+                    except Exception:
+                        pass
+                    _emit("job_failed", dict(job))
+                    logger.warning("Stuck job marked FAILED", extra={"job_id": job["job_id"], "elapsed": int(now - started)})
+
+_watchdog = threading.Thread(target=_watchdog_loop, daemon=True, name="darave-watchdog")
+_watchdog.start()
 
 
 # ---------------------------------------------------------------------------

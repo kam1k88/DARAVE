@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore, selectRecentJobs, type ActivityEntry } from '@/stores/appStore'
 import { useJobTimer } from '@/hooks/useJobTimer'
-import { remixApi } from '@/lib/api'
+import { remixApi, jobsApi } from '@/lib/api'
 import { ChatPanel } from '@/components/ChatPanel'
 import type { Job } from '@/types'
 import './RightInspector.css'
@@ -60,7 +60,8 @@ function RunningTimer({ job }: { job: Job }) {
 }
 
 function JobCard({ job }: { job: Job }) {
-  const cancelJob = useAppStore((s) => s.removeJob)
+  const removeJob = useAppStore((s) => s.removeJob)
+  const upsertJob = useAppStore((s) => s.upsertJob)
   const navigate = useNavigate()
 
   function handleCardClick(e: React.MouseEvent) {
@@ -68,11 +69,6 @@ function JobCard({ job }: { job: Job }) {
     if ((e.target as HTMLElement).closest('button')) return
     const dest = jobDestination(job.type)
     if (job.status === 'RUNNING' || job.status === 'PENDING') {
-      // Navigating away doesn't stop the job (it keeps running server-side),
-      // but it does drop this live progress view and the in-flight upload
-      // state some pages hold (e.g. a bridge-beat file picked on Mix Deck).
-      // Warn before doing that instead of silently yanking the user off an
-      // in-progress screen.
       const ok = window.confirm(
         `This ${job.type} job is still running. Redirecting now won't stop ` +
         `it, but you'll lose this live progress view — it might break ` +
@@ -83,9 +79,19 @@ function JobCard({ job }: { job: Job }) {
     navigate(dest)
   }
 
+  async function handleCancel() {
+    try {
+      await jobsApi.cancel(job.job_id)
+      // Update local state immediately
+      upsertJob({ ...job, status: 'CANCELLED', message: 'Cancelled by user' })
+    } catch {
+      // If API fails, at least remove from local store
+      removeJob(job.job_id)
+    }
+  }
+
   async function handleRetry() {
     const meta = (job.meta as Record<string, unknown>) ?? {}
-    const upsertJob = useAppStore.getState().upsertJob
     try {
       let res: { job_id: string }
       if (job.type === 'dj_remix' && meta.song_a && meta.song_b) {
@@ -95,13 +101,15 @@ function JobCard({ job }: { job: Job }) {
       } else {
         return
       }
+      // Remove old failed job and add new one
+      removeJob(job.job_id)
       upsertJob({
         job_id: res.job_id, status: 'PENDING', type: job.type,
         progress: 0, message: 'Retrying…',
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       })
     } catch {
-      // silently ignore — user sees the existing error card
+      // silently ignore
     }
   }
 
@@ -148,7 +156,7 @@ function JobCard({ job }: { job: Job }) {
       {(job.status === 'PENDING' || job.status === 'RUNNING') && (
         <button
           className="inspector-job-card__cancel"
-          onClick={() => cancelJob(job.job_id)}
+          onClick={handleCancel}
           title="Cancel job"
           aria-label="Cancel job"
         >

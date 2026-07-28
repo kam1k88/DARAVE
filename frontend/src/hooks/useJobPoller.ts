@@ -1,30 +1,40 @@
 /* ============================================================
-   AI RemixMate — Job polling fallback hook
+   DARAVE — Job polling fallback hook
    Used when SSE is unavailable; polls /api/jobs every N seconds
    and syncs results into the Zustand job store.
+   Only updates jobs that are newer than what's already stored.
    ============================================================ */
 
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/appStore'
 import { jobsApi } from '@/lib/api'
 
-const POLL_INTERVAL_MS = 4_000
+const POLL_INTERVAL_MS = 3_000
 
 export function useJobPoller(enabled = true) {
-  const { sseConnected, setJobs, setApiHealth } = useAppStore.getState()
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    // Only poll if SSE is not connected
-    if (!enabled || sseConnected) return
+    if (!enabled) return
 
     async function poll() {
       try {
+        const { sseConnected, upsertJob } = useAppStore.getState()
+        // Don't poll if SSE is handling it
+        if (sseConnected) return
+
         const jobs = await jobsApi.list()
-        setJobs(jobs)
-        setApiHealth('ok')
+        const store = useAppStore.getState()
+        for (const job of jobs) {
+          const existing = store.jobs[job.job_id]
+          // Only upsert if we don't have it, or if the server version is newer
+          if (!existing || new Date(job.updated_at) > new Date(existing.updated_at)) {
+            upsertJob(job)
+          }
+        }
+        useAppStore.getState().setApiHealth('ok')
       } catch {
-        setApiHealth('degraded')
+        useAppStore.getState().setApiHealth('degraded')
       }
     }
 
@@ -34,5 +44,5 @@ export function useJobPoller(enabled = true) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [enabled, sseConnected, setJobs, setApiHealth])
+  }, [enabled])
 }

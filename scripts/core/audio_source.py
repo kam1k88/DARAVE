@@ -29,7 +29,7 @@ from scripts.core.paths import song_dir
 log = logging.getLogger(__name__)
 
 # Single-file sources, highest fidelity first.
-_SOURCE_FILES = ("full.wav", "full_enhanced.wav")
+_SOURCE_FILES = ("full.mp3", "full.wav", "full_enhanced.wav")
 # Demucs stems in canonical order; reconstruct = sum of all four.
 _STEMS = ("vocals", "drums", "bass", "other")
 

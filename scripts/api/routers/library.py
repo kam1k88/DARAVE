@@ -100,7 +100,7 @@ def list_library_names(
     )
     names = []
     for d in all_dirs:
-        if with_wav and not (d / "full.wav").exists():
+        if with_wav and not ((d / "full.wav").exists() or (d / "full.mp3").exists()):
             continue
         if with_stems and not any(
             (d / f"{s}.wav").exists() or (d / f"{s}.flac").exists()
@@ -307,8 +307,11 @@ def storage_prune():
     for entry in mgr.list_songs():
         if not entry.has_full_wav:
             continue
+        # Check for MP3 or WAV
+        full_mp3 = Path(entry.path) / "full.mp3"
         full_wav = Path(entry.path) / "full.wav"
-        size = full_wav.stat().st_size if full_wav.exists() else 0
+        audio_file = full_mp3 if full_mp3.exists() else full_wav
+        size = audio_file.stat().st_size if audio_file.exists() else 0
         if mgr.prune_raw(entry.name, force=True):
             pruned.append(entry.name)
             freed_bytes += size
@@ -788,17 +791,22 @@ def import_local_folder(
             continue
 
         dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_wav = dest_dir / "full.wav"
 
         try:
-            if f.suffix.lower() == ".wav":
-                copy2(str(f), str(dest_wav))
+            if f.suffix.lower() == ".mp3":
+                # Keep MP3 as-is
+                copy2(str(f), str(dest_dir / "full.mp3"))
+            elif f.suffix.lower() == ".wav":
+                # Keep WAV as-is
+                copy2(str(f), str(dest_dir / "full.wav"))
             else:
-                # Convert mp3/flac/etc → full.wav via librosa + soundfile
-                import librosa
-                import soundfile as sf
-                audio, sr = librosa.load(str(f), sr=44100, mono=True)
-                sf.write(str(dest_wav), audio, sr, format="WAV", subtype="PCM_16")
+                # Convert flac/ogg/etc → full.mp3 via ffmpeg
+                import subprocess
+                dest_mp3 = dest_dir / "full.mp3"
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(f), "-codec:a", "libmp3lame", "-b:a", "192k", str(dest_mp3)],
+                    check=True, capture_output=True,
+                )
         except Exception as exc:
             # If conversion fails, copy original as-is (fallback)
             copy2(str(f), str(dest_dir / f"full{f.suffix.lower()}"))
@@ -870,21 +878,25 @@ async def upload_tracks(
             continue
 
         dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_wav = dest_dir / "full.wav"
 
         try:
             content = await uf.read()
-            if ext == ".wav":
-                dest_wav.write_bytes(content)
+            if ext == ".mp3":
+                (dest_dir / "full.mp3").write_bytes(content)
+            elif ext == ".wav":
+                (dest_dir / "full.wav").write_bytes(content)
             else:
                 import io, tempfile
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(content)
                     tmp_path = tmp.name
                 try:
-                    import librosa, soundfile as sf
-                    y, sr = librosa.load(tmp_path, sr=None, mono=False)
-                    sf.write(str(dest_wav), y, sr)
+                    import subprocess
+                    dest_mp3 = dest_dir / "full.mp3"
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", tmp_path, "-codec:a", "libmp3lame", "-b:a", "192k", str(dest_mp3)],
+                        check=True, capture_output=True,
+                    )
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
             imported.append(song_name)

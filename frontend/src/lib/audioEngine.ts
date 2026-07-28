@@ -86,12 +86,6 @@ export interface EngineEvents {
 }
 
 // ---------------------------------------------------------------------------
-// Default stem names (Demucs 4-stem model)
-// ---------------------------------------------------------------------------
-
-const STEM_NAMES = ['drums', 'bass', 'other', 'vocals']
-
-// ---------------------------------------------------------------------------
 // Crossfade curves
 // ---------------------------------------------------------------------------
 
@@ -211,34 +205,19 @@ export class AudioEngine {
 
     const slot = this.createEmptySlot(trackId, songName, ctx)
 
-    const stemPromises = STEM_NAMES.map(async (stem) => {
-      try {
-        const url = `${BASE}/library/${encodeURIComponent(songName)}/stems/${encodeURIComponent(stem)}`
-        const res = await fetch(url)
-        if (!res.ok) return
+    // Load full audio (MP3/WAV) — skip stems for faster loading
+    try {
+      const url = `${BASE}/library/${encodeURIComponent(songName)}/audio`
+      const res = await fetch(url)
+      if (res.ok) {
         const arrayBuf = await res.arrayBuffer()
         const audioBuf = await ctx.decodeAudioData(arrayBuf)
-        slot.buffers.set(stem, audioBuf)
-      } catch {
-        // Stem not available — skip
-      }
-    })
-
-    await Promise.all(stemPromises)
-
-    if (slot.buffers.size === 0) {
-      // Fallback: try full audio
-      try {
-        const url = `${BASE}/library/${encodeURIComponent(songName)}/audio`
-        const res = await fetch(url)
-        if (res.ok) {
-          const arrayBuf = await res.arrayBuffer()
-          const audioBuf = await ctx.decodeAudioData(arrayBuf)
-          slot.buffers.set('mix', audioBuf)
-        }
-      } catch {
+        slot.buffers.set('mix', audioBuf)
+      } else {
         this.events.onError?.(`Failed to load audio for ${songName}`)
       }
+    } catch {
+      this.events.onError?.(`Failed to load audio for ${songName}`)
     }
 
     slot.loaded = slot.buffers.size > 0

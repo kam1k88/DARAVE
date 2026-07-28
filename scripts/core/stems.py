@@ -166,17 +166,24 @@ def separate_song_stems(
                 pass
 
     dest_dir = _song_dir(song_name)
+
+    # Look for source audio: prefer MP3 (smaller), fall back to WAV
+    mp3_path = dest_dir / "full.mp3"
     wav_path = dest_dir / "full.wav"
 
-    if not wav_path.exists():
+    if mp3_path.exists():
+        source_path = mp3_path
+    elif wav_path.exists():
+        source_path = wav_path
+    else:
         return StemResult(song=song_name, success=False,
-                          error=f"full.wav not found in library/{song_name}/")
+                          error=f"No source audio found in library/{song_name}/")
 
     # ── 1. Load audio ────────────────────────────────────────────────────
     _prog(0.03, f"Loading {song_name[:40]}…")
     sr = 44100
     try:
-        audio, _ = librosa.load(str(wav_path), sr=sr, mono=True)
+        audio, _ = librosa.load(str(source_path), sr=sr, mono=True)
     except Exception as exc:
         return StemResult(song=song_name, success=False,
                           error=f"Could not load audio: {exc}")
@@ -185,7 +192,7 @@ def separate_song_stems(
     # Pre-Demucs LUFS normalization removed: tracks keep their original
     # loudness so the DJ mix preserves dynamics.  Only final master_mix()
     # applies LUFS normalization.
-    demucs_input = wav_path
+    demucs_input = source_path
     enhance_info: dict = {"skipped": True, "reason": "pre-Demucs enhance disabled"}
 
     # ── 3. Demucs separation ──────────────────────────────────────────────

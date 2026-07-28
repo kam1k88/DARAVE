@@ -186,10 +186,10 @@ def download_jamendo_track(url: str, name: str) -> Optional[Path]:
     ensure_directories()
     dest_dir = song_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    wav_dest = dest_dir / "full.wav"
+    mp3_dest = dest_dir / "full.mp3"
 
-    if wav_dest.exists():
-        return wav_dest
+    if mp3_dest.exists():
+        return mp3_dest
 
     # Use yt-dlp (handles direct MP3 URLs cleanly) or fall back to requests
     try:
@@ -198,32 +198,25 @@ def download_jamendo_track(url: str, name: str) -> Optional[Path]:
             "format": "bestaudio/best",
             "outtmpl": str(dest_dir / "full.%(ext)s"),
             "postprocessors": [{"key": "FFmpegExtractAudio",
-                                 "preferredcodec": "wav", "preferredquality": "0"}],
+                                 "preferredcodec": "mp3", "preferredquality": "192"}],
             "quiet": False,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
-        if wav_dest.exists():
-            return wav_dest
+        if mp3_dest.exists():
+            return mp3_dest
     except Exception:
         pass
 
-    # Fallback: requests streaming download → ffmpeg convert
+    # Fallback: requests streaming download
     try:
         import requests as req
-        mp3_path = dest_dir / "full.mp3"
         with req.get(url, stream=True, timeout=30) as r:
             r.raise_for_status()
-            with open(mp3_path, "wb") as f:
+            with open(mp3_dest, "wb") as f:
                 for chunk in r.iter_content(chunk_size=65536):
                     f.write(chunk)
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(mp3_path),
-             "-ac", "1", "-ar", "44100", str(wav_dest)],
-            check=True, capture_output=True,
-        )
-        mp3_path.unlink(missing_ok=True)
-        return wav_dest
+        return mp3_dest
     except Exception:
         return None
 
@@ -365,13 +358,13 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     _emit(0.01, "Resolving track…")
     url, name = _resolve_url(spec)
     dest_dir  = song_dir(name)
-    wav_dest  = dest_dir / "full.wav"
+    mp3_dest  = dest_dir / "full.mp3"
 
     # --- Skip if already downloaded ---
-    if wav_dest.exists():
+    if mp3_dest.exists():
         print(f"⏩  Skipping (already in library): {name}")
         _emit(1.0, f"Already in library: {name}")
-        result = DownloadResult(name=name, success=True, wav=wav_dest)
+        result = DownloadResult(name=name, success=True, wav=mp3_dest)
         if spec.separate:
             result.stems = _collect_stems(name)
         # Attach existing licence info if present
@@ -408,7 +401,7 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
                 # yt-dlp download occupies the 3%–40% window of the pipeline
                 _emit(0.03 + 0.37 * frac, f"Downloading audio… {int(frac * 100)}%")
         elif status == "finished":
-            _emit(0.40, "Converting to WAV…")
+            _emit(0.40, "Converting to MP3…")
 
     try:
         import yt_dlp  # type: ignore
@@ -419,15 +412,15 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
             "outtmpl": tmp_tmpl,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "0",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
             }],
             "quiet": False,
             "no_warnings": False,
             "no_playlist": True,       # single track only in this function
             "prefer_free_formats": True,
             "writethumbnail": False,
-            "writeinfojson": True,     # save metadata alongside WAV
+            "writeinfojson": True,     # save metadata alongside MP3
             "outtmpl_na_placeholder": "",
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -435,11 +428,11 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     except Exception as e:
         return DownloadResult(name=name, success=False, error=str(e))
 
-    if not wav_dest.exists():
+    if not mp3_dest.exists():
         return DownloadResult(name=name, success=False,
-                              error="WAV not produced after download.")
+                              error="MP3 not produced after download.")
 
-    print(f"✅  Saved: {wav_dest}")
+    print(f"✅  Saved: {mp3_dest}")
     _emit(0.45, "Saving licence metadata…")
 
     # --- Classify and save licence ---
@@ -448,7 +441,7 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     # --- Duplicate detection (fingerprint) ---
     try:
         mgr = get_library_manager()
-        dup = mgr.find_duplicate(wav_dest)
+        dup = mgr.find_duplicate(mp3_dest)
         if dup and dup != name:
             print(
                 f"⚠️  Possible duplicate detected! '{name}' looks identical to "
@@ -462,7 +455,7 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     if spec.separate:
         # Demucs occupies the 50%–95% window of the pipeline
         stems = _separate_stems(
-            name, wav_dest,
+            name, mp3_dest,
             progress_cb=(lambda p, m: _emit(0.50 + 0.45 * p, m)) if progress_cb else None,
         )
 
@@ -494,7 +487,7 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     try:
         mgr = get_library_manager()
         mgr.register(name, source=_source_from_url(url))
-        mgr.store_fingerprint(name, wav_dest if wav_dest.exists() else dest_dir / "vocals.wav")
+        mgr.store_fingerprint(name, mp3_dest if mp3_dest.exists() else dest_dir / "vocals.wav")
         # Evict LRU songs if library is over cap — this can delete OTHER,
         # older songs' full.wav (or whole song dirs) without the caller
         # asking for it. Surfaced via DownloadResult.evicted so the API/UI
@@ -515,7 +508,7 @@ def download_track(spec: TrackSpec, progress_cb: Optional[ProgressCb] = None) ->
     return DownloadResult(
         name=name,
         success=True,
-        wav=wav_dest if wav_dest.exists() else None,
+        wav=mp3_dest if mp3_dest.exists() else None,
         stems=stems,
         license=lic_info,
         license_warning=warn_str,

@@ -322,12 +322,40 @@ export class MultiDeckAgent {
 
   private extractToolCalls(text: string): FrontendToolCall[] {
     const calls: FrontendToolCall[] = []
-    const pattern = /\{"tool_call"\s*:\s*(\{[^}]+(?:\{[^}]*\}[^}]*)?\})\s*\}/g
-    let match
-    while ((match = pattern.exec(text)) !== null) {
+    const marker = '"tool_call"'
+    let searchFrom = 0
+
+    while (true) {
+      const idx = text.indexOf(marker, searchFrom)
+      if (idx === -1) break
+
+      let start = idx - 1
+      while (start >= 0 && text[start] !== '{') start--
+      if (start < 0) { searchFrom = idx + marker.length; continue }
+
+      let depth = 0
+      let end = start
+      let inString = false
+      let escape = false
+
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i]
+        if (escape) { escape = false; continue }
+        if (ch === '\\' && inString) { escape = true; continue }
+        if (ch === '"') { inString = !inString; continue }
+        if (inString) continue
+        if (ch === '{') depth++
+        else if (ch === '}') {
+          depth--
+          if (depth === 0) { end = i; break }
+        }
+      }
+
+      const jsonStr = text.slice(start, end + 1)
       try {
-        const tc = JSON.parse(match[1])
-        if (tc.name && typeof tc.name === 'string') {
+        const parsed = JSON.parse(jsonStr)
+        const tc = parsed.tool_call
+        if (tc && tc.name && typeof tc.name === 'string') {
           calls.push({
             id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             name: tc.name,
@@ -335,7 +363,10 @@ export class MultiDeckAgent {
           })
         }
       } catch { /* skip */ }
+
+      searchFrom = end + 1
     }
+
     return calls
   }
 

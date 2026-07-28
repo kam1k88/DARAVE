@@ -122,20 +122,74 @@ function VoiceIndicator({ active, transcript }: { active: boolean; transcript: s
 
 function extractToolCalls(text: string): FrontendToolCall[] {
   const calls: FrontendToolCall[] = []
-  const jsonPattern = /\{"tool_call"\s*:\s*(\{[^}]+(?:\{[^}]*\}[^}]*)?\})\s*\}/g
-  let match
-  while ((match = jsonPattern.exec(text)) !== null) {
+
+  // Find all {"tool_call": patterns and extract balanced JSON
+  const marker = '"tool_call"'
+  let searchFrom = 0
+
+  while (true) {
+    const idx = text.indexOf(marker, searchFrom)
+    if (idx === -1) break
+
+    // Walk backwards to find the opening { of the outer object
+    let start = idx - 1
+    while (start >= 0 && text[start] !== '{') start--
+    if (start < 0) { searchFrom = idx + marker.length; continue }
+
+    // Walk forward with bracket counting to find the matching closing }
+    let depth = 0
+    let end = start
+    let inString = false
+    let escape = false
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i]
+
+      if (escape) {
+        escape = false
+        continue
+      }
+
+      if (ch === '\\' && inString) {
+        escape = true
+        continue
+      }
+
+      if (ch === '"') {
+        inString = !inString
+        continue
+      }
+
+      if (inString) continue
+
+      if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          end = i
+          break
+        }
+      }
+    }
+
+    const jsonStr = text.slice(start, end + 1)
+
     try {
-      const tc = JSON.parse(match[1])
-      if (tc.name && typeof tc.name === 'string') {
+      const parsed = JSON.parse(jsonStr)
+      // It's {"tool_call": {...}} format — extract the inner tool_call object
+      const tc = parsed.tool_call
+      if (tc && tc.name && typeof tc.name === 'string') {
         calls.push({
           id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           name: tc.name,
           arguments: tc.arguments || {},
         })
       }
-    } catch { /* skip */ }
+    } catch { /* not valid JSON, skip */ }
+
+    searchFrom = end + 1
   }
+
   return calls
 }
 
@@ -361,10 +415,22 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
 
         const toolCalls = extractToolCalls(responseText)
 
-        if (toolCalls.length === 0) break
+        if (toolCalls.length === 0) {
+          // Check if text contains "tool_call" but parsing failed
+          if (responseText.includes('tool_call')) {
+            console.warn('[Agent] tool_call found in text but extractToolCalls returned empty. Raw text:', responseText.slice(0, 500))
+          }
+          break
+        }
+
+        console.log('[Agent] Extracted tool calls:', toolCalls)
 
         for (const tc of toolCalls) {
-          if (!agentCallbacks) break
+          if (!agentCallbacks) {
+            console.warn('[Agent] No agentCallbacks — cannot execute tool:', tc.name)
+            addToolMessage(`Error: No agent callbacks available`, tc.id)
+            break
+          }
 
           addAssistantMessage(responseText, [{
             id: tc.id,
@@ -372,7 +438,9 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
             arguments: tc.arguments,
           }])
 
+          console.log('[Agent] Executing tool:', tc.name, tc.arguments)
           const result = await executeFrontendTool(tc, agentCallbacks)
+          console.log('[Agent] Tool result:', result.name, result.success, result.result?.slice(0, 100))
 
           addToolMessage(
             result.success ? result.result : `Error: ${result.result}`,

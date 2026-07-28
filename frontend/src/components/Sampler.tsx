@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react'
+import './Sampler.css'
 
 interface SamplePad {
   id: number

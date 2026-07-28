@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react'
+import './Turntable.css'
 
 interface TurntableProps {
   bpm: number

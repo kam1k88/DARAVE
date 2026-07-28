@@ -43,11 +43,6 @@ import { ChatPanel } from '@/components/ChatPanel'
 import type { SongInfo, CompatibilityResult, SimilarTrack } from '@/types'
 import './PageBase.css'
 import './MixDeck.css'
-import '@/components/Turntable.css'
-import '@/components/WaveformTimeline.css'
-import '@/components/Sampler.css'
-import '@/components/LibraryFilterPanel.css'
-import '@/components/ChatPanel.css'
 
 const DECK_HEX: Record<'A' | 'B', string> = {
   A: '#f59e0b',
@@ -726,7 +721,7 @@ export default function MixDeck() {
                 )}
                 {loadedTracks.a && (
                   <div className="md-vu-col">
-                    <VUMeter level={levelA} color={DECK_HEX.A} height={80} width={8} />
+                    <VUMeter level={levelA} height={80} width={8} />
                   </div>
                 )}
               </div>
@@ -812,7 +807,7 @@ export default function MixDeck() {
                 )}
                 {loadedTracks.b && (
                   <div className="md-vu-col">
-                    <VUMeter level={levelB} color={DECK_HEX.B} height={80} width={8} />
+                    <VUMeter level={levelB} height={80} width={8} />
                   </div>
                 )}
               </div>

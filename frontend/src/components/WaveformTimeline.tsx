@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react'
+import './WaveformTimeline.css'
 
 interface CuePoint {
   id: number
@@ -17,7 +18,6 @@ interface WaveformTimelineProps {
   cuePoints?: CuePoint[]
   onSeek?: (time: number) => void
   onCuePointAdd?: (time: number) => void
-  onCuePointRemove?: (id: number) => void
   sections?: { type: string; start: number; end: number }[]
 }
 

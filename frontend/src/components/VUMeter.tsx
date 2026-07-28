@@ -4,7 +4,6 @@ import './VUMeter.css'
 interface VUMeterProps {
   level: number
   peak?: number
-  color?: string
   height?: number
   width?: number
   label?: string
@@ -16,7 +15,6 @@ const GAP = 2
 export default function VUMeter({
   level,
   peak,
-  color: _color,
   height = 120,
   width = 12,
   label,

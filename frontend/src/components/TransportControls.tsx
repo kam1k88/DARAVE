@@ -68,7 +68,7 @@ export default function TransportControls({
       <button
         className="transport__btn transport__btn--play"
         onClick={isPlaying ? onPause : onPlay}
-        disabled={isIdle || isLoading}
+        disabled={isLoading}
         title={isPlaying ? 'Pause' : 'Play'}
       >
         {isLoading ? (

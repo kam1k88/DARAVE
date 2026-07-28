@@ -1,13 +1,11 @@
 /* ============================================================
-   DARAVE — AI Chat Panel (Agent Mode)
-   Streams responses from Ollama via SSE, supports tool calls.
-   Agent mode: AI can control decks, load tracks, play, mix.
-   Multi-deck: parallel agents control A/B/C/D simultaneously.
-   Agent loop: call tool → result → LLM → next action → repeat.
+   DARAVE — AI Chat Panel (Unified Agent)
+   One smart agent that decides: respond with text OR execute tools.
+   No toggle — the AI figures it out from the prompt.
    ============================================================ */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Trash2, BotMessageSquare, Wrench, Zap, ZapOff, Mic, MicOff } from 'lucide-react'
+import { Send, Square, Trash2, BotMessageSquare, Wrench, Mic, MicOff } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/stores/appStore'
 import { chatApi } from '@/lib/api'
@@ -21,24 +19,15 @@ import type { ChatMessage, ChatToolCall } from '@/types'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
-  'Загрузи первый трек из библиотеки в Deck A и включи',
-  'Загрузи два трека и начни миксовать',
+  'Загрузи два трека и сведи их',
+  'Загрузи трек в Deck A и включи',
+  'Что такое кроссфейдер?',
+  'Проверь совместимость треков',
+  'Поставь echo на Deck B',
   'Список треков в библиотеке',
-  'Проверь совместимость загруженных треков',
-  'Поставь кроссфейдер в центр',
-  'Стоп воспроизведение',
 ]
 
-const AGENT_PROMPTS = [
-  'Загрузи два трека из библиотеки и сведи их',
-  'Загрузи первый трек в Deck A и включи',
-  'Загрузи трек в Deck B и примени echo эффект',
-  'Поставь кроссфейдер в центр',
-  'Воспроизведение стоп',
-  'Что есть в библиотеке?',
-]
-
-// --- Agent loop helpers ---
+// --- Sub-components ---
 
 function ToolCallBlock({ tc }: { tc: ChatToolCall }) {
   const [open, setOpen] = useState(false)
@@ -118,12 +107,10 @@ function VoiceIndicator({ active, transcript }: { active: boolean; transcript: s
   )
 }
 
-// --- Agent loop helpers ---
+// --- Tool call extraction (bracket-counting for nested JSON) ---
 
 function extractToolCalls(text: string): FrontendToolCall[] {
   const calls: FrontendToolCall[] = []
-
-  // Find all {"tool_call": patterns and extract balanced JSON
   const marker = '"tool_call"'
   let searchFrom = 0
 
@@ -131,12 +118,10 @@ function extractToolCalls(text: string): FrontendToolCall[] {
     const idx = text.indexOf(marker, searchFrom)
     if (idx === -1) break
 
-    // Walk backwards to find the opening { of the outer object
     let start = idx - 1
     while (start >= 0 && text[start] !== '{') start--
     if (start < 0) { searchFrom = idx + marker.length; continue }
 
-    // Walk forward with bracket counting to find the matching closing }
     let depth = 0
     let end = start
     let inString = false
@@ -144,39 +129,20 @@ function extractToolCalls(text: string): FrontendToolCall[] {
 
     for (let i = start; i < text.length; i++) {
       const ch = text[i]
-
-      if (escape) {
-        escape = false
-        continue
-      }
-
-      if (ch === '\\' && inString) {
-        escape = true
-        continue
-      }
-
-      if (ch === '"') {
-        inString = !inString
-        continue
-      }
-
+      if (escape) { escape = false; continue }
+      if (ch === '\\' && inString) { escape = true; continue }
+      if (ch === '"') { inString = !inString; continue }
       if (inString) continue
-
       if (ch === '{') depth++
       else if (ch === '}') {
         depth--
-        if (depth === 0) {
-          end = i
-          break
-        }
+        if (depth === 0) { end = i; break }
       }
     }
 
     const jsonStr = text.slice(start, end + 1)
-
     try {
       const parsed = JSON.parse(jsonStr)
-      // It's {"tool_call": {...}} format — extract the inner tool_call object
       const tc = parsed.tool_call
       if (tc && tc.name && typeof tc.name === 'string') {
         calls.push({
@@ -185,13 +151,15 @@ function extractToolCalls(text: string): FrontendToolCall[] {
           arguments: tc.arguments || {},
         })
       }
-    } catch { /* not valid JSON, skip */ }
+    } catch { /* skip */ }
 
     searchFrom = end + 1
   }
 
   return calls
 }
+
+// --- Store helpers ---
 
 function addAssistantMessage(content: string, toolCalls?: ChatToolCall[]) {
   useAppStore.setState((s) => {
@@ -212,8 +180,6 @@ function addAssistantMessage(content: string, toolCalls?: ChatToolCall[]) {
     }
   })
 }
-
-// --- Agent loop helpers ---
 
 function addToolMessage(content: string, toolCallId?: string) {
   useAppStore.setState((s) => ({
@@ -238,6 +204,7 @@ function addUserMessage(content: string) {
 
 function getMessages(): ChatMessage[] {
   return useAppStore.getState().chatMessages
+
 }
 
 async function streamLLMResponse(
@@ -301,7 +268,6 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
   )
 
   const [input, setInput] = useState('')
-  const [agentMode, setAgentMode] = useState(true)
   const [voiceActive, setVoiceActive] = useState(false)
   const [voiceTranscript, setVoiceTranscript] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -367,7 +333,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
     setVoiceActive(true)
   }, [voiceActive])
 
-  // Agent loop: execute tool calls and continue
+  // Unified agent loop — AI decides: tool call OR text response
   const agentLoop = useCallback(async (_userText: string) => {
     if (agentLoopRef.current) return
     agentLoopRef.current = true
@@ -387,19 +353,26 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         }))
 
         const systemPrompt = [
-          'You are DARAVE AI DJ Agent. You control the DJ interface directly.',
-          'Available tools:',
+          'You are DARAVE — a smart DJ assistant and controller.',
+          '',
+          'You have TWO abilities:',
+          '1. ANSWER questions — explain mixing, effects, techniques, music theory.',
+          '2. CONTROL the DJ interface — load tracks, play, mix, apply effects.',
+          '',
+          'Available tools (use when user wants you to DO something):',
           ...FRONTEND_TOOLS.map((t) => `  ${t.name}: ${t.description} | args: ${JSON.stringify(Object.keys(t.parameters))}`),
           '',
-          'RULES:',
-          '1. When user asks to do something, IMMEDIATELY call the appropriate tool.',
-          '2. Do NOT explain what you will do — just DO it by outputting the tool call.',
-          '3. Output EXACTLY one JSON tool call per response:',
-          '   {"tool_call": {"id": "call_N", "name": "TOOL_NAME", "arguments": {}}}',
-          '4. After seeing tool result, continue with next action if needed.',
-          '5. Be concise. No explanations unless asked.',
-          '6. You can control Deck A and Deck B simultaneously.',
-          '7. Always load a track first if the deck is empty.',
+          'DECISION RULES:',
+          '- If user asks "what is...", "explain...", "how does..." → ANSWER with text.',
+          '- If user asks to DO something (load, play, mix, set, apply) → use a tool.',
+          '- If user gives a command like "загрузи", "включи", "поставь" → use a tool.',
+          '- You can BOTH answer AND use tools in the same response if needed.',
+          '',
+          'TOOL FORMAT (when you need to act):',
+          '  {"tool_call": {"id": "call_N", "name": "TOOL_NAME", "arguments": {}}}',
+          '',
+          'You control Deck A and Deck B. If a deck is empty, load a track first.',
+          'Be concise in answers. Be fast in actions.',
         ].join('\n')
 
         apiMessages.unshift({ role: 'system', content: systemPrompt })
@@ -416,18 +389,13 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         const toolCalls = extractToolCalls(responseText)
 
         if (toolCalls.length === 0) {
-          // Check if text contains "tool_call" but parsing failed
-          if (responseText.includes('tool_call')) {
-            console.warn('[Agent] tool_call found in text but extractToolCalls returned empty. Raw text:', responseText.slice(0, 500))
-          }
+          // No tool calls — AI chose to respond with text. Done.
           break
         }
 
-        console.log('[Agent] Extracted tool calls:', toolCalls)
-
+        // Execute each tool call
         for (const tc of toolCalls) {
           if (!agentCallbacks) {
-            console.warn('[Agent] No agentCallbacks — cannot execute tool:', tc.name)
             addToolMessage(`Error: No agent callbacks available`, tc.id)
             break
           }
@@ -438,9 +406,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
             arguments: tc.arguments,
           }])
 
-          console.log('[Agent] Executing tool:', tc.name, tc.arguments)
           const result = await executeFrontendTool(tc, agentCallbacks)
-          console.log('[Agent] Tool result:', result.name, result.success, result.result?.slice(0, 100))
 
           addToolMessage(
             result.success ? result.result : `Error: ${result.result}`,
@@ -470,9 +436,11 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
     setChatError(null)
     setChatStreaming(true)
 
-    if (agentMode && agentCallbacks) {
+    // Always use the unified agent loop
+    if (agentCallbacks) {
       await agentLoop(trimmed)
     } else {
+      // Fallback: no callbacks, just chat
       try {
         addAssistantMessage('')
         const allMessages = getMessages()
@@ -498,7 +466,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         setChatStreaming(false)
       }
     }
-  }, [chatMessages, chatStreaming, agentMode, agentCallbacks, agentLoop, setChatStreaming, setChatError])
+  }, [chatMessages, chatStreaming, agentCallbacks, agentLoop, setChatStreaming, setChatError])
 
   const handleSend = () => sendMessage(input)
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -515,15 +483,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
     <div className="chat-panel">
       <div className="chat-toolbar">
         <button
-          className={`chat-agent-toggle ${agentMode ? 'chat-agent-toggle--active' : ''}`}
-          onClick={() => setAgentMode(!agentMode)}
-          title={agentMode ? 'Agent mode ON — AI controls decks' : 'Agent mode OFF — AI only suggests'}
-        >
-          {agentMode ? <Zap size={10} /> : <ZapOff size={10} />}
-          {agentMode ? 'Agent' : 'Chat'}
-        </button>
-        <button
-          className={`chat-voice-toggle ${voiceActive ? 'chat-voice-toggle--active' : ''}`}
+          className="chat-toolbar__btn chat-voice-toggle"
           onClick={toggleVoice}
           title={voiceActive ? 'Stop voice input' : 'Start voice input'}
         >
@@ -544,16 +504,12 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
             <div className="chat-splash__icon">
               <BotMessageSquare size={20} />
             </div>
-            <div className="chat-splash__title">
-              {agentMode ? 'DJ Agent' : 'DJ Assistant'}
-            </div>
+            <div className="chat-splash__title">DARAVE AI</div>
             <div className="chat-splash__hint">
-              {agentMode
-                ? 'Я управлю деками — загружаю треки, включаю, микшую. Просто скажи!'
-                : 'Ask about mixing, transitions, track compatibility.'}
+              Управляй деками голосом или текстом. Спроси что угодно о микшировании.
             </div>
             <div className="chat-splash__prompts">
-              {(agentMode ? AGENT_PROMPTS : QUICK_PROMPTS).map((text, i) => (
+              {QUICK_PROMPTS.map((text, i) => (
                 <button key={i} className="chat-prompt-btn" onClick={() => handleQuickPrompt(text)} disabled={chatStreaming}>
                   {text.length > 45 ? text.slice(0, 45) + '...' : text}
                 </button>
@@ -575,7 +531,7 @@ export function ChatPanel({ agentCallbacks }: ChatPanelProps) {
         <textarea
           ref={textareaRef}
           className="chat-input__textarea"
-          placeholder={agentMode ? 'Скажи агенту что делать...' : 'Ask the DJ assistant...'}
+          placeholder="Спроси или скажи что сделать..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}

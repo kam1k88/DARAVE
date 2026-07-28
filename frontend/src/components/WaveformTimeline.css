@@ -1,0 +1,56 @@
+.wt-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.wt-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.wt-zoom-btn {
+  background: var(--surface-2, #1a1a2e);
+  border: 1px solid var(--border, #333);
+  color: var(--text, #ccc);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.wt-zoom-btn:hover {
+  background: var(--surface-3, #252540);
+}
+
+.wt-zoom-label {
+  font-size: 10px;
+  color: var(--text-dim, #888);
+  min-width: 32px;
+  text-align: center;
+}
+
+.wt-canvas-wrap {
+  width: 100%;
+  height: 100px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #0a0a15;
+  border: 1px solid var(--border, #222);
+  cursor: crosshair;
+  position: relative;
+}
+
+.wt-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

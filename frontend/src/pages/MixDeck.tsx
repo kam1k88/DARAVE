@@ -1,9 +1,9 @@
 /* ============================================================
    DARAVE — Mix Deck
-   Dual-deck DJ UI with live audio, stem mixing, EQ, effects,
-   crossfader, VU meters. Server remix pipeline preserved.
+   Dual-deck DJ UI with turntables, waveform, sampler, stem
+   mixing, EQ, effects, crossfader, VU meters, library filters.
    ============================================================ */
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -19,6 +19,8 @@ import {
   Loader2,
   Upload,
   Disc3,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from 'lucide-react'
 import { libraryApi, analysisApi, remixApi } from '@/lib/api'
 import { useAppStore } from '@/stores/appStore'
@@ -26,16 +28,23 @@ import { useWebAudio } from '@/hooks/useWebAudio'
 import { TransitionTimeline } from '@/components/TransitionTimeline'
 import { RemixControls, type RemixOptions, REMIX_DEFAULTS } from '@/components/RemixControls'
 import { CamelotWheel } from '@/components/CamelotWheel'
-import { TrackStructureView } from '@/components/TrackStructureView'
 import { StemMixer } from '@/components/StemMixer'
 import EQKnobs from '@/components/EQKnobs'
 import Crossfader from '@/components/Crossfader'
 import VUMeter from '@/components/VUMeter'
 import TransportControls from '@/components/TransportControls'
 import EffectsRack from '@/components/EffectsRack'
+import Turntable from '@/components/Turntable'
+import WaveformTimeline from '@/components/WaveformTimeline'
+import Sampler from '@/components/Sampler'
+import LibraryFilterPanel from '@/components/LibraryFilterPanel'
 import type { SongInfo, CompatibilityResult, SimilarTrack } from '@/types'
 import './PageBase.css'
 import './MixDeck.css'
+import '@/components/Turntable.css'
+import '@/components/WaveformTimeline.css'
+import '@/components/Sampler.css'
+import '@/components/LibraryFilterPanel.css'
 
 const DECK_HEX: Record<'A' | 'B', string> = {
   A: '#f59e0b',
@@ -325,6 +334,12 @@ export default function MixDeck() {
   const [effectB, setEffectB] = useState('none')
   const [loadedTracks, setLoadedTracks] = useState<{ a: boolean; b: boolean }>({ a: false, b: false })
 
+  // New UI state
+  const [showLibrary, setShowLibrary] = useState(false)
+  const [cuePointsA, setCuePointsA] = useState<{ id: number; time: number; color: string; label?: string }[]>([])
+  const [cuePointsB, setCuePointsB] = useState<{ id: number; time: number; color: string; label?: string }[]>([])
+  const cueIdRef = useRef(0)
+
   const upsertJob  = useAppStore((s) => s.upsertJob)
   const remixJob   = useAppStore((s) => remixJobId ? s.jobs[remixJobId] : null)
 
@@ -421,6 +436,31 @@ export default function MixDeck() {
       else setSongB(songName)
       setCompat(null)
     }
+  }, [])
+
+  // ── File drop from OS ──
+  const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const addCuePoint = useCallback((deck: 'A' | 'B', time: number) => {
+    const id = ++cueIdRef.current
+    const colors = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#a855f7']
+    const cp = { id, time, color: colors[id % colors.length], label: `C${id}` }
+    if (deck === 'A') setCuePointsA((prev) => [...prev, cp])
+    else setCuePointsB((prev) => [...prev, cp])
+  }, [])
+
+  // ── Audio context for sampler ──
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const getAudioContext = useCallback(() => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContext()
+    }
+    return audioCtxRef.current
   }, [])
 
   // ── Inline analyze ──
@@ -551,7 +591,7 @@ export default function MixDeck() {
           {/* Deck A */}
           <div
             className={`md-deck-wrap ${dragOverDeck === 'A' ? 'md-deck-wrap--drag-over' : ''}`}
-            onDragOver={(e) => handleDragOver(e, 'A')}
+            onDragOver={(e) => { handleDragOver(e, 'A'); handleFileDragOver(e) }}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, 'A')}
           >
@@ -564,6 +604,34 @@ export default function MixDeck() {
                 onChange={(v) => { setSongA(v); setCompat(null) }}
                 loadingSongInfo={loadingA}
               />
+
+              {loadedTracks.a && (
+                <Turntable
+                  bpm={songInfoA?.bpm ?? 0}
+                  isPlaying={audio.state === 'playing'}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  trackName={songA}
+                  deckColor={DECK_HEX.A}
+                  label="A"
+                  onSeek={handleSeekA}
+                />
+              )}
+
+              {loadedTracks.a && (
+                <WaveformTimeline
+                  waveformData={audio.waveform}
+                  frequencyData={null}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  bpm={songInfoA?.bpm ?? 0}
+                  deckColor={DECK_HEX.A}
+                  cuePoints={cuePointsA}
+                  onSeek={handleSeekA}
+                  onCuePointAdd={(t) => addCuePoint('A', t)}
+                  sections={[]}
+                />
+              )}
 
               {loadedTracks.a && (
                 <TransportControls
@@ -614,12 +682,6 @@ export default function MixDeck() {
                   currentEffect={effectA}
                   onEffectChange={handleEffectA}
                 />
-              )}
-
-              {songA && (
-                <div className="md-deck__structure">
-                  <TrackStructureView songName={songA} height={80} />
-                </div>
               )}
             </div>
             {dragOverDeck === 'A' && (
@@ -673,7 +735,7 @@ export default function MixDeck() {
           {/* Deck B */}
           <div
             className={`md-deck-wrap ${dragOverDeck === 'B' ? 'md-deck-wrap--drag-over' : ''}`}
-            onDragOver={(e) => handleDragOver(e, 'B')}
+            onDragOver={(e) => { handleDragOver(e, 'B'); handleFileDragOver(e) }}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, 'B')}
           >
@@ -687,6 +749,34 @@ export default function MixDeck() {
                 onChange={(v) => { setSongB(v); setCompat(null) }}
                 loadingSongInfo={loadingB}
               />
+
+              {loadedTracks.b && (
+                <Turntable
+                  bpm={songInfoB?.bpm ?? 0}
+                  isPlaying={audio.state === 'playing'}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  trackName={songB}
+                  deckColor={DECK_HEX.B}
+                  label="B"
+                  onSeek={handleSeekB}
+                />
+              )}
+
+              {loadedTracks.b && (
+                <WaveformTimeline
+                  waveformData={audio.waveform}
+                  frequencyData={null}
+                  currentTime={audio.currentTime}
+                  duration={audio.duration}
+                  bpm={songInfoB?.bpm ?? 0}
+                  deckColor={DECK_HEX.B}
+                  cuePoints={cuePointsB}
+                  onSeek={handleSeekB}
+                  onCuePointAdd={(t) => addCuePoint('B', t)}
+                  sections={[]}
+                />
+              )}
 
               {loadedTracks.b && (
                 <TransportControls
@@ -738,12 +828,6 @@ export default function MixDeck() {
                   onEffectChange={handleEffectB}
                 />
               )}
-
-              {songB && (
-                <div className="md-deck__structure">
-                  <TrackStructureView songName={songB} height={80} />
-                </div>
-              )}
             </div>
             {dragOverDeck === 'B' && (
               <div className="md-drop-overlay">
@@ -752,6 +836,37 @@ export default function MixDeck() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* ── Sampler + Library ── */}
+        <div className="md-bottom-row">
+          <div className="md-sampler-section">
+            <Sampler audioContext={getAudioContext()} />
+          </div>
+
+          <button
+            className="md-library-toggle"
+            onClick={() => setShowLibrary(!showLibrary)}
+            title={showLibrary ? 'Hide library' : 'Show library'}
+          >
+            {showLibrary ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+            <span>Library</span>
+          </button>
+
+          {showLibrary && (
+            <div className="md-library-panel">
+              <LibraryFilterPanel
+                tracks={songs as any}
+                onFilter={() => {}}
+                onSelectTrack={(t) => {
+                  if (!songA) setSongA(t.name)
+                  else if (!songB) setSongB(t.name)
+                  else setSongA(t.name)
+                  setCompat(null)
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* ── Compat result + timeline ── */}
@@ -842,10 +957,10 @@ export default function MixDeck() {
               Load two tracks to start mixing
             </p>
             <p className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
-              Drag & drop tracks from the library, or use the selectors above.
+              Drag & drop tracks from the library or your file system.
             </p>
             <p className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>
-              Real-time stem mixing, EQ, effects, and crossfade. Or use the server for a mastered −14 LUFS render.
+              Turntables · Waveform · Sampler · Stem mixing · EQ · Effects · Crossfade · Server remix
             </p>
           </div>
         )}

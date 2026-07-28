@@ -565,3 +565,45 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Bottom row: sampler + library ── */
+.md-bottom-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  width: 100%;
+}
+
+.md-sampler-section {
+  flex: 0 0 auto;
+}
+
+.md-library-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+  background: var(--surface-2, #1a1a2e);
+  color: var(--text, #ccc);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.md-library-toggle:hover {
+  background: var(--surface-3, #252540);
+}
+
+.md-library-panel {
+  flex: 1;
+  min-width: 0;
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, #222);
+  background: var(--surface-1, #12121e);
+}

@@ -1,0 +1,146 @@
+.lfp-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.lfp-search {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+  background: var(--surface-2, #1a1a2e);
+  color: var(--text, #ccc);
+  font-size: 12px;
+  outline: none;
+}
+
+.lfp-search:focus {
+  border-color: var(--accent, #f59e0b);
+}
+
+.lfp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lfp-row label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim, #888);
+  min-width: 40px;
+  letter-spacing: 0.5px;
+}
+
+.lfp-input-sm {
+  width: 50px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #333);
+  background: var(--surface-2, #1a1a2e);
+  color: var(--text, #ccc);
+  font-size: 11px;
+  outline: none;
+}
+
+.lfp-dash {
+  color: var(--text-dim, #666);
+  font-size: 11px;
+}
+
+.lfp-select {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #333);
+  background: var(--surface-2, #1a1a2e);
+  color: var(--text, #ccc);
+  font-size: 11px;
+  outline: none;
+}
+
+.lfp-range {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: var(--surface-3, #333);
+  border-radius: 2px;
+  outline: none;
+}
+
+.lfp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent, #f59e0b);
+  cursor: pointer;
+}
+
+.lfp-range-label {
+  font-size: 10px;
+  color: var(--text-dim, #888);
+  min-width: 28px;
+  text-align: right;
+}
+
+.lfp-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lfp-count {
+  font-size: 10px;
+  color: var(--text-dim, #666);
+}
+
+.lfp-track-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lfp-track-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 11px;
+}
+
+.lfp-track-item:hover {
+  background: var(--surface-3, #252540);
+}
+
+.lfp-track-name {
+  color: var(--text, #ccc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.lfp-track-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim, #888);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.lfp-energy-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}

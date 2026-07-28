@@ -16,7 +16,7 @@ POST /library/initialize                   — one-shot pipeline
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from scripts.api import jobs as job_store

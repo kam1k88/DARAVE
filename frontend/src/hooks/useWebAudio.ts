@@ -26,6 +26,10 @@ interface UseWebAudioReturn {
   play: () => void
   pause: () => void
   stop: () => void
+  playDeck: (trackId: string) => void
+  pauseDeck: (trackId: string) => void
+  stopDeck: (trackId: string) => void
+  isDeckPlaying: (trackId: string) => boolean
   seek: (time: number) => void
   setMasterVolume: (v: number) => void
   setTrackVolume: (trackId: string, v: number) => void
@@ -106,6 +110,10 @@ export function useWebAudio(events?: EngineEvents): UseWebAudioReturn {
   const play = useCallback(() => engineRef.current?.play(), [])
   const pause = useCallback(() => engineRef.current?.pause(), [])
   const stop = useCallback(() => engineRef.current?.stop(), [])
+  const playDeck = useCallback((trackId: string) => engineRef.current?.playDeck(trackId), [])
+  const pauseDeck = useCallback((trackId: string) => engineRef.current?.pauseDeck(trackId), [])
+  const stopDeck = useCallback((trackId: string) => engineRef.current?.stopDeck(trackId), [])
+  const isDeckPlaying = useCallback((trackId: string) => engineRef.current?.isDeckPlaying(trackId) ?? false, [])
   const seek = useCallback((t: number) => engineRef.current?.seek(t), [])
   const setMasterVolume = useCallback((v: number) => engineRef.current?.setMasterVolume(v), [])
 
@@ -176,6 +184,10 @@ export function useWebAudio(events?: EngineEvents): UseWebAudioReturn {
     play,
     pause,
     stop,
+    playDeck,
+    pauseDeck,
+    stopDeck,
+    isDeckPlaying,
     seek,
     setMasterVolume,
     setTrackVolume,

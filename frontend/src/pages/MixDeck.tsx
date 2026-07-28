@@ -511,17 +511,20 @@ export default function MixDeck() {
       else setSongB(trackName)
       return `Loaded "${trackName}" into Deck ${deck}`
     },
-    play: async () => {
-      audio.play()
-      return 'Playback started'
+    play: async (deck?: 'A' | 'B') => {
+      if (deck) audio.playDeck(deck === 'A' ? 'deckA' : 'deckB')
+      else audio.play()
+      return `Playback started${deck ? ` on Deck ${deck}` : ''}`
     },
-    pause: async () => {
-      audio.pause()
-      return 'Playback paused'
+    pause: async (deck?: 'A' | 'B') => {
+      if (deck) audio.pauseDeck(deck === 'A' ? 'deckA' : 'deckB')
+      else audio.pause()
+      return `Playback paused${deck ? ` on Deck ${deck}` : ''}`
     },
-    stop: async () => {
-      audio.stop()
-      return 'Playback stopped'
+    stop: async (deck?: 'A' | 'B') => {
+      if (deck) audio.stopDeck(deck === 'A' ? 'deckA' : 'deckB')
+      else audio.stop()
+      return `Playback stopped${deck ? ` on Deck ${deck}` : ''}`
     },
     setCrossfader: async (position: number) => {
       audio.setCrossfade(position)
@@ -560,8 +563,8 @@ export default function MixDeck() {
       const a = songARef.current
       const b = songBRef.current
       return JSON.stringify({
-        deckA: { track: a || 'empty', bpm: songInfoA?.bpm, playing: audio.state === 'playing' },
-        deckB: { track: b || 'empty', bpm: songInfoB?.bpm, playing: audio.state === 'playing' },
+        deckA: { track: a || 'empty', bpm: songInfoA?.bpm, playing: audio.isDeckPlaying('deckA') },
+        deckB: { track: b || 'empty', bpm: songInfoB?.bpm, playing: audio.isDeckPlaying('deckB') },
         crossfader: audio.crossfadeValue,
       }, null, 2)
     },

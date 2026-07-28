@@ -37,18 +37,24 @@ export const FRONTEND_TOOLS: FrontendTool[] = [
   },
   {
     name: 'play_deck',
-    description: 'Start playback on the loaded deck',
-    parameters: {},
+    description: 'Start playback on a deck',
+    parameters: {
+      deck: { type: 'string', description: 'Which deck: "A" or "B", or "all" for both', required: false },
+    },
   },
   {
     name: 'pause_deck',
-    description: 'Pause playback',
-    parameters: {},
+    description: 'Pause playback on a deck',
+    parameters: {
+      deck: { type: 'string', description: 'Which deck: "A" or "B", or "all" for both', required: false },
+    },
   },
   {
     name: 'stop_deck',
     description: 'Stop playback and return to beginning',
-    parameters: {},
+    parameters: {
+      deck: { type: 'string', description: 'Which deck: "A" or "B", or "all" for both', required: false },
+    },
   },
   {
     name: 'set_crossfader',
@@ -113,9 +119,9 @@ export interface AgentState {
 // Callbacks the ChatPanel will provide to execute tools
 export interface AgentCallbacks {
   loadTrack: (deck: 'A' | 'B', trackName: string) => Promise<string>
-  play: () => Promise<string>
-  pause: () => Promise<string>
-  stop: () => Promise<string>
+  play: (deck?: 'A' | 'B') => Promise<string>
+  pause: (deck?: 'A' | 'B') => Promise<string>
+  stop: (deck?: 'A' | 'B') => Promise<string>
   setCrossfader: (position: number) => Promise<string>
   setVolume: (deck: 'A' | 'B', volume: number) => Promise<string>
   setEffect: (deck: 'A' | 'B', effect: string) => Promise<string>
@@ -142,15 +148,21 @@ export async function executeFrontendTool(
         result = await callbacks.loadTrack(deck, trackName)
         break
       }
-      case 'play_deck':
-        result = await callbacks.play()
+      case 'play_deck': {
+        const deck = (args.deck as string)?.toUpperCase()
+        result = await callbacks.play(deck === 'A' || deck === 'B' ? deck : undefined)
         break
-      case 'pause_deck':
-        result = await callbacks.pause()
+      }
+      case 'pause_deck': {
+        const deck = (args.deck as string)?.toUpperCase()
+        result = await callbacks.pause(deck === 'A' || deck === 'B' ? deck : undefined)
         break
-      case 'stop_deck':
-        result = await callbacks.stop()
+      }
+      case 'stop_deck': {
+        const deck = (args.deck as string)?.toUpperCase()
+        result = await callbacks.stop(deck === 'A' || deck === 'B' ? deck : undefined)
         break
+      }
       case 'set_crossfader': {
         const pos = Number(args.position)
         if (isNaN(pos) || pos < 0 || pos > 1) throw new Error('position must be 0.0-1.0')

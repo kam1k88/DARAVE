@@ -58,7 +58,7 @@ const WaveformTimeline: React.FC<WaveformTimelineProps> = ({
     if (!ctx) return
 
     const w = container.clientWidth
-    const h = canvas.height / 2
+    const h = container.clientHeight || 70
     canvas.width = w * 2
     canvas.height = h * 2
     canvas.style.width = `${w}px`

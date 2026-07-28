@@ -55,6 +55,9 @@ export interface TrackSlot {
   loaded: boolean
   muted: boolean
   solo: boolean
+  isPlaying: boolean
+  pauseOffset: number
+  startTime: number
   stemVolumes: Map<string, number>  // stem_name → 0-1
   eqValues: { low: number; mid: number; high: number }  // dB
   pan: number  // -1 to 1
@@ -131,7 +134,6 @@ export class AudioEngine {
   private _duration = 0
   private _rafId = 0
   private _levelRafId = 0
-  private _startTime = 0
   private _pauseOffset = 0
   private events: EngineEvents = {}
   private _transitionConfig: TransitionConfig = {
@@ -185,8 +187,15 @@ export class AudioEngine {
 
   get state(): PlayState { return this._state }
   get currentTime(): number {
-    if (this._state === 'playing') {
-      return this._pauseOffset + (this.ctx?.currentTime ?? 0) - this._startTime
+    // Return the time of the first playing deck, or the first deck's offset
+    for (const [, slot] of this.tracks) {
+      if (slot.isPlaying) {
+        return slot.pauseOffset + (this.ctx?.currentTime ?? 0) - slot.startTime
+      }
+    }
+    // Return first deck's pause offset
+    for (const [, slot] of this.tracks) {
+      return slot.pauseOffset
     }
     return this._pauseOffset
   }
@@ -254,6 +263,9 @@ export class AudioEngine {
       loaded: false,
       muted: false,
       solo: false,
+      isPlaying: false,
+      pauseOffset: 0,
+      startTime: 0,
       stemVolumes: new Map(),
       eqValues: { low: 0, mid: 0, high: 0 },
       pan: 0,
@@ -305,20 +317,26 @@ export class AudioEngine {
   // --- Transport ---
 
   play(): void {
-    if (this._state === 'playing') return
+    for (const [id, slot] of this.tracks) {
+      if (!slot.loaded || slot.isPlaying) continue
+      this.playDeck(id)
+    }
+  }
+
+  playDeck(trackId: string): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !slot.loaded || slot.isPlaying) return
     const ctx = this.ensureCtx()
 
-    const startTime = ctx.currentTime
-    this._startTime = startTime
+    slot.startTime = ctx.currentTime
+    slot.isPlaying = true
+    this.playSlot(ctx, slot, ctx.currentTime)
 
-    for (const [, slot] of this.tracks) {
-      if (!slot.loaded) continue
-      this.playSlot(ctx, slot, startTime)
+    if (this._state !== 'playing') {
+      this.setState('playing')
+      this.startAnalyserLoop()
+      this.startLevelLoop()
     }
-
-    this.setState('playing')
-    this.startAnalyserLoop()
-    this.startLevelLoop()
   }
 
   private playSlot(ctx: AudioContext, slot: TrackSlot, when: number) {
@@ -342,38 +360,80 @@ export class AudioEngine {
       source.connect(stemGain)
       stemGain.connect(slot.stemMixGain)
 
-      source.start(when, this._pauseOffset)
+      source.start(when, slot.pauseOffset)
     }
   }
 
   pause(): void {
-    if (this._state !== 'playing') return
-    this._pauseOffset = this.currentTime
-    this.stopAllSources()
-    this.setState('paused')
-    cancelAnimationFrame(this._rafId)
-    cancelAnimationFrame(this._levelRafId)
+    for (const [id, slot] of this.tracks) {
+      if (slot.isPlaying) this.pauseDeck(id)
+    }
+  }
+
+  pauseDeck(trackId: string): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot || !slot.isPlaying) return
+    const ctx = this.ensureCtx()
+
+    slot.pauseOffset += ctx.currentTime - slot.startTime
+    slot.isPlaying = false
+    this.disconnectSlot(slot)
+
+    // Check if any deck is still playing
+    const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
+    if (!anyPlaying) {
+      this.setState('paused')
+      cancelAnimationFrame(this._rafId)
+      cancelAnimationFrame(this._levelRafId)
+    }
   }
 
   stop(): void {
-    this._pauseOffset = 0
-    this.stopAllSources()
-    this.setState('idle')
-    cancelAnimationFrame(this._rafId)
-    cancelAnimationFrame(this._levelRafId)
-    this.events.onTimeUpdate?.(0, this._duration)
+    for (const [id] of this.tracks) {
+      this.stopDeck(id)
+    }
+  }
+
+  stopDeck(trackId: string): void {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return
+
+    slot.pauseOffset = 0
+    slot.isPlaying = false
+    this.disconnectSlot(slot)
+
+    const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
+    if (!anyPlaying) {
+      this.setState('idle')
+      cancelAnimationFrame(this._rafId)
+      cancelAnimationFrame(this._levelRafId)
+      this.events.onTimeUpdate?.(0, this._duration)
+    }
+  }
+
+  isDeckPlaying(trackId: string): boolean {
+    return this.tracks.get(trackId)?.isPlaying ?? false
+  }
+
+  getDeckTime(trackId: string): number {
+    const slot = this.tracks.get(trackId)
+    if (!slot) return 0
+    if (slot.isPlaying) {
+      return slot.pauseOffset + (this.ctx?.currentTime ?? 0) - slot.startTime
+    }
+    return slot.pauseOffset
   }
 
   seek(time: number): void {
-    const wasPlaying = this._state === 'playing'
-    if (wasPlaying) this.stopAllSources()
     this._pauseOffset = Math.max(0, Math.min(time, this._duration))
-    if (wasPlaying) this.play()
-  }
-
-  private stopAllSources() {
-    for (const [, slot] of this.tracks) {
-      this.disconnectSlot(slot)
+    for (const [id, slot] of this.tracks) {
+      if (slot.isPlaying) {
+        this.pauseDeck(id)
+        slot.pauseOffset = this._pauseOffset
+        this.playDeck(id)
+      } else {
+        slot.pauseOffset = this._pauseOffset
+      }
     }
   }
 
@@ -678,7 +738,8 @@ export class AudioEngine {
 
   private startAnalyserLoop() {
     const loop = () => {
-      if (this._state !== 'playing') return
+      const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
+      if (!anyPlaying) return
       const data = this.getAnalyserData()
       if (data) this.events.onAnalyser?.(data)
       this.events.onTimeUpdate?.(this.currentTime, this._duration)
@@ -706,7 +767,8 @@ export class AudioEngine {
 
   private startLevelLoop() {
     const loop = () => {
-      if (this._state !== 'playing') return
+      const anyPlaying = Array.from(this.tracks.values()).some((s) => s.isPlaying)
+      if (!anyPlaying) return
       const levels = new Map<string, number>()
       for (const [id] of this.tracks) {
         levels.set(id, this.getTrackLevel(id))

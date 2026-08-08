@@ -1,9 +1,13 @@
+<img width="1569" height="900" alt="_4q94aqeZ7ciFztkycSob2gKvcmcrKP4HKezCTaXqhyb6_j41DJB0WfN2mXLQMVQ8R4PehU-7kJXd7CdaDYiylel" src="https://github.com/user-attachments/assets/ee11dc3e-f4ef-4835-a64a-3755d02c87a4" />
 
 # универсальный аудио-движок с гибридным AI-агентом
 
 Это попытка объединить мощь Traktor (живое микширование), гибкость Fruity Loops (глубокий синтез и работа со слоями) и интеллект AI-чата (управление естественным языком) в одном умном сервисе. Инструмент предназначен не только для диджеев, но и для саунд-дизайнеров, продюсеров и всех, кому нужен полный контроль над звуком. В отличие от генеративных моделей вроде SUNO, которые работают с единственным готовым звуковым слоем (waveform) и просто накладывают «умные» эквалайзеры поверх уже сгенерированного трека, DARAVE построен на многоуровневой архитектуре с 71 независимым слоем управления. В основе системы — уникальный агент собственной разработки, который обеспечивает не генерацию звука нейросетью «из коробки», а настоящий физический синтез звука: реальные осцилляторы, огибающие (ADSR), фильтры и LFO, просчитываемые на GPU через PyTorch. Система анализирует треки, разделяет их на инструменты (Demucs), после чего RL-агент (PPO/SAC) и локальный LLM-ассистент (Ollama) управляют синтезом в реальном времени, строя переходы на уровне формы сигнала, а не просто смешивая готовые файлы. Это даёт полный контроль над звуком и качество живого микширования, недостижимое при классической генерации.
 
 <img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/aaa77c12-9ae9-449f-a372-2ff16cd85b8b" />
+<img width="1702" height="856" alt="7S6tR29lp6WY7t6_RGOaE4cWy5qaaX34RK1-3jhcn2-83uZn8NOdR0Dl2BcBU1j8wpCts81Ap0i-Xayh0vMxRGl-" src="https://github.com/user-attachments/assets/782e6bef-6e9d-4e33-ae4d-6b44b17c92c1" />
+<img width="1885" height="885" alt="Y6NcmNN8aShAP6QdIKvVKfyLSq7gfTIQiYdqKm8TBXfCbnZFQD3rnkdYQwOmK8D3KVBKTvvgnt4ZXXzGLf0QzmPo" src="https://github.com/user-attachments/assets/5b1a9412-7aa6-49b7-be22-f97db70d6821" />
+![Uploading _4q94aqeZ7ciFztkycSob2gKvcmcrKP4HKezCTaXqhyb6_j41DJB0WfN2mXLQMVQ8R4PehU-7kJXd7CdaDYiylel.jpg…]()
 
 ---
 

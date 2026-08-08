@@ -319,7 +319,7 @@ separation:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The FYPM License
 
 ## Author
 

@@ -1,0 +1,6 @@
+# Разделение трека на стемы (vocals/drums/bass/other) через Demucs —
+# используется stems.py. Отдельно от requirements-analysis.txt, потому
+# что тянет torch (~2-3 ГБ с зависимостями; CPU справляется, но медленно
+# — GPU/CUDA ускоряет в разы). Ставить, только если нужен stems.py:
+#   pip install -r requirements-stems.txt
+demucs>=4.0.1

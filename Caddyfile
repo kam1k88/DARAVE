@@ -1,0 +1,5 @@
+# Замените на свой домен — Caddy сам получит и обновит Let's Encrypt
+# сертификат, дальше HTTPS/WSS работают из коробки без ручной настройки.
+your-domain.example {
+    reverse_proxy backend:8765
+}

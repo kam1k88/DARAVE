@@ -1,0 +1,8969 @@
+{
+ "source": "co_dump_2026-08-25_02h14m49s.csv",
+ "controls_in_dump": 36841,
+ "concrete_controls_covered": 2929,
+ "entries": [
+  {
+   "family": "autodj",
+   "key": "add_random_track",
+   "group_template": "[AutoDJ]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "autodj",
+   "key": "enabled",
+   "group_template": "[AutoDJ]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "autodj",
+   "key": "fade_now",
+   "group_template": "[AutoDJ]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "autodj",
+   "key": "shuffle_playlist",
+   "group_template": "[AutoDJ]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "aux",
+   "key": "main_mix",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "mute",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "orientation",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 2.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "orientation_center",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "orientation_left",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "orientation_right",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "pfl",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "pregain",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "talkover",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "aux",
+   "key": "volume",
+   "group_template": "[Auxiliary{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "aux",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "deck",
+   "key": "CloneFromDeck",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "CloneFromSampler",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "LoadSelectedTrack",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "LoadSelectedTrackAndPlay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "LoadTrackFromDeck",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "LoadTrackFromSampler",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "back",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_0.5_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_0.5_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_16_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_16_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_1_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_1_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_2_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_2_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_32_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_32_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_4_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_4_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_8_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_8_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_size",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_size_double",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatjump_size_halve",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_0.5_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_16_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_1_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_2_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_32_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_4_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_8_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r0.03125_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r0.0625_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r0.125_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r0.25_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r0.5_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r128_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r16_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r1_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r256_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r2_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r32_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r4_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r512_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r64_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_r8_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatloop_size",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_0.5_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_16_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_1_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_2_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_32_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_4_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_8_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r0.03125_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r0.0625_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r0.125_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r0.25_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r0.5_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r128_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r16_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r1_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r256_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r2_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r32_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r4_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r512_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r64_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatlooproll_r8_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_adjust_faster",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_adjust_slower",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_double",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_fourthirds",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_halve",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_threefourths",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_threehalves",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_set_twothirds",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_translate_curpos",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_translate_earlier",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_translate_later",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_translate_match_alignment",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_translate_move",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beats_undo_adjustment",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatsync",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatsync_phase",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "beatsync_tempo",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "bpm",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "bpm_tap",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "bpmlock",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_cdj",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_default",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_mode",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_play",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_preview",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "cue_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "eject",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "filterWaveformEnable",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "fwd",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_1_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_2_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_3_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_4_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_5_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_6_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_7_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_gotoandplay",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_gotoandstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_8_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "hotcue_focus",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_end_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_end_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_end_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_end_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_start_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_start_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_start_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "intro_start_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "key",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "keylock",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "keylockMode",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "keyunlockMode",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_double",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_exit",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_halve",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_in",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_in_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_0.5_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_0.5_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_16_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_16_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_1_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_1_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_2_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_2_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_32_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_32_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_4_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_4_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_8_backward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_move_8_forward",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_out",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_out_goto",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_remove",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "loop_scale",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "main_mix",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "mute",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "orientation",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 2.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "orientation_center",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "orientation_left",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "orientation_right",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_end_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_end_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_end_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_end_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_start_activate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_start_clear",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_start_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "outro_start_set",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "passthrough",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "pfl",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "pitch",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": -6.0,
+   "max": 6.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "pitch_adjust",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": -3.0,
+   "max": 3.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "play",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "play_stutter",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "pregain",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "quantize",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "rate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "rateRange",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "rateSearch",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "rate_dir",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "rate_ratio",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "reloop_andstop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "repeat",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "replaygain",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "reset_key",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "reverse",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "reverseroll",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "scratch2_enable",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "scratch2_indicates_scratching",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "scratch_position_enable",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "shift_cues",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "shift_cues_earlier",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "shift_cues_earlier_small",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "shift_cues_later",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "shift_cues_later_small",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "show_track_menu",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "slip_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "start",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "start_play",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "start_stop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "stop",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "sync_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "sync_key",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "sync_leader",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "sync_mode",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "talkover",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "tempo_tap",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "time_elapsed",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "time_remaining",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "total_gain",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "track_color_selector",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "update_replaygain_from_pregain",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_cueing",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_enabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_mode",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_rate",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_scratching",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_seek",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "vinylcontrol_wantenabled",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "visual_bpm",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "visual_key",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "volume",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "deck",
+   "key": "wheel",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "chain_preset_selector",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "clear",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "enabled",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "focused_effect",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Auxiliary1]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Auxiliary2]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Auxiliary3]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Auxiliary4]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[BusCenter]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[BusLeft]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[BusRight]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[BusTalkover]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Channel1]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Channel2]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Channel3]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Channel4]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Headphone]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[MasterOutput]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Master]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Microphone2]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Microphone3]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Microphone4]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Microphone]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[PreviewDeck1]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler10]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler11]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler12]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler13]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler14]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler15]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler16]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler1]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler2]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler3]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler4]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler5]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler6]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler7]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler8]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "group_[Sampler9]_enable",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "mix",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "mix_mode",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "next_chain_preset",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "prev_chain_preset",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "show_focus",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "show_parameters",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "fxunit",
+   "key": "super1",
+   "group_template": "[EffectRack1_EffectUnit{u}]",
+   "params": [
+    "u"
+   ],
+   "scope": "FX-юнит",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter1",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter10",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter11",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter12",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter13",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter14",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter15",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter16",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter2",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter3",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter4",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter5",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter6",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter7",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter8",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "button_parameter9",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "clear",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "effect_selector",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "enabled",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "meta",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "next_effect",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter1",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter10",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter11",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter12",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter13",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter14",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter15",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter16",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter2",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter3",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter4",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter5",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter6",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter7",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter8",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "parameter9",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "fxslot",
+   "key": "prev_effect",
+   "group_template": "[EffectRack1_EffectUnit{u}_Effect{s}]",
+   "params": [
+    "u",
+    "s"
+   ],
+   "scope": "FX-юнит/слот",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "eqrack",
+   "key": "chain_preset_selector",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "clear",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "enabled",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "focused_effect",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "group_[Channel{n}]_enable",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "mix",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "mix_mode",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "next_chain_preset",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "prev_chain_preset",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "show_focus",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "show_parameters",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eqrack",
+   "key": "super1",
+   "group_template": "[EqualizerRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter1",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter10",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter11",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter12",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter13",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter14",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter15",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter16",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter2",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter3",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter4",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter5",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter6",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter7",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter8",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "button_parameter9",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "clear",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "effect_selector",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "enabled",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "meta",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "next_effect",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter1",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter10",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter11",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter12",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter13",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter14",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter15",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter16",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter2",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter3",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter4",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter5",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter6",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter7",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter8",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "parameter9",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "eq",
+   "key": "prev_effect",
+   "group_template": "[EqualizerRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "library",
+   "key": "AutoDjAddBottom",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "AutoDjAddReplace",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "AutoDjAddTop",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "GoToItem",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveDown",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveFocus",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveFocusBackward",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveFocusForward",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveHorizontal",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveLeft",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveRight",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveTrack",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveTrackDown",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveTrackUp",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveUp",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "MoveVertical",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "ScrollDown",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "ScrollUp",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "ScrollVertical",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "clear_search",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "delete_search_query",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "focused_widget",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "font_size_decrement",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "font_size_increment",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "font_size_knob",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "key_notation",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "refocus_prev_widget",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "search_history_selector",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "show_track_menu",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "sort_column",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "sort_focused_column",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "library",
+   "key": "sort_order",
+   "group_template": "[Library]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "balance",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "boothDelay",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "booth_enabled",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "booth_gain",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "crossfader",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "delay",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "duckStrength",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "enabled",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "gain",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "headDelay",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "headEnabled",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "headGain",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "headMix",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "headSplit",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "microphoneLatencyCompensation",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "mono_mixdown",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "skin_settings",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "talkoverDucking",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "master",
+   "key": "talkover_mix",
+   "group_template": "[Master]",
+   "params": [],
+   "scope": "",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1
+  },
+  {
+   "family": "mic",
+   "key": "main_mix",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "mute",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "orientation",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 2.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "orientation_center",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "orientation_left",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "orientation_right",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "pfl",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "pregain",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "talkover",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "mic",
+   "key": "volume",
+   "group_template": "[Microphone{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "микрофон",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 4,
+   "index_values": [
+    "",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "LoadSelectedTrack",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "LoadSelectedTrackAndPlay",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "beatloop_1_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "beatloop_2_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "beatloop_4_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "beatloop_8_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "beatsync",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "cue_default",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "cue_gotoandplay",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "cue_set",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "eject",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "hotcue_1_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "hotcue_2_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "hotcue_3_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "hotcue_4_activate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "keylock",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "loop_enabled",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "loop_exit",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "mute",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "orientation",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": 0.0,
+   "max": 2.0,
+   "neutral": 1.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "pfl",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "play",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "pregain",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "quantize",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "rate",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "repeat",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "reverse",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "start_play",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "start_stop",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "stop",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "sync_enabled",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "preview",
+   "key": "volume",
+   "group_template": "[PreviewDeck{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "прослушка",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 1,
+   "index_values": [
+    "1"
+   ]
+  },
+  {
+   "family": "quickfx",
+   "key": "chain_preset_selector",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "clear",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "enabled",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "focused_effect",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "group_[Channel{n}]_enable",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "mix",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "mix_mode",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "next_chain_preset",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "prev_chain_preset",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "show_focus",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "show_parameters",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx",
+   "key": "super1",
+   "group_template": "[QuickEffectRack1_[Channel{n}]]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter1",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter10",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter11",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter12",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter13",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter14",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter15",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter16",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter2",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter3",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter4",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter5",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter6",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter7",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter8",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "button_parameter9",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "clear",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "effect_selector",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "enabled",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "meta",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "next_effect",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter1",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter10",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter11",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter12",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter13",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter14",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter15",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter16",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter2",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter3",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter4",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter5",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter6",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter7",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter8",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "parameter9",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 4
+  },
+  {
+   "family": "quickfx_e",
+   "key": "prev_effect",
+   "group_template": "[QuickEffectRack1_[Channel{n}]_Effect1]",
+   "params": [
+    "n"
+   ],
+   "scope": "дека",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "recording",
+   "key": "status",
+   "group_template": "[Recording]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "recording",
+   "key": "toggle_recording",
+   "group_template": "[Recording]",
+   "params": [],
+   "scope": "",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 1
+  },
+  {
+   "family": "sampler",
+   "key": "LoadSelectedTrack",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "LoadSelectedTrackAndPlay",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "beatloop_1_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "beatloop_2_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "beatloop_4_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "beatloop_8_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "beatsync",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "cue_default",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "cue_gotoandplay",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "cue_set",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "eject",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "hotcue_1_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "hotcue_2_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "hotcue_3_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "hotcue_4_activate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "keylock",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "loop_enabled",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "loop_exit",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "mute",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "orientation",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": 0.0,
+   "max": 2.0,
+   "neutral": 1.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "pfl",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "play",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "pregain",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 1.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "quantize",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "rate",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": -1.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "repeat",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "reverse",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "start_play",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "start_stop",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "stop",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "button",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "sync_enabled",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  },
+  {
+   "family": "sampler",
+   "key": "volume",
+   "group_template": "[Sampler{i}]",
+   "params": [
+    "i"
+   ],
+   "scope": "сэмплер",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 16,
+   "index_values": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ]
+  }
+ ]
+}

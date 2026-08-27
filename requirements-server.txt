@@ -1,0 +1,12 @@
+# Зависимости только backend'а (server.py) — для Docker-образа и деплоя на
+# VPS. Без python-rtmidi/websockets-клиента: они нужны только companion'у,
+# который у диджея рядом с Mixxx, не на сервере.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+google-genai>=1.0.0
+python-multipart>=0.0.9
+
+# Нужен, только если DARAVE_LLM_PROVIDER=ollama. На облачном VPS обычно
+# смысла нет (Ollama там же гонять некому/негде) — актуально в основном
+# для локального/домашнего деплоя backend'а рядом с Ollama.
+ollama>=0.4.0

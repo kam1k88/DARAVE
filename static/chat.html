@@ -1,0 +1,1650 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DARAVE — ассистент диджея</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --panel-3: #262b36;
+    --border: #2a2f3a;
+    --text: #e7e9ee;
+    --muted: #8a90a0;
+    --accent: #7c5cff;
+    --accent-2: #35d0ba;
+    --danger: #ff5c7a;
+    --ok: #35d0ba;
+    --warn: #f0a83c;
+    --el1: #35d0ba; --el2: #7fd858; --el3: #f0d43c; --el4: #f0a83c; --el5: #ff5c7a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button { font-family: inherit; }
+  #app { display: flex; height: 100%; }
+
+  /* ===== левая узкая навигация ===== */
+  #nav {
+    width: 64px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px;
+  }
+  #nav .nav-logo { color: var(--accent); font-size: 20px; margin-bottom: 10px; }
+  #nav button {
+    width: 48px; height: 48px; background: none; border: none; color: var(--muted);
+    border-radius: 10px; cursor: pointer; font-size: 20px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+  }
+  #nav button .label { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; }
+  #nav button:hover { background: var(--panel-2); color: var(--text); }
+  #nav button.active { background: var(--panel-2); color: var(--accent); }
+
+  #shell { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header .logo { font-weight: 700; letter-spacing: .04em; color: var(--accent); }
+  header .room { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  header .room code {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 8px; color: var(--text);
+  }
+  header .spacer { flex: 1; }
+  .status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+  .dot.on { background: var(--ok); }
+
+  .view { flex: 1; display: none; min-height: 0; }
+  .view.active { display: flex; }
+
+  /* ===== Чат ===== */
+  #decks {
+    width: 260px; flex-shrink: 0; padding: 12px; border-right: 1px solid var(--border);
+    overflow-y: auto; background: var(--panel);
+  }
+  #decks h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 4px 0 10px; }
+  .deck-card {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; margin-bottom: 10px;
+  }
+  .deck-card .row1 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .deck-card .name { font-weight: 700; font-size: 15px; }
+  .deck-card .play { font-size: 13px; color: var(--muted); }
+  .deck-card .play.playing { color: var(--ok); }
+  .deck-card .bpm { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .bar { height: 6px; border-radius: 4px; background: #2c313d; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .deck-card .meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  #decks .empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+
+  #chat-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 70%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.agent { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg.system { align-self: center; color: var(--muted); font-size: 12px; background: none; }
+
+  #toolbar { display: flex; gap: 8px; padding: 10px 12px 0; background: var(--panel); flex-wrap: wrap; }
+  #toolbar button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  #toolbar button:hover { border-color: var(--accent); }
+  #toolbar button.recording { background: var(--danger); border-color: var(--danger); color: #fff; }
+  #toolbar a.download-link {
+    background: var(--accent-2); color: #06231d; border: none; border-radius: 8px;
+    padding: 6px 12px; font-size: 13px; text-decoration: none; font-weight: 600;
+  }
+  #composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); background: var(--panel); }
+  #composer input {
+    flex: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 10px 14px; font-size: 14px; outline: none;
+  }
+  #composer input:focus { border-color: var(--accent); }
+  #composer button {
+    background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    padding: 0 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #composer button:disabled { opacity: .5; cursor: default; }
+
+  /* ===== общие элементы для Библиотеки/Стратегии/Техники ===== */
+  .browser-view { flex: 1; display: flex; min-width: 0; }
+  .list-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .list-header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .list-header h1 { font-size: 16px; margin: 0; }
+  .list-header .count { color: var(--muted); font-size: 12px; }
+  .list-header .spacer { flex: 1; }
+  .list-header button, .list-header select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .list-header button:hover { border-color: var(--accent); }
+  .list-body { flex: 1; overflow-y: auto; }
+  .detail-col {
+    width: 320px; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--panel);
+    overflow-y: auto; padding: 18px;
+  }
+  .detail-col .empty { color: var(--muted); font-size: 13px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    background: var(--panel-3); color: var(--text);
+  }
+  .camelot-badge { color: #06231d; }
+
+  /* ===== Библиотека ===== */
+  .scan-bar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 18px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .scan-bar input {
+    flex: 1; max-width: 420px; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none;
+  }
+  .scan-bar input:focus { border-color: var(--accent); }
+  .scan-bar button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .scan-bar button:disabled { opacity: .5; cursor: default; }
+  .scan-bar #scan-status { font-size: 12px; color: var(--muted); }
+  .scan-bar #scan-status.err { color: var(--danger); }
+  .scan-bar #scan-status.ok { color: var(--ok); }
+  #scan-progress {
+    padding: 8px 18px; font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace;
+    border-bottom: 1px solid var(--border); background: #0c0e12; max-height: 90px; overflow-y: auto;
+  }
+  #scan-progress .line { white-space: pre-wrap; }
+
+  table.lib-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.lib-table th {
+    text-align: left; padding: 8px 14px; color: var(--muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg);
+  }
+  table.lib-table td { padding: 9px 14px; border-bottom: 1px solid var(--border); }
+  table.lib-table tr { cursor: pointer; }
+  table.lib-table tr:hover td { background: var(--panel-2); }
+  table.lib-table tr.selected td { background: var(--panel-3); }
+  .energy-bar { display: inline-block; width: 80px; height: 6px; border-radius: 3px; background: #2c313d; overflow: hidden; vertical-align: middle; }
+  .energy-bar > span { display: block; height: 100%; }
+
+  /* ===== Стратегия ===== */
+  #strategy-view .list-body { padding: 18px; }
+  .arc-chart { display: flex; gap: 3px; align-items: flex-end; height: 90px; margin: 8px 0 20px; }
+  .arc-chart .arc-bar { flex: 1; border-radius: 3px 3px 0 0; min-width: 4px; }
+  .strategy-section h3 { font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; margin: 22px 0 10px; }
+  .transition-card {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .transition-card .row1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .transition-card .names { font-weight: 600; flex: 1; min-width: 160px; }
+  .transition-card .confidence { color: var(--ok); font-size: 12px; font-weight: 700; }
+  .transition-card .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .transition-card .rule { color: var(--muted); font-size: 12px; margin-top: 8px; font-style: italic; }
+  .transition-card .alternatives { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .transition-card .alt-chip {
+    background: var(--panel-3); border-radius: 6px; padding: 2px 8px; font-size: 11px; color: var(--muted);
+  }
+    .preset{font-weight:600;cursor:pointer}
+    .nudge-at{color:var(--muted);font-size:11px;min-width:78px;display:inline-block;text-align:center}
+    .nudge-at.nudged{color:#7c5cff;font-weight:600}
+    .preset:hover{filter:brightness(1.25)}
+    .preset-on{outline:1px solid #7c5cff;background:rgba(124,92,255,.20)}
+  .transition-card .play-btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    width: 30px; height: 30px; cursor: pointer; font-size: 13px;
+  }
+  .track-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .track-row .grip { color: var(--muted); cursor: grab; user-select: none; }
+  .track-row.dragging { opacity: .4 }
+  .track-drop { margin-left:8px; background:none; border:none; color:var(--muted);
+                cursor:pointer; font-size:14px; line-height:1; padding:2px 6px; border-radius:4px }
+  .track-drop:hover { color:var(--danger); background:var(--panel-3) }
+  .len-pick { background:var(--panel-3); border:1px solid var(--border); color:var(--text);
+              border-radius:6px; padding:3px 8px; font-size:12px; cursor:pointer }
+  .len-pick.best { border-color:var(--accent); color:var(--accent) }
+  .track-row.drop-here { outline: 1px dashed #7c5cff; }
+  .track-row .idx { color: var(--muted); width: 20px; }
+  .track-row .name { flex: 1; }
+
+  /* ===== Техника ===== */
+  .tech-item { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .tech-item:hover { background: var(--panel-2); }
+  .tech-item.selected { background: var(--panel-3); border-left: 3px solid var(--accent); }
+  .tech-item .name { font-weight: 600; font-size: 13px; }
+  .tech-item .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .tech-detail h2 { font-size: 17px; margin: 0 0 6px; }
+  .tech-detail .desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .tech-param { margin-bottom: 16px; }
+  .tech-param label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .tech-param input[type=range] { width: 100%; }
+  .tech-steps { margin-top: 18px; font-size: 13px; }
+  .tech-steps ol { padding-left: 20px; margin: 8px 0 0; }
+  .tech-steps li { margin-bottom: 6px; color: var(--text); }
+  .tech-detail .stems-warning { color: var(--warn); font-size: 12px; margin-top: 10px; }
+  .tech-exec { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 14px 0 20px; }
+  .tech-exec-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tech-exec-row label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .tech-exec-row select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 13px;
+  }
+  .tech-exec-row button#tech-exec-btn {
+    margin-left: auto; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .tech-exec-row button#tech-exec-btn:hover { opacity: 0.9; }
+  .tech-exec-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .tech-exec-hint.warn { color: var(--warn); }
+  .tech-recommend { margin: 14px 0 20px; }
+  .tech-recommend h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+  .tech-recommend .empty-hint { font-size: 13px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tech-pair { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .tech-pair-tracks { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+  .tech-pair-track { font-weight: 600; }
+  .tech-pair-meta { color: var(--muted); font-size: 11px; }
+  .tech-pair-arrow { color: var(--accent); }
+  .tech-pair-reason { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .tech-pair-cue { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; display: grid; gap: 4px; }
+  .tech-cue-line { display: flex; gap: 8px; font-size: 12px; align-items: baseline; }
+  .tech-cue-icon { width: 14px; flex: none; color: var(--accent); text-align: center; }
+  .tech-cue-label { color: var(--muted); flex: none; }
+  .tech-cue-value { color: var(--text); }
+  .tech-cue-bar { color: var(--muted); }
+  .tech-pair-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .tech-demo-btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; cursor: pointer;
+  }
+  .tech-demo-btn:hover { opacity: 0.9; }
+  .tech-demo-btn:disabled { opacity: 0.5; cursor: default; }
+  .tech-pair audio { height: 32px; }
+  .tech-pair .demo-error { color: var(--danger); font-size: 12px; margin-top: 6px; }
+  .tr-edit { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; display: none; }
+  .tr-edit.open { display: block; }
+  .tr-edit-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tr-edit-row label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .tr-edit select, .tr-edit input {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; max-width: 320px;
+  }
+  .tr-hint { font-size: 11px; color: var(--muted); margin: 2px 0 6px 0; }
+  .tr-edited { color: var(--accent-2); font-size: 11px; }
+  .tempo-note { font-size: 11px; color: var(--accent-2); margin-top: 2px; }
+  .tempo-note.warn { color: var(--warn); }
+  .edit-toggle { background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .edit-toggle:hover { border-color: var(--accent); color: var(--text); }
+  #set-out { margin: 10px 0; font-size: 13px; }
+  #set-out a { color: var(--accent-2); }
+
+  #join-screen {
+    position: fixed; inset: 0; background: var(--bg); display: flex;
+    align-items: center; justify-content: center; padding: 20px; z-index: 10;
+  }
+  #join-screen .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px; width: 100%; max-width: 360px; text-align: center;
+  }
+  #join-screen h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); }
+  #join-screen p { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+  #join-screen input {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 10px 12px; font-size: 15px; text-align: center; margin-bottom: 12px;
+  }
+  #join-screen button {
+    width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="join-screen">
+  <div class="card">
+    <h1>DARAVE</h1>
+    <p>Введите код комнаты — тот же, что задан у companion (<code>--companion-id</code>)</p>
+    <input id="room-input" placeholder="например, my-club-fri" autocomplete="off">
+    <button id="join-btn">Войти</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <nav id="nav">
+    <div class="nav-logo">◈</div>
+    <button data-view="chat" class="active"><span>💬</span><span class="label">Чат</span></button>
+    <button data-view="library"><span>📚</span><span class="label">Библ.</span></button>
+    <button data-view="strategy"><span>🗺</span><span class="label">Страт.</span></button>
+    <button data-view="technique"><span>🎛</span><span class="label">Техн.</span></button>
+  </nav>
+
+  <div id="shell">
+    <header>
+      <div class="logo">DARAVE</div>
+      <div class="room">комната: <code id="room-label"></code></div>
+      <div class="spacer"></div>
+      <div class="status"><span class="dot" id="companion-dot"></span><span id="companion-label">companion не подключён</span></div>
+      <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-label">соединение...</span></div>
+    </header>
+
+    <!-- ===== Чат ===== -->
+    <div id="chat-view" class="view active">
+      <div id="decks">
+        <h2>Деки</h2>
+        <div id="deck-list"><div class="empty">телеметрии пока нет</div></div>
+      </div>
+      <div id="chat-col">
+        <div id="log"></div>
+        <div id="toolbar">
+          <button id="replay-btn" title="Проиграть последний отправленный микс заново">🔁 Повторить микс</button>
+          <button id="record-btn" title="Начать/остановить запись микса в Mixxx">⏺ Запись</button>
+          <a id="download-link" class="download-link" style="display:none" href="#" download>⬇ Скачать запись</a>
+        </div>
+        <div id="composer">
+          <input id="msg-input" placeholder="Напишите ассистенту..." autocomplete="off">
+          <button id="send-btn">Отправить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Библиотека ===== -->
+    <div id="library-view" class="view">
+      <div class="browser-view">
+        <div class="list-col">
+          <div class="list-header">
+            <h1>Library Atlas</h1>
+            <span class="count" id="lib-count">0 треков</span>
+            <div class="spacer"></div>
+            <button id="lib-refresh-btn">↻ Обновить</button>
+          </div>
+          <div class="scan-bar">
+            <input id="scan-path-input" placeholder="Папка с музыкой, напр. C:\Music" autocomplete="off">
+            <button id="scan-btn">🔍 Сканировать</button>
+            <span id="scan-status"></span>
+          </div>
+          <div id="scan-progress" style="display:none"></div>
+          <div class="list-body">
+            <table class="lib-table">
+              <thead><tr><th>Name</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
+              <tbody id="lib-tbody"></tbody>
+            </table>
+            <div id="lib-empty" class="detail-col empty" style="display:none;border:none;width:auto">
+              Библиотека пуста — впишите папку с музыкой выше и нажмите
+              «🔍 Сканировать» (работает, если backend запущен на этой же
+              машине), либо отсканируйте вручную:<br>
+              <code>python track_analysis.py --scan "путь/к/музыке" --upload http://&lt;backend&gt; --room &lt;код&gt;</code>
+            </div>
+          </div>
+        </div>
+        <div class="detail-col" id="lib-detail"><div class="empty">Выберите трек слева</div></div>
+      </div>
+    </div>
+
+    <!-- ===== Стратегия ===== -->
+    <div id="strategy-view" class="view">
+      <div class="browser-view">
+        <div class="list-col">
+          <div class="list-header">
+            <h1>План перехода</h1>
+            <select id="arc-shape-select">
+              <option value="rising">Дуга: нарастающая</option>
+              <option value="wave">Дуга: волна</option>
+              <option value="peak_middle">Дуга: пик в середине</option>
+            </select>
+            <select id="variant-select" title="Вариант последовательности"></select>
+            <label style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:4px">
+              длительность
+              <input id="target-minutes" type="number" min="10" max="600" step="5" value="90" placeholder="90"
+                     style="width:64px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
+              мин
+            </label>
+            <button id="suggest-length-btn" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
+            <span id="length-picks" style="display:flex;gap:4px;align-items:center"></span>
+            <div class="spacer"></div>
+            <button id="export-set-btn" title="Плейлист для Mixxx + раскладка сета">📋 В Mixxx</button>
+            <button id="render-set-btn" title="Выборка сведений по всему сету — послушать характер, не весь микс">🎬 Превью сведений</button>
+            <select id="set-format" title="Формат готового сета"><option value="mp3">mp3</option><option value="wav">wav</option></select>
+            <button id="render-full-btn" title="Весь сет целиком одним треком, в едином темпе">💿 Собрать сет целиком</button>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)" title="Убрать треки, которые не свести ни с чем в этой библиотеке (чужой темп)">
+              <input id="only-mixable" type="checkbox" checked> только сводимые</label>
+            <button id="build-strategy-btn">🗺 Построить план</button>
+          </div>
+          <div class="list-body" id="strategy-body">
+            <div class="empty" style="padding:18px">Сначала загрузите библиотеку (вкладка «Библ.»), затем нажмите «Построить план».</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Техника ===== -->
+    <div id="technique-view" class="view">
+      <div class="browser-view">
+        <div class="list-col" style="flex:0 0 280px;border-right:1px solid var(--border)">
+          <div class="list-header"><h1>Техника</h1></div>
+          <div class="list-body" id="tech-list"></div>
+        </div>
+        <div class="detail-col" id="tech-detail" style="width:auto;flex:1"><div class="empty">Выберите технику слева</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const joinScreen = document.getElementById("join-screen");
+  const app = document.getElementById("app");
+  const roomInput = document.getElementById("room-input");
+  const joinBtn = document.getElementById("join-btn");
+  const roomLabel = document.getElementById("room-label");
+  const log = document.getElementById("log");
+  const msgInput = document.getElementById("msg-input");
+  const sendBtn = document.getElementById("send-btn");
+  const deckList = document.getElementById("deck-list");
+  const wsDot = document.getElementById("ws-dot");
+  const wsLabel = document.getElementById("ws-label");
+  const companionDot = document.getElementById("companion-dot");
+  const companionLabel = document.getElementById("companion-label");
+  const replayBtn = document.getElementById("replay-btn");
+  const recordBtn = document.getElementById("record-btn");
+  const downloadLink = document.getElementById("download-link");
+
+  let ws = null;
+  let reconnectDelay = 1000;
+  let reconnectTimer = null;
+  let currentRoom = null;
+  let currentDecks = {};
+
+  // ===================== навигация между вкладками =====================
+  document.querySelectorAll("#nav button[data-view]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("#nav button[data-view]").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(btn.dataset.view + "-view").classList.add("active");
+      if (btn.dataset.view === "library") {
+        loadLibrary();
+        loadRememberedScanPath();
+        resumeScanStatusIfRunning();
+      }
+      if (btn.dataset.view === "technique" && !techniquesCache) loadTechniques();
+    });
+  });
+
+  // ===================== Чат (WebSocket) =====================
+
+  function setRecordingStatus(status) {
+    recordBtn.classList.toggle("recording", status === 1);
+    recordBtn.textContent = status === 1 ? "⏹ Остановить запись" : "⏺ Запись";
+  }
+
+  function sendCommand(action) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "command", action: action }));
+  }
+
+  function addMessage(text, cls) {
+    const el = document.createElement("div");
+    el.className = "msg " + cls;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderDecks(decks) {
+    currentDecks = decks || {};
+    const names = Object.keys(currentDecks).sort();
+    if (names.length === 0) {
+      deckList.innerHTML = '<div class="empty">телеметрии пока нет</div>';
+      return;
+    }
+    deckList.innerHTML = "";
+    for (const name of names) {
+      const d = currentDecks[name];
+      const card = document.createElement("div");
+      card.className = "deck-card";
+      const pct = Math.max(0, Math.min(1, d.position || 0)) * 100;
+      card.innerHTML =
+        '<div class="row1"><span class="name">Дека ' + name + '</span>' +
+        '<span class="play' + (d.playing ? " playing" : "") + '">' + (d.playing ? "▶ играет" : "⏸ пауза") + '</span></div>' +
+        '<div class="bpm">BPM ' + (d.bpm !== undefined ? Number(d.bpm).toFixed(1) : "—") + '</div>' +
+        '<div class="bar"><span style="width:' + pct.toFixed(1) + '%"></span></div>' +
+        '<div class="meta">' + (d.track_loaded ? "трек загружен" : "дека пуста") + '</div>';
+      deckList.appendChild(card);
+    }
+  }
+
+  function setWsStatus(connected, label) {
+    wsDot.classList.toggle("on", connected);
+    wsLabel.textContent = label;
+  }
+
+  function setCompanionStatus(connected) {
+    companionDot.classList.toggle("on", connected);
+    companionLabel.textContent = connected ? "companion подключён" : "companion не подключён";
+  }
+
+  function connect(room) {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = proto + "//" + location.host + "/ws/chat/" + encodeURIComponent(room);
+    setWsStatus(false, "соединение...");
+    ws = new WebSocket(url);
+
+    ws.onopen = function () {
+      reconnectDelay = 1000;
+      setWsStatus(true, "на связи");
+    };
+
+    ws.onmessage = function (ev) {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "agent_reply") {
+        addMessage(msg.text, "agent");
+      } else if (msg.type === "telemetry") {
+        renderDecks(msg.decks);
+        if (msg.recording_status !== undefined) setRecordingStatus(msg.recording_status);
+      } else if (msg.type === "companion_status") {
+        setCompanionStatus(!!msg.connected);
+      } else if (msg.type === "recording_ready") {
+        downloadLink.href = msg.url;
+        downloadLink.style.display = "inline-block";
+        addMessage("Запись готова к скачиванию.", "system");
+      } else if (msg.type === "library_updated") {
+        addMessage("Библиотека обновлена: " + msg.count + " треков.", "system");
+        if (document.getElementById("library-view").classList.contains("active")) loadLibrary();
+      } else if (msg.type === "scan_finished") {
+        if (msg.ok && msg.count) {
+          addMessage("Сканирование завершено: " + msg.count + " треков в библиотеке.", "system");
+        } else if (msg.ok) {
+          addMessage("Сканирование завершено, но подходящих треков не найдено — см. вкладку «Библ.».", "system");
+        } else {
+          addMessage("Сканирование завершилось с ошибкой — см. вкладку «Библ.».", "system");
+        }
+      } else if (msg.type === "plan_started") {
+        setTechniqueBusy(true);
+      } else if (msg.type === "plan_finished") {
+        setTechniqueBusy(false);
+        if (!msg.ok) addMessage("Техника прервалась ошибкой: " + (msg.error || "?"), "system");
+      } else if (msg.type === "plan_rejected") {
+        setTechniqueBusy(true);
+        addMessage(msg.reason || "Техника отклонена — предыдущая ещё исполняется.", "system");
+      }
+    };
+
+    ws.onclose = function () {
+      setWsStatus(false, "переподключение...");
+      setCompanionStatus(false);
+      reconnectTimer = setTimeout(function () { connect(room); }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 1.6, 15000);
+    };
+
+    ws.onerror = function () { ws.close(); };
+  }
+
+  function send() {
+    const text = msgInput.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    addMessage(text, "user");
+    ws.send(JSON.stringify({ type: "user_message", text: text }));
+    msgInput.value = "";
+  }
+
+  sendBtn.addEventListener("click", send);
+  msgInput.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
+  replayBtn.addEventListener("click", function () { sendCommand("replay_last_mix"); });
+  recordBtn.addEventListener("click", function () { sendCommand("recording_toggle"); });
+
+  // ===================== Библиотека =====================
+
+  let libraryCache = [];
+  const CAMELOT_LETTER_COLOR = { A: "#7fd858", B: "#7c9dff" };
+
+  function camelotBadge(camelot) {
+    if (!camelot) return "";
+    const letter = camelot.slice(-1);
+    const color = CAMELOT_LETTER_COLOR[letter] || "#8a90a0";
+    return '<span class="badge camelot-badge" style="background:' + color + '">' + camelot + '</span>';
+  }
+
+  function energyBar(energy) {
+    const pct = Math.round((energy || 0) * 100);
+    const color = pct < 30 ? "var(--el1)" : pct < 55 ? "var(--el2)" : pct < 75 ? "var(--el3)" : pct < 90 ? "var(--el4)" : "var(--el5)";
+    return '<span class="energy-bar"><span style="width:' + pct + '%;background:' + color + '"></span></span> ' + pct;
+  }
+
+  async function loadLibrary() {
+    if (!currentRoom) return;
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library");
+      const data = await resp.json();
+      libraryCache = data.tracks || [];
+      renderLibrary();
+    } catch (e) {
+      console.error("loadLibrary failed", e);
+    }
+  }
+
+  function renderLibrary() {
+    document.getElementById("lib-count").textContent = libraryCache.length + " треков";
+    const tbody = document.getElementById("lib-tbody");
+    const emptyEl = document.getElementById("lib-empty");
+    if (libraryCache.length === 0) {
+      tbody.innerHTML = "";
+      emptyEl.style.display = "block";
+      return;
+    }
+    emptyEl.style.display = "none";
+    tbody.innerHTML = "";
+    libraryCache.forEach(function (tr, i) {
+      const row = document.createElement("tr");
+      row.innerHTML =
+        "<td>" + (tr.name || "") + "</td>" +
+        "<td>" + (tr.bpm !== undefined ? tr.bpm.toFixed(1) : "—") + "</td>" +
+        "<td>" + camelotBadge(tr.camelot) + "</td>" +
+        "<td>" + energyBar(tr.energy) + "</td>" +
+        "<td>" + formatDuration(tr.duration_seconds) + "</td>";
+      row.addEventListener("click", function () { selectLibraryRow(i); });
+      tbody.appendChild(row);
+    });
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds) return "—";
+    const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
+  function selectLibraryRow(i) {
+    document.querySelectorAll("#lib-tbody tr").forEach((r, idx) => r.classList.toggle("selected", idx === i));
+    const tr = libraryCache[i];
+    const structure = tr.structure || {};
+    const detail = document.getElementById("lib-detail");
+    detail.innerHTML =
+      "<h2 style='margin:0 0 4px'>" + tr.name + "</h2>" +
+      "<div style='color:var(--muted);font-size:12px;margin-bottom:16px'>" + (tr.key || "") + "</div>" +
+      row("BPM", tr.bpm !== undefined ? tr.bpm.toFixed(1) : "—") +
+      row("Camelot", tr.camelot || "—") +
+      row("Energy", Math.round((tr.energy || 0) * 100) + "%") +
+      row("Brightness", Math.round((tr.brightness || 0) * 100) + "%") +
+      row("Danceability", Math.round((tr.danceability || 0) * 100) + "%") +
+      row("Длительность", formatDuration(tr.duration_seconds)) +
+      row("Дропов найдено", (structure.drops || []).length) +
+      row("Брейкдаунов", (structure.breakdowns || []).length) +
+      (tr.tags && tr.tags.tags ? "<div style='margin-top:14px'><b>Теги:</b> " + tr.tags.tags.map(t => t.label).join(", ") + "</div>" : "");
+  }
+
+  function row(label, value) {
+    return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">' +
+      '<span style="color:var(--muted)">' + label + '</span><span>' + value + '</span></div>';
+  }
+
+  document.getElementById("lib-refresh-btn").addEventListener("click", loadLibrary);
+
+  // ----- Сканирование библиотеки прямо из UI (кнопка "🔍 Сканировать") -----
+
+  const scanPathInput = document.getElementById("scan-path-input");
+  const scanBtn = document.getElementById("scan-btn");
+  const scanStatusEl = document.getElementById("scan-status");
+  const scanProgressEl = document.getElementById("scan-progress");
+  let scanPollTimer = null;
+
+  function loadRememberedScanPath() {
+    try {
+      const saved = localStorage.getItem("darave_scan_path_" + currentRoom);
+      if (saved) scanPathInput.value = saved;
+    } catch (e) { /* приватный режим браузера — не критично, просто не запомнится */ }
+  }
+
+  function rememberScanPath(path) {
+    try { localStorage.setItem("darave_scan_path_" + currentRoom, path); } catch (e) { /* см. выше */ }
+  }
+
+  function setScanStatus(text, cls) {
+    scanStatusEl.textContent = text || "";
+    scanStatusEl.className = cls || "";
+  }
+
+  function renderScanTail(tail) {
+    if (!tail || !tail.length) { scanProgressEl.style.display = "none"; return; }
+    scanProgressEl.style.display = "block";
+    scanProgressEl.innerHTML = tail.map(l => '<div class="line">' + escapeHtml(l) + '</div>').join("");
+    scanProgressEl.scrollTop = scanProgressEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function pollScanStatus() {
+    if (!currentRoom) return;
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library/scan/status");
+      const data = await resp.json();
+      renderScanTail(data.tail);
+      if (data.running) {
+        setScanStatus("Сканирую...", "");
+        scanPollTimer = setTimeout(pollScanStatus, 1200);
+      } else {
+        scanBtn.disabled = false;
+        if (data.returncode !== null) {
+          setScanStatus(data.ok ? "Готово ✓" : "Ошибка сканирования — см. лог ниже", data.ok ? "ok" : "err");
+        }
+        loadLibrary();
+      }
+    } catch (e) {
+      setScanStatus("Ошибка сети при опросе статуса", "err");
+      scanBtn.disabled = false;
+    }
+  }
+
+  scanBtn.addEventListener("click", async function () {
+    if (!currentRoom) return;
+    const path = scanPathInput.value.trim();
+    if (!path) { setScanStatus("Укажите папку с музыкой", "err"); return; }
+    rememberScanPath(path);
+    scanBtn.disabled = true;
+    setScanStatus("Запускаю...", "");
+    scanProgressEl.style.display = "none";
+    scanProgressEl.innerHTML = "";
+    if (scanPollTimer) clearTimeout(scanPollTimer);
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library/scan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setScanStatus(data.detail || "Не удалось запустить сканирование", "err");
+        scanBtn.disabled = false;
+        return;
+      }
+      pollScanStatus();
+    } catch (e) {
+      setScanStatus("Ошибка сети: " + e, "err");
+      scanBtn.disabled = false;
+    }
+  });
+  scanPathInput.addEventListener("keydown", function (e) { if (e.key === "Enter") scanBtn.click(); });
+
+  async function resumeScanStatusIfRunning() {
+    // На случай, если скан уже идёт (запущен раньше или из другой вкладки
+    // браузера) - подхватываем прогресс, не перетирая предыдущий "Готово"/"Ошибка".
+    if (!currentRoom || scanPollTimer) return;
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library/scan/status");
+      const data = await resp.json();
+      if (data.running) {
+        scanBtn.disabled = true;
+        renderScanTail(data.tail);
+        pollScanStatus();
+      }
+    } catch (e) { /* тихо - это фоновая подхватка, не критично */ }
+  }
+
+  // ===================== Стратегия =====================
+
+  let currentStrategy = null;
+  const EL_COLORS = { 1: "var(--el1)", 2: "var(--el2)", 3: "var(--el3)", 4: "var(--el4)", 5: "var(--el5)" };
+
+  // Правки диджея по конкретным переходам. Живут отдельно от плана и
+  // переживают перестроение: поправил технику у 3-го перехода — она
+  // останется, даже если сменить дугу или длительность.
+  let planOverrides = {};
+  let manualOrder = null;      // порядок, выставленный руками
+  // Треки, которые диджей убрал из плана. Живут отдельно от порядка:
+  // перестроение плана их не возвращает, пока не вернуть явно.
+  const excludedTracks = new Set();
+
+  document.getElementById("build-strategy-btn").addEventListener("click", function () {
+    manualOrder = null;          // «Построить план» — заново, включая порядок
+    buildStrategy();
+  });
+  document.getElementById("only-mixable").addEventListener("change", function () { buildStrategy(); });
+  document.getElementById("variant-select").addEventListener("change", function () { buildStrategy(); });
+
+  async function buildStrategy(keepOverrides) {
+    if (!currentRoom) return;
+    if (!keepOverrides) planOverrides = {};
+    const shape = document.getElementById("arc-shape-select").value;
+    const minutes = parseFloat(document.getElementById("target-minutes").value);
+    const variant = parseInt(document.getElementById("variant-select").value || "0", 10);
+    const body = document.getElementById("strategy-body");
+    body.innerHTML = '<div class="empty" style="padding:18px">Строю план...</div>';
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          arc_shape: shape,
+          target_minutes: isNaN(minutes) ? null : minutes,
+          variant: variant,
+          overrides: planOverrides,
+          track_order: manualOrder,
+          only_mixable: document.getElementById("only-mixable").checked,
+          exclude: Array.from(excludedTracks),
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        body.innerHTML = '<div class="empty" style="padding:18px">' + (err.detail || "Ошибка построения плана") + '</div>';
+        return;
+      }
+      currentStrategy = await resp.json();
+      fillVariants(currentStrategy);
+      renderStrategy();
+    } catch (e) {
+      body.innerHTML = '<div class="empty" style="padding:18px">Ошибка сети: ' + e + '</div>';
+    }
+  }
+
+  function fillVariants(s) {
+    const sel = document.getElementById("variant-select");
+    if (sel.options.length === (s.variants_available || 5)) return;
+    sel.innerHTML = "";
+    for (let i = 0; i < (s.variants_available || 5); i++) {
+      const o = document.createElement("option");
+      o.value = i; o.textContent = "Вариант " + (i + 1);
+      sel.appendChild(o);
+    }
+    sel.value = s.variant || 0;
+  }
+
+  function renderStrategy() {
+    const s = currentStrategy;
+    const body = document.getElementById("strategy-body");
+    let html = "";
+    const L = s.layout || {};
+    html += '<div style="color:var(--muted);font-size:13px;margin-bottom:6px">' +
+      (s.tracks || []).length + ' треков · ' + s.transitions_count + ' сведений · ' +
+      s.total_duration_minutes + ' мин' +
+      (L.slot_seconds ? ' · каждый трек звучит ~' + Math.round(L.slot_seconds) + 'с' : '') + '</div>';
+    if (L.warning) {
+      html += '<div style="color:var(--warn);font-size:13px;margin-bottom:6px">' + L.warning + '</div>';
+    }
+    const dropped = s.dropped_tracks || [];
+    if (dropped.length) {
+      html += '<div style="color:var(--muted);font-size:12px;margin-bottom:8px">' +
+        'Не вошли в сет (' + dropped.length + '): ' +
+        dropped.map(d => '<span title="' + String(d.reason).replace(/"/g, "&quot;") + '">' +
+                         d.name.replace(/\.mp3$/i, "") + '</span>').join(" · ") +
+        '<br><span style="opacity:.7">' + (dropped[0] ? dropped[0].reason : "") + '</span></div>';
+    }
+
+    html += '<div class="arc-chart">';
+    (s.energy_arc || []).forEach(function (el) {
+      const h = 15 + el * 15;
+      html += '<div class="arc-bar" style="height:' + h + 'px;background:' + EL_COLORS[el] + '"></div>';
+    });
+    html += '</div>';
+
+    html += '<div class="strategy-section"><h3>Треки (' + s.tracks.length + ')</h3>';
+    s.tracks.forEach(function (tr, i) {
+      html += '<div class="track-row" draggable="true" data-i="' + i + '">' +
+        '<span class="grip" title="перетащите, чтобы поменять порядок">⠿</span>' +
+        '<span class="idx">' + (i + 1) + '</span>' +
+        '<span class="name">' + tr.name + '</span>' +
+        '<span style="color:var(--muted)">' + tr.bpm.toFixed(1) + ' BPM · ' + tr.camelot + ' · EL' + tr.el + '</span>' +
+        '<button class="track-drop" data-name="' + tr.name.replace(/"/g, "&quot;") + '"' +
+        ' title="Убрать этот трек из плана">✕</button></div>';
+    });
+    html += '</div>';
+
+    html += '<div class="strategy-section"><h3>Переходы (' + s.transitions.length + ')</h3><div id="transitions-list"></div></div>';
+    body.innerHTML = html;
+    _wireTrackDrag(body);
+
+    const list = document.getElementById("transitions-list");
+    s.transitions.forEach(function (tr, i) {
+      const card = document.createElement("div");
+      card.className = "transition-card";
+      card.innerHTML =
+        '<div class="row1">' +
+          '<span class="badge">' + tr.technique_id + '</span>' +
+          '<span class="names">' + tr.from + ' → ' + tr.to + '</span>' +
+          '<span class="confidence">' + Math.round(tr.confidence * 100) + '%</span>' +
+          '<button class="play-btn" title="Выполнить этот переход сейчас (A→B)">▶</button>' +
+        '</div>' +
+        '<div class="meta">' + tr.technique_name + ' · ' + tr.bpm_from.toFixed(1) + '→' + tr.bpm_to.toFixed(1) +
+          ' BPM · ' + tr.key_from + '→' + tr.key_to + ' · EL' + tr.el_from + '→EL' + tr.el_to + ' · ' + tr.bars + ' тактов' +
+          (tr.edited ? ' <span class="tr-edited">· правлено</span>' : '') + '</div>' +
+        (tr.tempo_note ? '<div class="tempo-note' + (tr.tempo_note.indexOf("не сводятся") >= 0 ? ' warn' : '') +
+          '">' + tr.tempo_note + '</div>' : '') +
+        '<div class="rule">' + tr.rule + '</div>' +
+        _pointsSummary(tr) +
+        '<div style="margin-top:6px"><button class="edit-toggle">✎ настроить</button></div>' +
+        '<div class="tr-player" data-h="player" style="margin:6px 0"></div>' +
+        _editorHtml(tr, i) +
+        _presetsHtml(tr);
+      card.querySelector(".play-btn").addEventListener("click", function () { executeTransition(i); });
+      card.querySelector(".edit-toggle").addEventListener("click", function () {
+        card.querySelector(".tr-edit").classList.toggle("open");
+      });
+      _wireEditor(card, tr, i);
+      list.appendChild(card);
+    });
+  }
+
+  // Четыре понятных способа свести вместо перебора 22 техник x 6 x 6:
+  // диджей решает «мягко или резом», а не «DNB-16 плюс точка №4».
+  // Ручной порядок треков: план строит алгоритм, но последнее слово за
+  // диджеем. Перетащенный порядок фиксируется как track_order и переживает
+  // перестроение плана — иначе следующий же пересчёт всё бы затёр.
+  // Убрать трек из плана. Перестраиваем сразу — иначе непонятно, что
+  // изменилось: план пересобирается целиком, соседи у всех другие.
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest && e.target.closest(".track-drop");
+    if (!btn) return;
+    excludedTracks.add(btn.dataset.name);
+    manualOrder = null;          // ручной порядок больше не описывает этот набор
+    addMessage("Убрал из плана: " + btn.dataset.name +
+               (excludedTracks.size > 1 ? " (всего убрано: " + excludedTracks.size + ")" : "") +
+               ". Вернуть — «🗺 Построить план» после перезагрузки страницы.", "system");
+    buildStrategy(true);
+  });
+
+  document.getElementById("suggest-length-btn").addEventListener("click", async function () {
+    if (!currentRoom) { addMessage("Сначала загрузите библиотеку.", "system"); return; }
+    const out = document.getElementById("length-picks");
+    out.textContent = "считаю...";
+    try {
+      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/suggest-length", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          arc_shape: document.getElementById("arc-shape-select").value,
+          only_mixable: document.getElementById("only-mixable").checked,
+          variant: parseInt(document.getElementById("variant-select").value || "0", 10),
+          exclude: Array.from(excludedTracks),
+        }),
+      });
+      const d = await r.json();
+      if (r.status === 404) {
+        // Бэкенд в памяти старее файлов на диске — у него просто нет этого
+        // адреса. Раньше здесь писалось «Not Found», и было непонятно, что
+        // делать.
+        out.textContent = "";
+        addMessage("Бэкенд работает на старом коде — этой кнопки он ещё не знает. " +
+                   "Закройте всё через stop_darave.bat и запустите start_darave.bat.", "system");
+        return;
+      }
+      if (!r.ok) { out.textContent = d.detail || "не вышло"; return; }
+      out.innerHTML = "";
+      (d.best || []).forEach(function (p, i) {
+        const b = document.createElement("button");
+        b.className = "len-pick" + (i === 0 ? " best" : "");
+        b.textContent = p.minutes + " мин";
+        b.title = "переходов без рисков " + Math.round(p.full_confidence * 100) + "%" +
+                  ", гармония " + p.harmony.toFixed(2) +
+                  ", точек на музыке " + Math.round(p.good_points * 100) + "%";
+        b.addEventListener("click", function () {
+          document.getElementById("target-minutes").value = p.minutes;
+          buildStrategy();
+        });
+        out.appendChild(b);
+      });
+      if (!(d.best || []).length) out.textContent = "вариантов нет";
+    } catch (err) { out.textContent = "ошибка сети"; }
+  });
+
+  let dragFrom = null;
+  function _wireTrackDrag(root) {
+    root.querySelectorAll(".track-row[draggable]").forEach(function (row) {
+      row.addEventListener("dragstart", function (e) {
+        dragFrom = parseInt(row.dataset.i, 10);
+        row.classList.add("dragging");
+        try { e.dataTransfer.setData("text/plain", String(dragFrom)); } catch (err) {}
+        e.dataTransfer.effectAllowed = "move";
+      });
+      row.addEventListener("dragend", function () { row.classList.remove("dragging"); });
+      row.addEventListener("dragover", function (e) { e.preventDefault(); row.classList.add("drop-here"); });
+      row.addEventListener("dragleave", function () { row.classList.remove("drop-here"); });
+      row.addEventListener("drop", function (e) {
+        e.preventDefault();
+        row.classList.remove("drop-here");
+        const to = parseInt(row.dataset.i, 10);
+        if (dragFrom == null || isNaN(to) || dragFrom === to) return;
+        const names = (currentStrategy.tracks || []).map(t => t.name);
+        names.splice(to, 0, names.splice(dragFrom, 1)[0]);
+        manualOrder = names;
+        planOverrides = {};        // порядок изменился — старые правки переходов больше не про эти пары
+        buildStrategy(true);
+      });
+    });
+  }
+
+  function _presetsHtml(tr) {
+    const ps = tr.presets || [];
+    if (!ps.length) return "";
+    return '<div class="alternatives">' + ps.map(function (p, k) {
+      return '<span class="alt-chip preset' + (p.current ? ' preset-on' : '') +
+        '" data-preset="' + k + '" title="' + String(p.hint || "").replace(/"/g, "&quot;") +
+        '">▶ ' + p.label + '<span style="opacity:.55"> · ' + p.technique_name + '</span></span>';
+    }).join("") + '</div>';
+  }
+
+  function _pointsSummary(tr) {
+    const f = tr.from_point, t = tr.to_point;
+    if (!f && !t) return "";
+    let h = '<div class="tr-hint">';
+    if (f) h += '↑ уводим: ' + f.label + ' (такт ' + f.bar_index + ')';
+    if (t) h += (f ? ' &nbsp;·&nbsp; ' : '') + '↓ входим: ' + t.label;
+    return h + '</div>';
+  }
+
+  function _opts(list, chosen) {
+    return (list || []).map(function (p) {
+      const sel = chosen && Math.abs(p.time_seconds - chosen.time_seconds) < 0.01 ? " selected" : "";
+      return '<option value="' + p.time_seconds + '"' + sel + '>' + p.label + '</option>';
+    }).join("");
+  }
+
+  function _editorHtml(tr, i) {
+    const techOpts = (techniquesCache || []).map(function (t) {
+      return '<option value="' + t.id + '"' + (t.id === tr.technique_id ? " selected" : "") + '>' +
+             t.id + ' ' + t.name + '</option>';
+    }).join("");
+    return '<div class="tr-edit">' +
+      '<div class="tr-edit-row">' +
+        '<label>техника <select data-f="technique">' + techOpts + '</select></label>' +
+        '<button data-f="hear-tech" class="edit-toggle" title="послушать эту технику">▶</button>' +
+        '<label>тактов <input data-f="bars" type="number" min="0.5" max="64" step="0.5" value="' + tr.bars + '"></label>' +
+      '</div>' +
+      '<div class="tr-edit-row">' +
+        '<label>уводим <select data-f="from">' + _opts(tr.from_point_options, tr.from_point) + '</select></label>' +
+        '<button data-f="from-back" class="edit-toggle" title="на такт раньше">−такт</button>' +
+        '<span data-h="from-at" class="nudge-at"></span>' +
+        '<button data-f="from-fwd" class="edit-toggle" title="на такт позже">+такт</button>' +
+        '<button data-f="hear-from" class="edit-toggle" title="послушать с этой точки ухода">▶</button>' +
+      '</div>' +
+      '<div class="tr-hint" data-h="from">' + ((tr.from_point && tr.from_point.hint) || "") + '</div>' +
+      '<div class="tr-edit-row">' +
+        '<label>входим <select data-f="to">' + _opts(tr.to_point_options, tr.to_point) + '</select></label>' +
+        '<button data-f="to-back" class="edit-toggle" title="на такт раньше">−такт</button>' +
+        '<span data-h="to-at" class="nudge-at"></span>' +
+        '<button data-f="to-fwd" class="edit-toggle" title="на такт позже">+такт</button>' +
+        '<button data-f="hear-to" class="edit-toggle" title="послушать с этой точки входа">▶</button>' +
+      '</div>' +
+      '<div class="tr-hint" data-h="to">' + ((tr.to_point && tr.to_point.hint) || "") + '</div>' +
+      '<div class="tr-edit-row">' +
+        '<button data-f="apply" class="edit-toggle">применить</button>' +
+        '<button data-f="reset" class="edit-toggle">сбросить</button>' +
+        '<button data-f="hear" class="edit-toggle">🎧 послушать этот переход</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function _mmss(sec) {
+    sec = Math.max(0, sec || 0);
+    return Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
+  }
+
+  function _wireEditor(card, tr, i) {
+    const box = card.querySelector(".tr-edit");
+    const pick = (sel) => box.querySelector('[data-f="' + sel + '"]');
+
+    // Сдвиг точки на такт. Кандидаты из анализа попадают близко, но
+    // «на два такта раньше» ухо слышит, а список готовых вариантов такой
+    // точности не даёт — нужен именно шаг по сетке.
+    const barFrom = 60 / (tr.bpm_from || 174) * 4;
+    const barTo = 60 / (tr.bpm_to || 174) * 4;
+    const nudge = { from: 0, to: 0 };
+    function pointAt(which) {
+      const base = parseFloat(pick(which).value) || 0;
+      return Math.max(0, base + nudge[which] * (which === "from" ? barFrom : barTo));
+    }
+    function showNudge() {
+      ["from", "to"].forEach(function (w) {
+        const el = box.querySelector('[data-h="' + w + '-at"]');
+        if (!el) return;
+        const n = nudge[w];
+        el.textContent = _mmss(pointAt(w)) + (n ? " (" + (n > 0 ? "+" : "") + n + " такт)" : "");
+        el.classList.toggle("nudged", n !== 0);
+      });
+    }
+    ["from", "to"].forEach(function (w) {
+      const back = pick(w + "-back"), fwd = pick(w + "-fwd");
+      if (back) back.addEventListener("click", function () { nudge[w] -= 1; showNudge(); });
+      if (fwd) fwd.addEventListener("click", function () { nudge[w] += 1; showNudge(); });
+      pick(w).addEventListener("change", function () { nudge[w] = 0; showNudge(); });
+    });
+    showNudge();
+
+    // подсказка меняется вместе с выбором — чтобы было видно, ЧЕМ хорош вариант
+    [["from", tr.from_point_options], ["to", tr.to_point_options]].forEach(function (pair) {
+      const el = pick(pair[0]);
+      el.addEventListener("change", function () {
+        const p = (pair[1] || []).find(x => Math.abs(x.time_seconds - parseFloat(el.value)) < 0.01);
+        box.querySelector('[data-h="' + pair[0] + '"]').textContent = p ? p.hint : "";
+      });
+    });
+
+    pick("apply").addEventListener("click", function () {
+      planOverrides[String(i)] = {
+        technique_id: pick("technique").value,
+        bars: parseFloat(pick("bars").value),
+        from_point_seconds: pointAt("from"),
+        to_point_seconds: pointAt("to"),
+      };
+      buildStrategy(true);
+    });
+    pick("reset").addEventListener("click", function () {
+      delete planOverrides[String(i)];
+      buildStrategy(true);
+    });
+
+    // Прослушать один переход, не пересобирая весь сет: правку стыка
+    // надо проверять на слух сразу, иначе выбор техники — гадание.
+    // Предпрослушка ЛЮБОЙ комбинации, не применяя её к плану: варианты
+    // перебираются на слух, план меняется только когда услышал нужное.
+    async function hear(overrides, note) {
+      // плеер живёт в КАРТЕ, а не в панели настроек — панель может быть
+      // закрыта, а слушать нужно и без неё
+      const slot = card.querySelector('[data-h="player"]');
+      slot.textContent = "Рендерю" + (note ? " (" + note + ")" : "") + "...";
+      const payload = Object.assign({
+        technique_id: pick("technique").value,
+        from_seconds: pointAt("from"),
+        to_seconds: pointAt("to"),
+      }, overrides || {});
+      try {
+        const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                              "/strategy/transitions/" + i + "/demo",
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload) });
+        const d = await r.json();
+        if (!r.ok) { slot.textContent = d.detail || "Не удалось"; return; }
+        slot.innerHTML = '<audio controls autoplay src="' + d.url + '" style="height:30px;width:100%"></audio>' +
+          '<div class="tr-hint">' + d.technique_name + ' · ' + Math.round(d.duration_seconds) + 'с · темп ' +
+          (d.master_bpm || '?') + ' BPM</div>';
+      } catch (e) { slot.textContent = "Ошибка сети: " + e; }
+    }
+    pick("hear").addEventListener("click", function () { hear(); });
+    pick("hear-tech").addEventListener("click", function () { hear(null, "техника"); });
+    pick("hear-from").addEventListener("click", function () { hear(null, "точка ухода"); });
+    pick("hear-to").addEventListener("click", function () { hear(null, "точка входа"); });
+
+    // Клик по пресету — слушаем его. Двойной клик — ставим в план.
+    card.querySelectorAll(".preset").forEach(function (chip) {
+      chip.style.cursor = "pointer";
+      const p = (tr.presets || [])[parseInt(chip.dataset.preset, 10)];
+      if (!p) return;
+      chip.addEventListener("click", function () {
+        card.querySelectorAll(".preset").forEach(x => x.classList.remove("preset-on"));
+        chip.classList.add("preset-on");
+        pick("technique").value = p.technique_id;
+        nudge.from = 0; nudge.to = 0;
+        if (p.from_seconds != null) pick("from").value = p.from_seconds;
+        if (p.to_seconds != null) pick("to").value = p.to_seconds;
+        showNudge();
+        hear({ technique_id: p.technique_id, from_seconds: p.from_seconds, to_seconds: p.to_seconds }, p.label);
+      });
+      chip.addEventListener("dblclick", function () {
+        planOverrides[String(i)] = {
+          technique_id: p.technique_id,
+          bars: parseFloat(pick("bars").value),
+          from_point_seconds: p.from_seconds,
+          to_point_seconds: p.to_seconds,
+        };
+        buildStrategy(true);
+      });
+    });
+  }
+
+  document.getElementById("export-set-btn").addEventListener("click", async function () {
+    if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
+    const out = _setOut();
+    out.textContent = "Готовлю плейлист...";
+    try {
+      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/export",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const d = await r.json();
+      if (!r.ok) { out.textContent = d.detail || "Не удалось выгрузить"; return; }
+      out.innerHTML = 'Плейлист на ' + d.tracks + ' треков: ' +
+        '<a href="' + d.playlist_url + '" download>скачать .m3u8</a> · ' +
+        '<a href="' + d.cue_url + '" target="_blank">раскладка сета</a><br>' +
+        '<span style="color:var(--muted)">' + d.how_to + '</span><br>' +
+        '<span style="color:var(--muted)">файл лежит: ' + d.playlist_path + '</span>';
+    } catch (e) { out.textContent = "Ошибка сети: " + e; }
+  });
+
+  document.getElementById("render-full-btn").addEventListener("click", async function () {
+    if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
+    const out = _setOut();
+    const base = "/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/render-full";
+    out.textContent = "Собираю сет целиком...";
+    try {
+      const r = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ format: document.getElementById("set-format").value }) });
+      const d = await r.json();
+      if (!r.ok) { out.textContent = d.detail || "Не удалось запустить сборку"; return; }
+    } catch (e) { out.textContent = "Ошибка сети: " + e; return; }
+    // сборка идёт фоном: 90 минут аудио считаются пару минут, держать
+    // всё это время открытый запрос — верный таймаут в браузере
+    const timer = setInterval(async function () {
+      let st;
+      try { st = await (await fetch(base)).json(); } catch (e) { return; }
+      if (st.running) {
+        if (st.stage === "encode") {
+          // Перекодирование 90-минутного сета — это минуты. Без отдельной
+          // строки это выглядело как зависшее "43 из 43".
+          out.textContent = "Сведения готовы, кодирую mp3 320 кбит/с: " +
+            Math.round((st.encoded || 0) * 100) + "%";
+        } else {
+          out.textContent = "Собираю сет целиком: сведение " + (st.done || 0) + " из " + (st.total || "?") +
+            ", готово " + (st.minutes || 0) + " мин";
+        }
+        return;
+      }
+      clearInterval(timer);
+      if (st.error) { out.textContent = "Не удалось собрать: " + st.error; return; }
+      if (!st.url) { out.textContent = "Сборка не запускалась"; return; }
+      const techs = st.techniques_used ? Object.keys(st.techniques_used).length : 0;
+      out.innerHTML = 'Сет собран целиком: ' + st.minutes + ' мин, ' + st.done + ' сведений' +
+        (techs ? ', техник: ' + techs : '') + ', темп ' + (st.master_bpm || '?') + ' BPM<br>' +
+        '<audio controls src="' + st.url + '" style="margin-top:6px;height:32px"></audio> ' +
+        '<a href="' + st.url + '" download>скачать ' + _quality(st) + '</a>' +
+        (st.skipped && st.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
+          st.skipped.slice(0, 3).join("; ") + '</span>' : '');
+    }, 3000);
+  });
+
+  document.getElementById("render-set-btn").addEventListener("click", async function () {
+    if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
+    const out = _setOut();
+    out.textContent = "Собираю превью: выборка сведений по всему сету...";
+    try {
+      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/render",
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seconds_between: 50, max_minutes: 25, sample: 8,
+            format: document.getElementById("set-format").value }) });
+      const d = await r.json();
+      if (!r.ok) { out.textContent = d.detail || "Не удалось собрать"; return; }
+      const techs = d.techniques_used ? Object.keys(d.techniques_used).length : 0;
+      out.innerHTML = 'Превью: ' + d.transitions_rendered + ' сведений из ' + d.transitions_total +
+        ', ' + Math.round(d.duration_seconds) + 'с' + (techs ? ', техник: ' + techs : '') +
+        '<br><span style="opacity:.6">выборка по всему сету — характер сведений, не весь микс. ' +
+        'Весь микс: «Собрать сет целиком»</span><br>' +
+        '<audio controls src="' + d.url + '" style="margin-top:6px;height:32px"></audio> ' +
+        '<a href="' + d.url + '" download>скачать ' + _quality(d) + '</a>' +
+        (d.skipped && d.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
+          d.skipped.slice(0, 3).join("; ") + '</span>' : '');
+    } catch (e) { out.textContent = "Ошибка сети: " + e; }
+  });
+
+  // Подпись качества выходного файла: mp3 может оказаться 320 (lameenc/ffmpeg)
+  // или ~74 (libsndfile, который битрейт игнорирует) — раньше в интерфейсе
+  // и там и там было просто «MP3», и понять по кнопке было нельзя.
+  function _quality(d) {
+    const fmt = String(d.format || "wav").toUpperCase();
+    if (fmt === "WAV") return "WAV 16 бит";
+    const br = Number(d.bitrate || 0);
+    return br ? fmt + " " + br + " кбит/с" : fmt;
+  }
+
+  function _setOut() {
+    let out = document.getElementById("set-out");
+    if (!out) {
+      out = document.createElement("div");
+      out.id = "set-out";
+      const body = document.getElementById("strategy-body");
+      body.insertBefore(out, body.firstChild);
+    }
+    return out;
+  }
+
+  async function executeTransition(index) {
+    if (!currentRoom) return;
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/execute", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transition_index: index, source_deck: "A", target_deck: "B" }),
+      });
+      const data = await resp.json();
+      addMessage(data.ok ? "Выполняю переход из стратегии: " + currentStrategy.transitions[index].technique_name : "companion не подключён — переход не отправлен", "system");
+    } catch (e) {
+      addMessage("Ошибка выполнения перехода: " + e, "system");
+    }
+  }
+
+  // ===================== Техника =====================
+
+  // Пока companion реально исполняет технику, кнопка "Выполнить" должна
+  // это показывать: раньше переход длился десятки секунд молча, и второе
+  // нажатие уходило в никуда — выглядело как "работает через раз".
+  let techniqueBusy = false;
+
+  function setTechniqueBusy(busy) {
+    techniqueBusy = busy;
+    const btn = document.getElementById("tech-exec-btn");
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.textContent = busy ? "▶ идёт переход…" : "▶ Выполнить";
+  }
+
+  let techniquesCache = null;
+  // Грузим сразу: селект техники есть в КАЖДОМ переходе плана, а раньше
+  // справочник подтягивался только при открытии вкладки «Техника» — кто
+  // туда не заходил, видел пустой список.
+  loadTechniques().catch(function () {});
+  const paramOverrides = {};
+
+  async function loadTechniques() {
+    try {
+      const resp = await fetch("/api/techniques");
+      techniquesCache = await resp.json();
+      renderTechniqueList();
+    } catch (e) {
+      console.error("loadTechniques failed", e);
+    }
+  }
+
+  function renderTechniqueList() {
+    const list = document.getElementById("tech-list");
+    list.innerHTML = "";
+    techniquesCache.forEach(function (t, i) {
+      const item = document.createElement("div");
+      item.className = "tech-item";
+      item.innerHTML = '<div class="name">' + t.name + '</div>' +
+        '<div class="meta">' + t.id + ' · сложность ' + t.difficulty + '/5' + (t.requires_stems ? " · нужны стемы" : "") + '</div>';
+      item.addEventListener("click", function () { selectTechnique(i); });
+      list.appendChild(item);
+    });
+    if (techniquesCache.length) selectTechnique(0);
+  }
+
+  // Диджей вручную выбирает деки под технику здесь же (не через чат/LLM) —
+  // сохраняем выбор между переключениями техник в рамках сессии вкладки.
+  let techSourceDeck = "A";
+  let techTargetDeck = "B";
+
+  function _deckOptionNames() {
+    const names = Object.keys(currentDecks || {}).sort();
+    return names.length ? names : ["A", "B", "C", "D"];
+  }
+
+  // Грубая оценка "подойдёт ли BPM" — та же идея, что
+  // mix_strategist.py::bpm_type_mismatch, но на клиенте (телеметрия knows
+  // только BPM дек, не тональность/жанр — полноценные рекомендации по
+  // трекам для техники потребовали бы передавать имя трека в телеметрии,
+  // чего протокол companion пока не делает).
+  function _bpmHint(source, target) {
+    const a = (currentDecks[source] || {}).bpm, b = (currentDecks[target] || {}).bpm;
+    if (!a || !b) return { text: "BPM дек неизвестен (companion подключён? деки загружены?)", warn: true };
+    const diffPct = Math.abs(a - b) / Math.max(a, b) * 100;
+    if (diffPct < 3) return { text: "BPM почти совпадает (" + a.toFixed(1) + " / " + b.toFixed(1) + ") — подойдёт почти любая техника.", warn: false };
+    if (diffPct < 8) return { text: "BPM близко (" + a.toFixed(1) + " / " + b.toFixed(1) + ", разница " + diffPct.toFixed(1) + "%).", warn: false };
+    return { text: "BPM сильно отличается (" + a.toFixed(1) + " / " + b.toFixed(1) + ", разница " + diffPct.toFixed(1) + "%) — обычный бленд будет звучать плохо, посмотрите техники с конфликтом тональностей/резкой сменой (Echo Cut, Quick Cut).", warn: true };
+  }
+
+  function selectTechnique(i) {
+    document.querySelectorAll(".tech-item").forEach((el, idx) => el.classList.toggle("selected", idx === i));
+    const t = techniquesCache[i];
+    const detail = document.getElementById("tech-detail");
+    let html = '<div class="tech-detail">';
+    html += "<h2>" + t.name + "</h2>";
+    html += '<div class="desc">' + t.description + '</div>';
+    if (t.requires_stems) {
+      html += '<div class="stems-warning">⚠ Требует живых стемов — сейчас DARAVE умеет только офлайн-разделение (stems.py), выполнить эту технику пока нельзя.</div>';
+    }
+    if (t.requires_decks > 2) {
+      html += '<div class="stems-warning">⚠ Требует ' + t.requires_decks + ' дек одновременно.</div>';
+    }
+
+    html += '<div class="tech-recommend" id="tech-recommend">' +
+      '<h3>Примеры из вашей библиотеки</h3>' +
+      '<div class="empty-hint">Подбираю подходящие треки…</div>' +
+      '</div>';
+
+    if (!t.requires_stems) {
+      const opts = _deckOptionNames();
+      const optHtml = (selected) => opts.map(n => '<option value="' + n + '"' + (n === selected ? " selected" : "") + '>Дека ' + n + '</option>').join("");
+      html += '<div class="tech-exec">' +
+        '<div class="tech-exec-row">' +
+          '<label>С <select id="tech-source-select">' + optHtml(techSourceDeck) + '</select></label>' +
+          '<label>на <select id="tech-target-select">' + optHtml(techTargetDeck) + '</select></label>' +
+          '<button id="tech-exec-btn">▶ Выполнить</button>' +
+        '</div>' +
+        '<div class="tech-exec-hint" id="tech-exec-hint"></div>' +
+        '</div>';
+    }
+
+    (t.params || []).forEach(function (p) {
+      const key = t.id + ":" + p.key;
+      const current = paramOverrides[key] !== undefined ? paramOverrides[key] : p.default;
+      html += '<div class="tech-param">' +
+        '<label><span>' + p.label + '</span><span id="val-' + key.replace(/[^a-zA-Z0-9]/g, "_") + '">' + current + ' ' + (p.unit || "") + '</span></label>' +
+        '<input type="range" min="' + p.min + '" max="' + p.max + '" step="0.1" value="' + current + '" data-key="' + key + '">' +
+        '</div>';
+    });
+    html += '<div class="tech-steps"><b>Как играть:</b><ol>' + (t.steps || []).map(s => "<li>" + s + "</li>").join("") + '</ol></div>';
+    html += '</div>';
+    detail.innerHTML = html;
+
+    detail.querySelectorAll('input[type=range]').forEach(function (input) {
+      input.addEventListener("input", function () {
+        const key = input.dataset.key;
+        paramOverrides[key] = parseFloat(input.value);
+        const safeId = "val-" + key.replace(/[^a-zA-Z0-9]/g, "_");
+        const label = document.getElementById(safeId);
+        if (label) label.textContent = input.value;
+      });
+    });
+
+    if (!t.requires_stems) {
+      const srcSel = document.getElementById("tech-source-select");
+      const tgtSel = document.getElementById("tech-target-select");
+      const hint = document.getElementById("tech-exec-hint");
+      const updateHint = function () {
+        techSourceDeck = srcSel.value;
+        techTargetDeck = tgtSel.value;
+        const h = _bpmHint(techSourceDeck, techTargetDeck);
+        hint.textContent = h.text;
+        hint.classList.toggle("warn", h.warn);
+      };
+      srcSel.addEventListener("change", updateHint);
+      tgtSel.addEventListener("change", updateHint);
+      updateHint();
+
+      document.getElementById("tech-exec-btn").addEventListener("click", function () {
+        executeTechnique(t);
+      });
+      setTechniqueBusy(techniqueBusy);  // кнопку только что перерисовали
+    }
+
+    loadTechniqueRecommendations(t);
+  }
+
+  // Показ вкладки "Техника" как showcase-фичи: для выбранной техники сразу
+  // подбираем из библиотеки комнаты готовые пары треков (backend:
+  // mix_strategist.recommend_tracks_for_technique) и даём прослушать
+  // офлайн-рендер (demo_render.py) без необходимости вручную выбирать деки.
+  let recommendRequestSeq = 0;
+
+  async function loadTechniqueRecommendations(t) {
+    const container = document.getElementById("tech-recommend");
+    if (!container || !currentRoom) return;
+    const mySeq = ++recommendRequestSeq;
+    try {
+      const resp = await fetch(
+        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/recommend",
+      );
+      const data = await resp.json();
+      if (mySeq !== recommendRequestSeq) return; // юзер уже переключился на другую технику
+      if (!resp.ok) {
+        container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' + (data.detail || "Не удалось подобрать треки") + '</div>';
+        return;
+      }
+      renderRecommendedPairs(t, container, data.pairs || [], data.hint);
+    } catch (e) {
+      if (mySeq !== recommendRequestSeq) return;
+      container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">Ошибка сети при подборе треков: ' + e + '</div>';
+    }
+  }
+
+  // "Откуда сводить" — конкретная точка входа/выхода по структуре трека
+  // (брейкдаун/дроп/граница фразы из track_analysis.detect_structure),
+  // длина перехода в тактах и длина лупа, если техника его использует.
+  // Без этого вкладка отвечала только "какие два трека", но не "с какого
+  // места" — а это ровно то, что диджею и нужно знать.
+  function _cueHtml(cue) {
+    if (!cue) return "";
+    const line = (icon, label, value, extra) =>
+      '<div class="tech-cue-line">' +
+        '<span class="tech-cue-icon">' + icon + '</span>' +
+        '<span class="tech-cue-label">' + label + '</span>' +
+        '<span class="tech-cue-value">' + value + '</span>' +
+        (extra ? '<span class="tech-cue-bar">' + extra + '</span>' : "") +
+      '</div>';
+
+    let html = '<div class="tech-pair-cue">';
+    if (cue.from_track) {
+      html += line("↑", "выход из A:", cue.from_track.label, "такт " + cue.from_track.bar_index);
+    }
+    if (cue.into_track) {
+      html += line("↓", "запуск B:", cue.into_track.label, "");
+    }
+    let len = cue.length_bars + " тактов";
+    if (cue.length_seconds) len += " (~" + Math.round(cue.length_seconds) + "с)";
+    html += line("⟳", "переход:", len, cue.loop_bars ? "луп " + cue.loop_bars + " такта" : "");
+    html += '</div>';
+    return html;
+  }
+
+  function renderRecommendedPairs(t, container, pairs, hint) {
+    if (!pairs.length) {
+      container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' +
+        (hint || "Не нашлось подходящих пар треков в текущей библиотеке.") + '</div>';
+      return;
+    }
+    container.innerHTML = '<h3>Примеры из вашей библиотеки</h3>';
+    pairs.forEach(function (pair, idx) {
+      const box = document.createElement("div");
+      box.className = "tech-pair";
+      box.innerHTML =
+        '<div class="tech-pair-tracks">' +
+          '<span class="tech-pair-track">' + pair.track_a.name + '</span>' +
+          '<span class="tech-pair-meta">' + pair.track_a.bpm.toFixed(1) + ' BPM · ' + pair.track_a.camelot + '</span>' +
+          '<span class="tech-pair-arrow">→</span>' +
+          '<span class="tech-pair-track">' + pair.track_b.name + '</span>' +
+          '<span class="tech-pair-meta">' + pair.track_b.bpm.toFixed(1) + ' BPM · ' + pair.track_b.camelot + '</span>' +
+        '</div>' +
+        '<div class="tech-pair-reason">' + pair.reason + '</div>' +
+        _cueHtml(pair.cue) +
+        '<div class="tech-pair-row">' +
+          '<button class="tech-demo-btn">🎧 Демо</button>' +
+          '<div class="tech-pair-player"></div>' +
+        '</div>';
+      const btn = box.querySelector(".tech-demo-btn");
+      const player = box.querySelector(".tech-pair-player");
+      btn.addEventListener("click", function () {
+        renderTechniqueDemo(t, pair, btn, player);
+      });
+      container.appendChild(box);
+    });
+  }
+
+  async function renderTechniqueDemo(t, pair, btn, player) {
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = "Рендер… (до ~10с)";
+    player.innerHTML = "";
+    try {
+      const overrides = {};
+      (t.params || []).forEach(function (p) {
+        const key = t.id + ":" + p.key;
+        if (paramOverrides[key] !== undefined) overrides[p.key] = paramOverrides[key];
+      });
+      const resp = await fetch(
+        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/demo",
+        {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track_a_path: pair.track_a.path, track_b_path: pair.track_b.path, param_overrides: overrides }),
+        },
+      );
+      const data = await resp.json();
+      if (!resp.ok) {
+        player.innerHTML = '<div class="demo-error">' + (data.detail || "Не удалось отрендерить демо") + '</div>';
+        return;
+      }
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.autoplay = true;
+      audio.src = data.url;
+      player.appendChild(audio);
+    } catch (e) {
+      player.innerHTML = '<div class="demo-error">Ошибка сети при рендере демо: ' + e + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  }
+
+  async function executeTechnique(t) {
+    if (!currentRoom) return;
+    const overrides = {};
+    (t.params || []).forEach(function (p) {
+      const key = t.id + ":" + p.key;
+      if (paramOverrides[key] !== undefined) overrides[p.key] = paramOverrides[key];
+    });
+    try {
+      const resp = await fetch(
+        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/execute",
+        {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_deck: techSourceDeck, target_deck: techTargetDeck, param_overrides: overrides }),
+        },
+      );
+      const data = await resp.json();
+      if (!resp.ok) {
+        addMessage((data.detail || "Не удалось выполнить технику"), "system");
+        return;
+      }
+      addMessage("Выполняю «" + t.name + "»: " + techSourceDeck + " → " + techTargetDeck, "system");
+    } catch (e) {
+      addMessage("Ошибка сети при выполнении техники: " + e, "system");
+    }
+  }
+
+  // ===================== вход в комнату =====================
+
+  function join(room) {
+    room = room.trim();
+    if (!room) return;
+    currentRoom = room;
+    roomLabel.textContent = room;
+    joinScreen.style.display = "none";
+    app.style.display = "flex";
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set("room", room);
+      history.replaceState(null, "", url);
+    } catch (e) {
+      // В песочнице (например, превью about:srcdoc) менять историю нельзя —
+      // это косметика (запоминание комнаты в адресной строке), не критично.
+    }
+    connect(room);
+    msgInput.focus();
+  }
+
+  joinBtn.addEventListener("click", function () { join(roomInput.value); });
+  roomInput.addEventListener("keydown", function (e) { if (e.key === "Enter") join(roomInput.value); });
+
+  const preset = new URL(location.href).searchParams.get("room");
+  if (preset) {
+    join(preset);
+  } else {
+    roomInput.focus();
+  }
+})();
+</script>
+</body>
+</html>

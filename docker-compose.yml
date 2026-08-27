@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+    volumes:
+      - darave-data:/app/data
+      - darave-recordings:/app/recordings
+    expose:
+      - "8765"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+
+volumes:
+  darave-data:
+  darave-recordings:
+  caddy-data:
+  caddy-config:

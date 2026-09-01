@@ -39,6 +39,7 @@ import numpy as np
 from scipy.signal import butter, sosfilt, sosfiltfilt
 
 from mixxx_controls import BY_ID as _CONTROLS
+import transport as _transport
 from techniques import TECHNIQUES, build_plan
 
 SR = 44100
@@ -56,6 +57,10 @@ TARGET_RMS = 0.125
 OUTPUT_RMS = 0.20       # ~ -16 dBFS на готовом куске — общий уровень всего сета
 MAX_MATCH_GAIN = 6.0
 BASS_SPLIT_HZ = 180.0
+# Уровень возврата эффекта в микс. Ниже единицы: возврат идёт мимо
+# фейдера и мимо гейн-райдинга, и при 1.0 хвост эха на увод трека выходит
+# громче, чем сам трек был до него.
+FX_RETURN_LEVEL = 0.8
 EDGE_FADE_SEC = 0.010
 # Во сколько раз можно ужать технику по времени, если она не влезает в
 # отведённое окно. Только степени двойки — 32 такта -> 16 -> 8 остаются
@@ -263,26 +268,187 @@ def _time_varying_lowpass(signal: np.ndarray, sr: int, value_fn, t0: float,
     return out / _env(norm, out)
 
 
-def _apply_echo(signal: np.ndarray, sr: int, mix_env: np.ndarray,
-                 delay_sec: float = 0.375, feedback: float = 0.4, repeats: int = 6) -> np.ndarray:
-    """Затухающее эхо через несколько сдвинутых копий (векторизовано —
-    быстрее и стабильнее, чем IIR-гребёнка на весь буфер). mix_env — уже
-    посчитанная по времени огибающая громкости эха (0..1), той же длины,
-    что signal; добавляется ПОВЕРХ сухого сигнала (эффект-посыл)."""
+# ---------------------------------------------------------------------------
+# Эффекты.
+#
+# Делятся на два класса, и это деление не косметическое, а определяет, где
+# эффект стоит в тракте:
+#
+#   ВСТАВКА (insert) — фленджер, фейзер, вобл, дисторшн, биткрашер,
+#   фильтр. Обрабатывают сам сигнал деки и живут ДО фейдера: увёл
+#   фейдер — эффекта тоже не слышно, как и трека. Так они и включены на
+#   пульте.
+#
+#   ПОСЫЛ (send) — эхо и реверб. У них есть ХВОСТ, который обязан пережить
+#   увод трека: ровно ради этого их и включают в конце фразы. Поэтому они
+#   считаются как отдельная шина возврата и складываются в микс ПОСЛЕ
+#   фейдера (см. FX_RETURN_LEVEL).
+#
+# Разбираться, «как правильно», проще всего по этому признаку: если у
+# эффекта есть хвост — это посыл, если нет — вставка.
+
+FX_SENDS = ("echo", "reverb")
+FX_INSERTS = ("flanger", "phaser", "wobble", "distortion", "bitcrush", "filter")
+FX_ALL = FX_SENDS + FX_INSERTS
+
+
+def _lfo(n: int, sr: int, rate_hz: float, shape: str = "sine") -> np.ndarray:
+    """Управляющий генератор, 0..1. Частота задаётся в Гц, а техника
+    считает её из ДОЛЕЙ — чтобы качание всегда попадало в темп."""
+    t = np.arange(n, dtype=np.float64) / sr
+    ph = 2 * np.pi * max(0.01, rate_hz) * t
+    if shape == "tri":
+        return np.abs(((ph / np.pi) % 2.0) - 1.0)
+    if shape == "saw":
+        return ((ph / (2 * np.pi)) % 1.0)
+    return 0.5 - 0.5 * np.cos(ph)
+
+
+def _mix_dry_wet(dry: np.ndarray, wet: np.ndarray, env: np.ndarray) -> np.ndarray:
+    g = _env(np.clip(env, 0.0, 1.0), dry)
+    return dry * (1.0 - g) + wet * g
+
+
+def _fx_flanger(x: np.ndarray, sr: int, env: np.ndarray, rate_hz: float,
+                depth_ms: float = 3.5, base_ms: float = 1.0) -> np.ndarray:
+    """Фленджер: короткая ПЛАВАЮЩАЯ задержка, сложенная с сухим сигналом.
+
+    Обратной связи здесь нет: рекурсия по отсчётам в numpy стоит дороже
+    всего остального рендера вместе взятого. Вместо неё второй отвод на
+    удвоенной задержке с меньшим весом — гребёнка получается плотнее, и
+    на слух это ровно тот же «взлетающий самолёт»."""
+    n = len(x)
+    d = (base_ms + depth_ms * _lfo(n, sr, rate_hz)) * sr / 1000.0
+    idx = np.arange(n, dtype=np.float64)
+    grid = np.arange(n, dtype=np.float64)
+    wet = np.zeros_like(x)
+    for ch in range(x.shape[1]):
+        wet[:, ch] = (np.interp(idx - d, grid, x[:, ch], left=0.0)
+                      + 0.45 * np.interp(idx - 2 * d, grid, x[:, ch], left=0.0))
+    return _mix_dry_wet(x, 0.65 * (x + wet), env)
+
+
+def _fx_phaser(x: np.ndarray, sr: int, env: np.ndarray, rate_hz: float,
+               stages: int = 4, block: int = 512) -> np.ndarray:
+    """Фейзер: каскад всепропускающих звеньев с плавающей частотой.
+
+    Коэффициент звена зависит от времени, а рекурсивный фильтр с
+    меняющимся коэффициентом на каждом отсчёте в numpy не считается.
+    Поэтому идём блоками по 512 отсчётов (12 мс — быстрее, чем ухо
+    различает движение ручки) и внутри блока коэффициент постоянный."""
+    from scipy.signal import lfilter
+
+    n = len(x)
+    lfo = _lfo(n, sr, rate_hz)
+    wet = np.empty_like(x)
+    zi = [np.zeros((1,) + (x.shape[1],)) for _ in range(stages)]
+    for start in range(0, n, block):
+        end = min(n, start + block)
+        f = 200.0 * (10.0 ** (1.6 * float(lfo[start])))     # 200 Гц .. 8 кГц
+        a = (np.tan(np.pi * f / sr) - 1.0) / (np.tan(np.pi * f / sr) + 1.0)
+        seg = x[start:end]
+        for k in range(stages):
+            seg, zi[k] = lfilter([a, 1.0], [1.0, a], seg, axis=0, zi=zi[k])
+        wet[start:end] = seg
+    return _mix_dry_wet(x, 0.5 * (x + wet), env)
+
+
+def _fx_wobble(x: np.ndarray, sr: int, env: np.ndarray, rate_hz: float,
+               lo_hz: float = 180.0, hi_hz: float = 5000.0) -> np.ndarray:
+    """Вобл: фильтр низких частот, которым качает генератор в темп.
+
+    То, на чём стоит половина бас-музыки. Отличается от свипа только тем,
+    что ручка не едет в одну сторону, а качается — поэтому переиспользуем
+    тот же плавающий фильтр, подав ему LFO вместо рампы."""
+    n = len(x)
+    lfo = _lfo(n, sr, rate_hz, "tri")
+
+    def value_fn(t: float) -> float:
+        i = int(_clamp(t * sr, 0, n - 1))
+        return 1.0 - float(lfo[i])          # 1.0 = фильтр закрыт
+
+    wet = _time_varying_lowpass(x, sr, value_fn, 0.0, lo_hz=lo_hz, hi_hz=hi_hz)
+    return _mix_dry_wet(x, wet, env)
+
+
+def _fx_distortion(x: np.ndarray, env: np.ndarray, drive: float = 8.0) -> np.ndarray:
+    """Перегруз мягким ограничением. Компенсация громкости обязательна:
+    tanh поднимает средний уровень, и без неё «эффект» слышится просто как
+    «стало громче»."""
+    wet = np.tanh(x * drive) / np.tanh(drive)
+    ref = float(np.sqrt(np.mean(x ** 2))) or 1e-6
+    cur = float(np.sqrt(np.mean(wet ** 2))) or 1e-6
+    return _mix_dry_wet(x, wet * (ref / cur), env)
+
+
+def _fx_bitcrush(x: np.ndarray, sr: int, env: np.ndarray, bits: float = 6.0,
+                 downsample: int = 8) -> np.ndarray:
+    """Биткрашер: грубее сетка по уровню и по времени. Две независимые
+    вещи, и слышны они по-разному — квантование даёт песок, прореживание
+    даёт металлический призвук."""
+    q = 2.0 ** max(1.0, bits)
+    wet = np.round(x * q) / q
+    k = max(1, int(downsample))
+    if k > 1:
+        idx = (np.arange(len(wet)) // k) * k
+        wet = wet[idx]
+    return _mix_dry_wet(x, wet, env)
+
+
+def _reverb_return(x: np.ndarray, sr: int, send_env: np.ndarray,
+                   decay_sec: float = 1.8) -> np.ndarray:
+    """Возврат реверберации. Как и эхо — ПОСЫЛ: ручка решает, что попадёт
+    в комнату, а хвост живёт дальше сам и переживает увод трека.
+
+    Импульсная характеристика — затухающий шум с ранними отражениями.
+    Это не модель конкретного зала, но именно так звучит реверб на
+    диджейском пульте: хвост, а не помещение."""
+    from scipy.signal import fftconvolve
+
+    ir_n = int(min(decay_sec, 3.0) * sr)
+    t = np.arange(ir_n) / sr
+    rng = np.random.default_rng(7)          # фиксируем: рендер должен быть воспроизводим
+    ir = rng.standard_normal(ir_n) * np.exp(-t / max(0.1, decay_sec / 3.0))
+    ir[: int(0.005 * sr)] = 0.0             # предзадержка: без неё «мыло» на атаках
+    ir /= np.sqrt(np.sum(ir ** 2)) or 1.0
+    feed = x * _env(send_env, x)
+    wet = np.zeros_like(x)
+    for ch in range(x.shape[1]):
+        wet[:, ch] = fftconvolve(feed[:, ch], ir)[:len(x)]
+    return wet
+
+
+def _echo_return(signal: np.ndarray, sr: int, send_env: np.ndarray,
+                 delay_sec: float = 0.375, feedback: float = 0.45,
+                 repeats: int = 8) -> np.ndarray:
+    """ВОЗВРАТ эффекта: то, что дилей отдаёт обратно в микс.
+
+    Здесь была ошибка, которую диджей услышал сразу: «эхо берёт первую
+    половину фразы, а не последнюю». Причина в том, что огибающая посыла
+    умножалась на ВЫХОД дилея, а не на его ВХОД. У настоящего посыла
+    ручка решает, что ПОПАДЁТ в линию задержки; попавшее живёт дальше
+    само и звенит уже после того, как ручку закрыли. При гейтировании
+    выхода всё наоборот: закрыл посыл — хвост оборвался, и слышно ровно
+    ту часть фразы, во время которой ручка была открыта.
+
+    Вторая половина той же ошибки — где этот возврат складывается.
+    Раньше эхо подмешивалось внутрь буфера деки, а дальше дека шла через
+    кроссфейдер. То есть «эхо-хвост», ради которого приём и делается,
+    выключался тем самым движением фейдера, которое он должен пережить.
+    Теперь функция отдаёт ТОЛЬКО мокрый сигнал, и он складывается в микс
+    ПОСЛЕ фейдера — как возврат эффекта на настоящем пульте."""
     n = len(signal)
     delay_n = max(1, int(delay_sec * sr))
-    wet = np.zeros((n + delay_n * repeats,) + signal.shape[1:])
-    amp = 1.0
-    pos = 0
+    feed = signal * _env(send_env, signal)
+    wet = np.zeros_like(signal)
+    amp, pos = 1.0, 0
     for _ in range(repeats):
         amp *= feedback
         pos += delay_n
-        if pos >= len(wet) or amp < 0.02:
+        if pos >= n or amp < 0.02:
             break
-        seg_len = min(n, len(wet) - pos)
-        wet[pos:pos + seg_len] += signal[:seg_len] * amp
-    wet = wet[:n]
-    return signal + wet * _env(mix_env, signal)
+        wet[pos:] += feed[:n - pos] * amp
+    return wet
 
 
 
@@ -646,6 +812,15 @@ def _scale_events(events: list[dict], scale: float) -> list[dict]:
         e2["beat_offset"] = e["beat_offset"] * scale
         if "duration_beats" in e2:
             e2["duration_beats"] = e2["duration_beats"] * scale
+        # длина лупа — тоже время, и она обязана ужиматься вместе с
+        # техникой: иначе у сжатой вдвое техники четырёхдольный луп
+        # съедает весь приём. Остальные params (скорость спинбэка, кривая
+        # выбега, слип) — не время, их не трогаем.
+        pr = e2.get("params")
+        if pr and "beats" in pr:
+            pr = dict(pr)
+            pr["beats"] = pr["beats"] * scale
+            e2["params"] = pr
         out.append(e2)
     return out
 
@@ -674,6 +849,47 @@ def _load_stem_slice(track_path: str, part: str, sr: int, offset: float, duratio
     if len(y) < sr // 10:
         return None
     return _stretch(y, sr, rate)
+
+
+STEM_PARTS = ("drums", "bass", "other", "vocals")
+
+
+def _load_stems(track_path: str, sr: int, offset: float, duration: float,
+                rate: float) -> dict | None:
+    """Все четыре слоя трека одним куском, выровненные как основной буфер.
+
+    Либо все четыре, либо ничего: техника, которая держит бас одного трека
+    и барабаны другого, на трёх слоях из четырёх не соберётся, а
+    «соберётся как получится» — это тихая потеря куска музыки, которую
+    потом не найти на слух."""
+    out = {}
+    for part in STEM_PARTS:
+        buf = _load_stem_slice(track_path, part, sr, offset, duration, rate)
+        if buf is None:
+            return None
+        out[part] = buf
+    return out
+
+
+def _combo(stems: dict | None, name: str) -> np.ndarray | None:
+    """Сумма слоёв по имени комбинации (см. stems.COMBOS) или один слой."""
+    if not stems:
+        return None
+    if name in stems:
+        return stems[name]
+    try:
+        import stems as _stems
+        parts = _stems.COMBOS.get(name)
+    except Exception:
+        parts = None
+    if not parts:
+        return None
+    acc = None
+    for part in parts:
+        if part not in stems:
+            return None
+        acc = stems[part].copy() if acc is None else acc + stems[part]
+    return acc
 
 
 def _load_aligned(path: str, sr: int, bpm: float, want_seconds: float,
@@ -762,7 +978,39 @@ def render_demo(
         raise ValueError(f"Unknown technique: {technique_id}")
     technique = TECHNIQUES[technique_id]
     if technique.requires_stems:
-        raise NotImplementedError(f"«{technique.name}» требует живых стемов — демо недоступно.")
+        # Раньше здесь стоял глухой отказ: «требует живых стемов». Это было
+        # верно, пока стемов не было вовсе. Теперь они считаются офлайн и
+        # лежат в кэше, поэтому вопрос не «поддержано ли», а «посчитаны ли
+        # они для ЭТИХ двух треков» — и ответ должен называть трек, из-за
+        # которого не вышло, а не отсылать к README.
+        try:
+            import stems as _stems_check
+            missing = [os.path.basename(t) for t in (track_a_path, track_b_path)
+                       if not _stems_check.stem_paths(t)]
+        except Exception as exc:
+            raise NotImplementedError(f"«{technique.name}» работает по слоям, "
+                                      f"но модуль стемов недоступен: {exc}") from exc
+        if missing:
+            raise NotImplementedError(
+                f"«{technique.name}» работает по слоям, а стемы не посчитаны для: "
+                + ", ".join(missing)
+                + ". Посчитать: python stems.py --dir <папка с музыкой>")
+        # Голос — отдельный разговор: у быстрого разделения (HPSS) слоя
+        # вокала нет вовсе, он пустой по построению. Техника с акапеллой
+        # на таких стемах выдаст тишину там, где должен петь голос, и это
+        # будет выглядеть поломкой рендера. Лучше сказать прямо.
+        # Признак берём из описания техники, а не угадываем по событиям:
+        # обмен барабанами тоже ДВИГАЕТ вокальный слой, но услышать его не
+        # рассчитывает — на пустом слое приём звучит ровно так же.
+        if getattr(technique, "needs_vocals", False):
+            no_voice = [os.path.basename(t) for t in (track_a_path, track_b_path)
+                        if not _stems_check.has_vocals(t)]
+            if no_voice:
+                raise NotImplementedError(
+                    f"«{technique.name}» работает с голосом, а у этих треков стемы "
+                    f"посчитаны быстрым способом (HPSS), где вокального слоя нет: "
+                    + ", ".join(no_voice)
+                    + ". Пересчитать моделью: python stems.py --dir <папка> --backend roformer")
     if not os.path.exists(track_a_path):
         raise FileNotFoundError(f"Файл не найден: {track_a_path}")
     if not os.path.exists(track_b_path):
@@ -829,6 +1077,21 @@ def render_demo(
 
     import librosa
 
+    # --- сколько материала приём проматывает НАЗАД ---
+    # Бэкспин на 9 крат за одну долю уводит иглу на 3.6 доли назад,
+    # ревайнд на 6 крат за такт — почти на десять. Если столько материала
+    # ДО точки сведения в буфер не загружено, позиция уходит в минус и
+    # рендер честно отдаёт ноль — приём превращается в дырку тишины ровно
+    # там, где должен быть самый слышный его кусок. Позицию можно
+    # посчитать заранее: она зависит только от событий, не от звука.
+    src_pos_preview = _transport.build_position(events, "source", n, sr, spb, timeline_start)
+    src_deficit = max(0.0, -float(np.min(src_pos_preview["pos"])))
+    # добираем целыми тактами: _load_aligned всё равно садится на даунбит,
+    # а сдвиг на целое число тактов сетку не ломает
+    pre_bars = float(np.ceil(src_deficit / sr / bar_sec)) if src_deficit > 0 else 0.0
+    pre_seconds = pre_bars * bar_sec
+    pre_n = int(round(pre_seconds * sr))
+
     # --- source: где план велел уводить трек, но ровно с даунбита ---
     try:
         src_full_dur = float(librosa.get_duration(path=track_a_path))
@@ -836,22 +1099,29 @@ def render_demo(
         src_full_dur = total_duration
     # сколько СЫРЫХ секунд трека нужно, чтобы после растяжения получилось
     # total_duration секунд в темпе таймлайна
-    src_need_raw = total_duration * rate_a
+    src_need_raw = (total_duration + pre_seconds) * rate_a
     if source_at is not None and source_at > 0:
         # точка из плана — это момент, где начинается СВЕДЕНИЕ, а таймлайн
-        # стартует на такт раньше (lead)
-        src_want = max(0.0, float(source_at) - lead * rate_a)
+        # стартует на такт раньше (lead) плюс запас под промотку назад
+        src_want = max(0.0, float(source_at) - (lead + pre_seconds) * rate_a)
     else:
         src_want = max(0.0, src_full_dur - src_need_raw)
     src_want = min(src_want, max(0.0, src_full_dur - src_need_raw))
-    source, src_grid = _load_aligned(track_a_path, sr, bpm_a, src_want, src_need_raw, from_start=False,
-                                     duration_hint=src_full_dur)
-    source = _stretch(source, sr, rate_a)
-    source = _fit_length(source, n)
-    src_drums = _load_stem_slice(track_a_path, "drums", sr,
-                                 src_grid.get("file_offset") or 0.0, src_need_raw, rate_a)
-    src_music = _load_stem_slice(track_a_path, "no_drums", sr,
-                                 src_grid.get("file_offset") or 0.0, src_need_raw, rate_a)
+    source_full, src_grid = _load_aligned(track_a_path, sr, bpm_a, src_want, src_need_raw, from_start=False,
+                                          duration_hint=src_full_dur)
+    source_full = _stretch(source_full, sr, rate_a)
+    source_full = _fit_length(source_full, pre_n + n)
+    # То, что реально звучит на таймлайне, — это буфер БЕЗ запаса; запас
+    # существует только для того, чтобы приёму было куда отматывать.
+    source = source_full[pre_n:]
+    src_stems_full = _load_stems(track_a_path, sr, src_grid.get("file_offset") or 0.0,
+                                 src_need_raw, rate_a)
+    if src_stems_full is not None:
+        src_stems_full = {k: _fit_length(v, pre_n + n) for k, v in src_stems_full.items()}
+    src_stems = None if src_stems_full is None else {k: v[pre_n:] for k, v in src_stems_full.items()}
+    # секунда исходника, которой соответствует НАЧАЛО таймлайна
+    src_origin = None if src_grid.get("file_offset") is None else \
+        round(src_grid["file_offset"] + pre_seconds * rate_a, 3)
 
     # --- когда target впервые становится слышен (квантуем в такт) ---
     sync_events = [e for e in events if e["action"] == "sync" and e["deck"] == "target"]
@@ -871,8 +1141,19 @@ def render_demo(
     # --- target: интро (или точка из плана), приведённое к темпу source ---
     import tempo as _tempo
     _rel = _tempo.relate(timeline_bpm, bpm_b)
-    _effective_b = _rel["effective_bpm"] if _rel["compatible"] else bpm_b
-    rate = _clamp(timeline_bpm / _effective_b, 0.5, 2.0) if _effective_b > 1 else 1.0
+    if not _rel["compatible"]:
+        # Чужой темп у ВХОДЯЩЕЙ деки не тянем к мастеру — по той же причине,
+        # по которой не тянем у уходящей. 174 в сете на 140 — это не
+        # «недотянутый» трек, это другой темп: растянуть его на 24% значит
+        # проиграть драм-н-бейс на скорости хауса. Питч-фейдер такого не
+        # делает (у CDJ предел ±16%), и живой диджей в этом месте не тянет
+        # темп, а рвёт: эхо-хвост, тейп-стоп, спинбэк — новый трек входит
+        # со своей скоростью. Ровно эти техники здесь и выбирает
+        # mix_strategist (см. ветку mismatch в technique_candidates).
+        rate = 1.0
+    else:
+        _effective_b = _rel["effective_bpm"]
+        rate = _clamp(timeline_bpm / _effective_b, 0.5, 2.0) if _effective_b > 1 else 1.0
 
     target_audible_dur = timeline_end - sync_time
     # если будем растягивать — нужно взять исходника больше/меньше в rate раз
@@ -923,13 +1204,13 @@ def render_demo(
             pass
 
     # --- уравниваем громкость дек ДО суммирования ---
-    source = _match_loudness(source, _track_reference_rms(track_a_path))
+    _src_ref = _track_reference_rms(track_a_path)
+    source_full = _match_loudness(source_full, _src_ref)
+    source = source_full[pre_n:]
     target_raw = _match_loudness(target_raw, _track_reference_rms(track_b_path))
 
-    tgt_drums_raw = _load_stem_slice(track_b_path, "drums", sr,
-                                     tgt_grid.get("file_offset") or 0.0, need_raw, rate)
-    tgt_music_raw = _load_stem_slice(track_b_path, "no_drums", sr,
-                                     tgt_grid.get("file_offset") or 0.0, need_raw, rate)
+    tgt_stems_raw = _load_stems(track_b_path, sr, tgt_grid.get("file_offset") or 0.0,
+                                need_raw, rate)
 
     target = np.zeros((n, ch))
     start_sample = int(_clamp(_sample_idx(sync_time, timeline_start, sr), 0, n))
@@ -944,24 +1225,107 @@ def render_demo(
         out[start_sample:start_sample + len(seg)] = seg
         return out
 
-    tgt_drums = _place(tgt_drums_raw)
-    tgt_music = _place(tgt_music_raw)
-    src_drums = _fit_length(src_drums, n) if src_drums is not None else None
-    src_music = _fit_length(src_music, n) if src_music is not None else None
+    tgt_stems = (None if tgt_stems_raw is None
+                 else {k: _place(v) for k, v in tgt_stems_raw.items()})
 
-    stems_ready = all(x is not None for x in (src_drums, src_music, tgt_drums, tgt_music))
+    stems_ready = src_stems is not None and tgt_stems is not None
 
     decks = {"source": source, "target": target}
 
-    # --- 1. reverse_hold — переворачиваем кусок буфера (эффект вертушки) ---
-    for e in events:
-        if e["action"] == "reverse_hold":
-            s = max(0, _sample_idx(e["beat_offset"] * spb, timeline_start, sr))
-            dur_n = int(e.get("duration_beats", 0.0) * spb * sr)
-            end = min(n, s + dur_n)
-            buf = decks.get(e["deck"])
-            if buf is not None and end - s > 8:
-                buf[s:end] = buf[s:end][::-1]
+    # --- 1. транспорт: где в эти секунды находится игла ---
+    # Бэкспин, тейп-стоп, реверс, лупы и роллы — это не обработка звука, а
+    # движение ПОЗИЦИИ воспроизведения. Раньше здесь кусок буфера просто
+    # переворачивался задом наперёд: реверс на полной скорости, без
+    # падения темпа и высоты, то есть без того единственного, по чему
+    # вертушка и узнаётся на слух. Теперь позицию считает transport.py, а
+    # звук читается по ней с band-limit под скорость чтения.
+    transport_info: dict[str, dict] = {}
+    # Уходящая дека читается из буфера С ЗАПАСОМ (source_full), поэтому её
+    # позиция сдвинута на pre_n: отсчёт pre_n этого буфера — это начало
+    # таймлайна. Входящей запас не нужен: до своего входа она молчит, и
+    # отматывать ей некуда и незачем.
+    src_tr = src_pos_preview
+    if src_tr["moved"]:
+        decks["source"] = _transport.read(source_full, src_tr["pos"] + pre_n, src_tr["gain"], sr)
+        transport_info["source"] = src_tr
+        if src_stems_full is not None:
+            src_stems = {k: _transport.read(v, src_tr["pos"] + pre_n, src_tr["gain"], sr)
+                         for k, v in src_stems_full.items()}
+    tgt_tr = _transport.build_position(events, "target", n, sr, spb, timeline_start)
+    if tgt_tr["moved"]:
+        decks["target"] = _transport.read(decks["target"], tgt_tr["pos"], tgt_tr["gain"], sr)
+        transport_info["target"] = tgt_tr
+        if tgt_stems is not None:
+            tgt_stems = {k: _transport.read(v, tgt_tr["pos"], tgt_tr["gain"], sr)
+                         for k, v in tgt_stems.items()}
+
+    # --- 1c. дека собирается ИЗ СЛОЁВ, и делается это здесь ---
+    #
+    # Порядок не случайный. Раньше сборка по стемам стояла в самом конце,
+    # ПОСЛЕ фильтров, эха и EQ — и просто затирала их результат: свип
+    # фильтра, посчитанный на полном миксе, до выхода не доживал. На живом
+    # пульте всё наоборот: стем-фейдеры сидят ДО канала, а эквалайзер,
+    # фильтр и посыл на эффект стоят после и работают уже с тем, что из
+    # стемов собралось. Теперь так же и здесь.
+    #
+    # Управление бывает двух видов:
+    #   * техника явно двигает слои (действие stem_gain) — тогда слушаем её;
+    #   * техника про слои ничего не знает — тогда включается правило
+    #     «одна ударная установка за раз»: барабаны звучат только у одной
+    #     деки, потому что две плотные партии складывать нечем. Момент
+    #     обмена берём тот же, что у баса: барабаны и бас диджей всегда
+    #     переключает вместе.
+    stem_swap = None
+    stem_events = [e for e in events if e["action"] == "stem_gain"]
+    stem_bufs = {"source": src_stems, "target": tgt_stems}
+    if stems_ready:
+        explicit = {e["deck"] for e in stem_events}
+        auto_gate = {}
+        if explicit != {"source", "target"}:
+            eq_src = [e for e in events if e["action"] == "eq_low" and e["deck"] == "source"]
+            eq_tgt = [e for e in events if e["action"] == "eq_low" and e["deck"] == "target"]
+            neutral = _CONTROLS["eq_low"].neutral or 1.0
+            if eq_src and eq_tgt:
+                ga = _envelope_array(_piecewise_ramp(eq_src, spb, default=neutral),
+                                     timeline_start, n, sr,
+                                     step_sec=_events_step_sec(eq_src, spb)) / neutral
+                gb = _envelope_array(_piecewise_ramp(eq_tgt, spb, default=0.0),
+                                     timeline_start, n, sr,
+                                     step_sec=_events_step_sec(eq_tgt, spb)) / neutral
+            else:
+                cf_raw_ev = [e for e in events if e["action"] == "crossfade"]
+                cf_raw = _envelope_array(_piecewise_ramp(cf_raw_ev, spb, default=0.0),
+                                         timeline_start, n, sr,
+                                         step_sec=_events_step_sec(cf_raw_ev, spb))
+                gb = _smoothstep((cf_raw - 0.40) / 0.20)
+                ga = 1.0 - gb
+            ga = np.clip(ga, 0.0, 1.0)
+            gb = np.clip(gb, 0.0, 1.0)
+            # страховка: сумма гейтов не больше единицы — две установки
+            # вместе не зазвучат, даже если техника задала перехлёст
+            over = np.maximum(ga + gb, 1.0)
+            auto_gate = {"source": ga / over, "target": gb / over}
+            stem_swap = (float(np.argmax(gb > 0.5)) / sr if np.any(gb > 0.5) else None)
+
+        for deck_name in ("source", "target"):
+            parts = stem_bufs[deck_name]
+            mine = [e for e in stem_events if e["deck"] == deck_name]
+            acc = None
+            for part, buf in parts.items():
+                if mine:
+                    ev = [e for e in mine if (e.get("params") or {}).get("stem") == part]
+                    gain = (_envelope_array(_piecewise_ramp(ev, spb, default=1.0),
+                                            timeline_start, n, sr,
+                                            step_sec=_events_step_sec(ev, spb))
+                            if ev else np.ones(n))
+                elif part == "drums" and deck_name in auto_gate:
+                    gain = auto_gate[deck_name]
+                else:
+                    gain = None
+                layer = buf if gain is None else buf * _env(np.clip(gain, 0.0, 1.0), buf)
+                acc = layer.copy() if acc is None else acc + layer
+            if acc is not None:
+                decks[deck_name] = acc
 
     # --- 1b. ручки EQ (eq_low/eq_mid/eq_high) — непрерывные, не toggle ---
     # 1.0 = штатный уровень, 0.0 = полоса убрана. Приближаем полкой:
@@ -1039,47 +1403,15 @@ def render_demo(
                     except Exception:
                         pass
 
-    # --- 4. loop_activate/loop_exit — грубая аппроксимация повтором ---
-    la_by_deck: dict[str, list[tuple[float, float, float]]] = {}
-    activates = {}
-    for e in sorted(events, key=lambda e: e["beat_offset"]):
-        if e["action"] == "loop_activate":
-            # длину лупа задаёт сама техника: 4-тактовый луп, повторённый
-            # один раз, — это то, что делает диджей; однотактовый, повторённый
-            # четыре раза, — это статтер, совсем другой приём
-            beats = float((e.get("params") or {}).get("beats") or 4.0)
-            activates[e["deck"]] = (e["beat_offset"] * spb, beats * spb)
-        elif e["action"] == "loop_exit" and e["deck"] in activates:
-            start, unit = activates.pop(e["deck"])
-            la_by_deck.setdefault(e["deck"], []).append((start, e["beat_offset"] * spb, unit))
-    for deck, pairs in la_by_deck.items():
-        buf = decks.get(deck)
-        if buf is None:
-            continue
-        for act_t, exit_t, want_unit in pairs:
-            span = exit_t - act_t
-            if span <= 0:
-                continue
-            unit = min(span, want_unit if want_unit > 0 else spb * 4)
-            s = _clamp(_sample_idx(act_t, timeline_start, sr), 0, n)
-            e_i = _clamp(_sample_idx(exit_t, timeline_start, sr), 0, n)
-            unit_n = max(1, int(unit * sr))
-            if e_i - s < unit_n * 2:
-                continue
-            src_unit = buf[s:s + unit_n].copy()
-            # микрофейд на стыке повторов: без него на каждом обороте щелчок
-            xf = min(unit_n // 8, int(0.006 * sr))
-            pos = s
-            while pos < e_i:
-                seg_len = min(unit_n, e_i - pos)
-                chunk = src_unit[:seg_len].copy()
-                if xf > 1 and pos > s and seg_len > xf:
-                    ramp = np.linspace(0.0, 1.0, xf)
-                    chunk[:xf] = chunk[:xf] * ramp + buf[pos:pos + xf] * (1.0 - ramp)
-                buf[pos:pos + seg_len] = chunk
-                pos += unit_n
+    # --- 4. лупы: см. пункт 1, их считает transport.py ---
+    # Раньше здесь кусок копировался поверх себя же с микрофейдом. Это
+    # давало похожий звук, но не давало ни слипа (loop roll, censor: после
+    # отпускания трек продолжается там, где шёл бы), ни возможности
+    # сочетать луп с торможением. Теперь и то и другое — одно движение
+    # иглы, и считается в одном месте.
 
-    # --- 5. fx_meta — эхо/дилей-посыл, добавляется поверх сухого сигнала ---
+    # --- 5. fx_meta — посыл на дилей. Возврат идёт МИМО фейдера ---
+    fx_returns: dict[str, np.ndarray] = {}
     for deck in ("source", "target"):
         # fx_mix (dry/wet юнита) и fx_meta (параметр эффекта) в реальном
         # Mixxx крутятся вместе — для демо берём максимум как «глубину эха».
@@ -1090,9 +1422,87 @@ def render_demo(
         if not fx_events:
             continue
         fn = _piecewise_ramp(fx_events, spb, default=0.0)
-        mix_env = _envelope_array(fn, timeline_start, n, sr)
-        if np.max(mix_env) > 0.02:
-            decks[deck] = _apply_echo(decks[deck], sr, mix_env)
+        send_env = _envelope_array(fn, timeline_start, n, sr,
+                                   step_sec=_events_step_sec(fx_events, spb))
+        if np.max(send_env) > 0.02:
+            fx_returns[deck] = _echo_return(decks[deck], sr, send_env)
+
+    # --- 5b. остальные эффекты: action "fx" с именем в params ---
+    # Порядок вставок фиксирован и не случаен: сначала то, что меняет
+    # спектр (вобл, фильтр), потом гребёнки (фленджер, фейзер), последним
+    # то, что ломает форму волны (перегруз, биткрашер). Обратный порядок
+    # даёт кашу: гребёнка поверх перегруза подчёркивает не тембр трека, а
+    # мусор, который перегруз только что насыпал.
+    _INSERT_ORDER = ("wobble", "filter", "flanger", "phaser", "distortion", "bitcrush")
+    for deck in ("source", "target"):
+        by_unit: dict[str, list[dict]] = {}
+        for e in events:
+            if e["action"] != "fx" or e["deck"] != deck:
+                continue
+            unit = str((e.get("params") or {}).get("unit") or "echo")
+            by_unit.setdefault(unit, []).append(e)
+        if not by_unit:
+            continue
+
+        def _p(evs, key, default):
+            for e in evs:
+                v = (e.get("params") or {}).get(key)
+                if v is not None:
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        pass
+            return default
+
+        def _env_of(evs):
+            fn = _piecewise_ramp(evs, spb, default=0.0)
+            return _envelope_array(fn, timeline_start, n, sr,
+                                   step_sec=_events_step_sec(evs, spb))
+
+        for unit in _INSERT_ORDER:
+            evs = by_unit.get(unit)
+            if not evs:
+                continue
+            env = _env_of(evs)
+            if np.max(env) <= 0.02:
+                continue
+            # частота качания задаётся В ДОЛЯХ, а не в герцах: иначе
+            # эффект не попадает в темп, и это слышно сразу
+            rate_hz = 1.0 / max(0.05, _p(evs, "rate_beats", 1.0) * spb)
+            buf = decks[deck]
+            if unit == "wobble":
+                decks[deck] = _fx_wobble(buf, sr, env, rate_hz)
+            elif unit == "filter":
+                decks[deck] = _mix_dry_wet(
+                    buf, _time_varying_lowpass(buf, sr, _piecewise_ramp(evs, spb, 0.0),
+                                               timeline_start), np.ones(n))
+            elif unit == "flanger":
+                decks[deck] = _fx_flanger(buf, sr, env, rate_hz,
+                                          depth_ms=_p(evs, "depth_ms", 3.5))
+            elif unit == "phaser":
+                decks[deck] = _fx_phaser(buf, sr, env, rate_hz,
+                                         stages=int(_p(evs, "stages", 4)))
+            elif unit == "distortion":
+                decks[deck] = _fx_distortion(buf, env, drive=_p(evs, "drive", 8.0))
+            elif unit == "bitcrush":
+                decks[deck] = _fx_bitcrush(buf, sr, env, bits=_p(evs, "bits", 6.0),
+                                           downsample=int(_p(evs, "downsample", 8)))
+
+        for unit in FX_SENDS:
+            evs = by_unit.get(unit)
+            if not evs:
+                continue
+            env = _env_of(evs)
+            if np.max(env) <= 0.02:
+                continue
+            if unit == "echo":
+                wet = _echo_return(decks[deck], sr, env,
+                                   delay_sec=_p(evs, "delay_beats", 0.75) * spb)
+            else:
+                wet = _reverb_return(decks[deck], sr, env,
+                                     decay_sec=_p(evs, "decay_beats", 4.0) * spb)
+            fx_returns[deck] = (wet if deck not in fx_returns
+                                else fx_returns[deck] + wet)
 
     # --- 6. filter_sweep — плавающий ФНЧ по огибающей ---
     for deck in ("source", "target"):
@@ -1152,42 +1562,8 @@ def render_demo(
                        "cf_env": cf_env.copy(), "sr": sr, "spb": spb, "bar_sec": bar_sec,
                        "timeline_start": timeline_start, "sync_time": sync_time,
                        "start_sample": start_sample, "timeline_bpm": timeline_bpm})
-    # --- сведение по стемам: барабаны одного трека поверх музыки другого ---
-    # Это и есть то, ради чего стемы считались. Пока играют оба трека,
-    # барабаны звучат ТОЛЬКО у одного из них: складывать две плотные
-    # ударные партии нечем — их просто нет одновременно. Именно так
-    # работает Traktor Stems, и именно поэтому эквалайзером тот же
-    # результат получить нельзя: обеим дорожкам нужны одни полосы.
-    #
-    # Момент обмена берём тот же, что у баса: техника уже говорит, где
-    # низ уходит у старого и приходит у новому. Барабаны и бас у диджея
-    # всегда переключаются вместе, разводить их незачем.
-    stem_swap = None
-    if stems_ready:
-        eq_src = [e for e in events if e["action"] == "eq_low" and e["deck"] == "source"]
-        eq_tgt = [e for e in events if e["action"] == "eq_low" and e["deck"] == "target"]
-        neutral = _CONTROLS["eq_low"].neutral or 1.0
-        if eq_src and eq_tgt:
-            gate_a = _envelope_array(_piecewise_ramp(eq_src, spb, default=neutral),
-                                     timeline_start, n, sr,
-                                     step_sec=_events_step_sec(eq_src, spb)) / neutral
-            gate_b = _envelope_array(_piecewise_ramp(eq_tgt, spb, default=0.0),
-                                     timeline_start, n, sr,
-                                     step_sec=_events_step_sec(eq_tgt, spb)) / neutral
-        else:
-            # техника низом не управляет — ведём барабаны по кроссфейдеру
-            gate_b = _smoothstep((cf_env - 0.40) / 0.20)
-            gate_a = 1.0 - gate_b
-        gate_a = np.clip(gate_a, 0.0, 1.0)
-        gate_b = np.clip(gate_b, 0.0, 1.0)
-        # страховка: сумма гейтов не больше единицы — две установки вместе
-        # не зазвучат даже если техника задала перехлёст
-        over = np.maximum(gate_a + gate_b, 1.0)
-        gate_a, gate_b = gate_a / over, gate_b / over
-
-        decks["source"] = src_music + src_drums * _env(gate_a, src_drums)
-        decks["target"] = tgt_music + tgt_drums * _env(gate_b, tgt_drums)
-        stem_swap = float(np.argmax(gate_b > 0.5)) / sr if np.any(gate_b > 0.5) else None
+    # (сборка деки из слоёв — выше, пункт 1c: она обязана идти ДО
+    # фильтров и эха, иначе затирает их)
 
     # Диджей ведёт гейн входящей деки рукой, пока она идёт под уходящей.
     ride = _ride_gain(_mono(decks["source"]), _mono(decks["target"]), cf_env, sr)
@@ -1195,6 +1571,10 @@ def render_demo(
         _debug["ride"] = ride.copy()
     mix = (decks["source"] * _env(g_out, decks["source"])
            + decks["target"] * _env(vol_env * g_in * ride, decks["target"]))
+    # Возврат эффекта — ПОСЛЕ фейдера. Именно поэтому эхо-хвост переживает
+    # увод трека: на пульте линия возврата к каналу отношения не имеет.
+    for _wet in fx_returns.values():
+        mix = mix + _wet * FX_RETURN_LEVEL
     # В полном сете кусок — часть большого файла, и подтягивать его уровень
     # отдельно НЕЛЬЗЯ: тела треков вокруг него нормируются по своему треку,
     # и переход стал бы громче или тише окружения. Там уровнем управляет
@@ -1204,6 +1584,19 @@ def render_demo(
     else:
         mix = _soft_limit(mix)
     mix = _edge_fade(mix, sr)
+
+    # Сколько материала КАЖДОГО файла кусок реально съел. При обычном
+    # ходе это его длительность, но приём вертушки этот счёт меняет:
+    # тейп-стоп проигрывает меньше секунд трека, чем длится сам, а луп и
+    # вовсе топчется на месте. Без поправки render_full_set продолжил бы
+    # тело трека не с того места — тот же класс бага, что и повтор доли на
+    # шве (см. claude/mix-timing.md).
+    src_used_seconds = total_duration
+    tgt_used_seconds = timeline_end - sync_time
+    if "source" in transport_info:
+        src_used_seconds = transport_info["source"]["advance"] / sr
+    if "target" in transport_info:
+        tgt_used_seconds = max(0.0, (transport_info["target"]["advance"] - start_sample) / sr)
 
     import soundfile as sf
 
@@ -1221,17 +1614,17 @@ def render_demo(
         "stretch_rate": round(rate, 4),
         "bar_seconds": round(bar_sec, 3),
         "beats_per_bar": BAR_BEATS,
-        "source_offset_seconds": src_grid.get("file_offset"),
+        "source_offset_seconds": src_origin,
         "target_offset_seconds": tgt_grid.get("file_offset"),
         # где в ИСХОДНЫХ файлах начинается и заканчивается использованный
         # кусок — по этим числам render_full_set сшивает тела треков с
         # переходами без дырок и без повторов
-        "source_in_seconds": src_grid.get("file_offset"),
-        "source_out_seconds": (None if src_grid.get("file_offset") is None
-                               else round(src_grid["file_offset"] + total_duration * rate_a, 3)),
+        "source_in_seconds": src_origin,
+        "source_out_seconds": (None if src_origin is None
+                               else round(src_origin + src_used_seconds * rate_a, 3)),
         "target_in_seconds": tgt_grid.get("file_offset"),
         "target_out_seconds": (None if tgt_grid.get("file_offset") is None
-                               else round(tgt_grid["file_offset"] + (timeline_end - sync_time) * rate, 3)),
+                               else round(tgt_grid["file_offset"] + tgt_used_seconds * rate, 3)),
         "master_bpm": round(timeline_bpm, 2),
         "rate_source": round(rate_a, 4),
         "grid_confidence": round(min(float(src_grid.get("confidence", 0.0)),

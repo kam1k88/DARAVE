@@ -61,12 +61,20 @@ class PlanScheduler:
             elif ev.kind == EventKind.HOLD:
                 assert ev.duration_beats is not None
                 on_msg = resolve_discrete(ev.action, ev.deck, ev.params)
-                off_msg = resolve_discrete_off(ev.action, ev.deck)
+                # params нужны и на отпускании: у лупролла длина лупа зашита
+                # в ИМЯ контрола (beatlooproll_2_activate), и отпустить надо
+                # ровно тот, что нажали, — иначе каскад 4->2->1 отпускал бы
+                # каждый раз четырёхдольный и оставлял бы остальные зажатыми.
+                off_msg = resolve_discrete_off(ev.action, ev.deck, ev.params)
                 timed.append(TimedMidiEvent(start_time, on_msg, f"{ev.action}@{ev.deck} hold-on"))
-                timed.append(TimedMidiEvent(
-                    start_time + ev.duration_beats * beat_seconds, off_msg,
-                    f"{ev.action}@{ev.deck} hold-off",
-                ))
+                # Пустое сообщение — «отпускать нечего»: brake/spinback
+                # кончаются сами, а команда «выключить» вернула бы деку на
+                # нормальную скорость и отменила приём.
+                if off_msg:
+                    timed.append(TimedMidiEvent(
+                        start_time + ev.duration_beats * beat_seconds, off_msg,
+                        f"{ev.action}@{ev.deck} hold-off",
+                    ))
             else:
                 timed.extend(self._expand_ramp(ev, start_time, beat_seconds))
 

@@ -7,6 +7,7 @@ sets/
 /demos/
 /recordings/
 /sets/
+/mixxx/skins/LateNight/
 
 # И если там есть бинарные аудиофайлы, лучше запретить их все
 *.wav

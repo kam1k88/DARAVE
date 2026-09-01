@@ -210,7 +210,7 @@ RECORDINGS_DIR.mkdir(exist_ok=True)
 DEFAULT_SET_MINUTES = 90.0  # длительность сета, если диджей не задал свою
 SCAN_DB_DIR = Path(__file__).parent / "scan_dbs"
 SCAN_DB_DIR.mkdir(exist_ok=True)
-_scan_processes: dict[str, asyncio.subprocess.Process] = {}
+_scan_processes: dict[str, "subprocess.Popen"] = {}  # обычный Popen, см. start_library_scan
 _scan_status: dict[str, dict] = {}
 
 # Офлайн аудио-демо техник (кнопка "🎧 Демо" во вкладке "Техника") —
@@ -299,7 +299,9 @@ async def execute_technique(session_id: str, technique_id: str, body: dict | Non
     if technique.requires_stems:
         raise HTTPException(
             status_code=400,
-            detail=f"«{technique.name}» требует живых стемов — сейчас DARAVE умеет только офлайн-разделение (stems.py), выполнить нельзя.",
+            detail=f"«{technique.name}» работает по слоям. Офлайн-демо для неё есть "
+                   f"(стемы считает stems.py), а живьём в Mixxx отдельных каналов "
+                   f"под слои нет — исполнить на деках нечем.",
         )
 
     body = body or {}
@@ -326,7 +328,8 @@ async def execute_technique(session_id: str, technique_id: str, body: dict | Non
 
 
 @app.get("/api/rooms/{session_id}/techniques/{technique_id}/recommend")
-async def recommend_technique_tracks(session_id: str, technique_id: str) -> JSONResponse:
+async def recommend_technique_tracks(session_id: str, technique_id: str,
+                                     offset: int = 0) -> JSONResponse:
     """Вкладка "Техника": для выбранной техники подбирает из библиотеки
     комнаты лучшие пары треков (по BPM-совместимости/тональности/энергии —
     см. mix_strategist.score_pair_for_technique) — это и есть "showcase":
@@ -337,8 +340,33 @@ async def recommend_technique_tracks(session_id: str, technique_id: str) -> JSON
     if not room.library_tracks:
         return JSONResponse({"pairs": [], "hint": "Библиотека комнаты пуста — сначала отсканируйте музыку во вкладке «Библиотека»."})
     technique = TECHNIQUES[technique_id]
-    pairs = mix_strategist.recommend_tracks_for_technique(technique, room.library_tracks, top_n=3)
-    return JSONResponse({"pairs": pairs})
+    offset = max(0, int(offset))
+    pairs = mix_strategist.recommend_tracks_for_technique(
+        technique, room.library_tracks, top_n=3, offset=offset)
+    if not pairs and offset:
+        # пары кончились — начинаем сначала, а не показываем пустоту
+        pairs = mix_strategist.recommend_tracks_for_technique(
+            technique, room.library_tracks, top_n=3, offset=0)
+        offset = 0
+    return JSONResponse({"pairs": pairs, "offset": offset})
+
+
+@app.get("/api/rooms/{session_id}/techniques/{technique_id}/cue")
+async def technique_cue_for_pair(session_id: str, technique_id: str,
+                                 a: str, b: str) -> JSONResponse:
+    """Подсказки «откуда сводить» для КОНКРЕТНОЙ упорядоченной пары.
+
+    Нужен для кнопки «поменять местами»: A→B и B→A — это разные переходы
+    с разными точками ухода и входа, и показывать после обмена старые
+    подписи было бы враньём."""
+    if technique_id not in TECHNIQUES:
+        raise HTTPException(status_code=404, detail=f"Неизвестная техника: {technique_id}")
+    room = sessions.get_or_create(session_id)
+    by_path = {t.get("path"): t for t in room.library_tracks}
+    ta, tb = by_path.get(a), by_path.get(b)
+    if ta is None or tb is None:
+        raise HTTPException(status_code=400, detail="Трек не найден в библиотеке комнаты")
+    return JSONResponse({"cue": mix_strategist.technique_cue_hints(TECHNIQUES[technique_id], ta, tb)})
 
 
 @app.post("/api/rooms/{session_id}/techniques/{technique_id}/demo")
@@ -358,11 +386,10 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     if technique_id not in TECHNIQUES:
         raise HTTPException(status_code=404, detail=f"Неизвестная техника: {technique_id}")
     technique = TECHNIQUES[technique_id]
-    if technique.requires_stems:
-        raise HTTPException(
-            status_code=400,
-            detail=f"«{technique.name}» требует живых стемов — офлайн-демо для неё пока не поддержано.",
-        )
+    # Проверку «есть ли стемы» делает сам рендер: он один знает, для каких
+    # ДВУХ файлов они нужны, и может назвать тот, из-за которого не вышло.
+    # Здесь оставалась заглушка «офлайн-демо пока не поддержано», и она
+    # отсекала техники по слоям ещё до того, как кто-то посмотрел в кэш.
 
     body = body or {}
     track_a_path = body.get("track_a_path")
@@ -380,6 +407,25 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
 
     bpm_a = track_a.get("bpm") or 128.0
     bpm_b = track_b.get("bpm") or 128.0
+
+    # Точки сведения. Карточка техники ПОКАЗЫВАЕТ «выход из A на 3:12,
+    # запуск B с 0:48» — а рендер их не получал вовсе и брал хвост A и
+    # голову B. То есть подпись и звук говорили про разные места трека, и
+    # приём срабатывал там, где ему нечего делать. Считаем те же самые
+    # подсказки тем же кодом, что рисует карточку, — иначе они снова
+    # разъедутся при первой же правке.
+    source_at = body.get("source_at")
+    target_at = body.get("target_at")
+    if source_at is None or target_at is None:
+        try:
+            cue = mix_strategist.technique_cue_hints(technique, track_a, track_b)
+            if source_at is None:
+                source_at = (cue.get("from_track") or {}).get("time_seconds")
+            if target_at is None:
+                target_at = (cue.get("into_track") or {}).get("time_seconds")
+        except Exception:
+            source_at = target_at = None
+
     out_name = f"{session_id}_{technique_id}_{secrets.token_hex(6)}.wav"
     out_path = DEMOS_DIR / out_name
 
@@ -388,6 +434,8 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
             demo_render.render_demo,
             technique_id, track_a_path, track_b_path, bpm_a, bpm_b, str(out_path),
             param_overrides=overrides,
+            source_at=(float(source_at) if source_at else None),
+            target_at=(float(target_at) if target_at else None),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=f"Файл трека не найден на диске backend'а: {exc}") from exc
@@ -800,8 +848,21 @@ async def _refine_room_bpm(session_id: str, force: bool = False) -> None:
     })
 
 
+def _scan_is_running(session_id: str) -> bool:
+    proc = _scan_processes.get(session_id)
+    return proc is not None and proc.poll() is None
+
+
 def _kick_bpm_refine(session_id: str, force: bool = False) -> None:
     if not force and session_id in _bpm_refine_done:
+        return
+    if _scan_is_running(session_id):
+        # Сканер прямо сейчас пишет в ТОТ ЖЕ файл БД. Перемер держит базу
+        # занятой минутами, сканер упирался в блокировку и падал с кодом 1 —
+        # диджей видел «при сканировании вылазит ошибка», а причина была в
+        # том, что он в этот момент открыл вкладку «Стратегия». Ждать не
+        # надо: по окончании скана уточнение кикается само (см. _watch_scan).
+        logger.info(f"уточнение BPM '{session_id}' отложено: идёт сканирование библиотеки")
         return
     task = _bpm_refine_tasks.get(session_id)
     if task is not None and not task.done():
@@ -850,9 +911,17 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
     прямо из SQLite-файла сканера (см. _watch_scan), без HTTP на себя. Требует requirements-analysis.txt в ТОМ ЖЕ Python-
     окружении, что и сам backend (librosa/soundfile/numpy) — если их нет,
     подпроцесс упадёт с ImportError, это будет видно в /scan/status.tail."""
-    existing = _scan_processes.get(session_id)
-    if existing is not None and existing.returncode is None:
+    if _scan_is_running(session_id):
         raise HTTPException(status_code=409, detail="Сканирование уже идёт — дождитесь завершения")
+
+    refine = _bpm_refine_tasks.get(session_id)
+    if refine is not None and not refine.done():
+        # Обратная сторона той же блокировки: перемер BPM пишет в файл базы
+        # сканера. Пустить их одновременно — гарантированно уронить один из них.
+        raise HTTPException(
+            status_code=409,
+            detail="Идёт проверка библиотеки (перемер BPM) — она пишет в тот же файл базы. "
+                   "Подождите пару минут, пока закончится, и запустите сканирование снова.")
 
     path = (body or {}).get("path", "").strip()
     if not path:
@@ -870,23 +939,42 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
     # пустой 503 — библиотека молча оставалась пустой, а следом "не
     # работали" и Стратегия, и рекомендации во вкладке "Техника".
     scan_started_at = time.time()
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, script, "--scan", path, "--db", db_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        cwd=str(Path(__file__).parent),
-    )
+    # ОБЫЧНЫЙ subprocess, а не asyncio.create_subprocess_exec.
+    # На Windows тот работает только на ProactorEventLoop, а uvicorn
+    # поднимает селекторный цикл — и запуск падал с голым
+    # NotImplementedError. Наружу это выглядело как «Ошибка сети:
+    # Unexpected token 'I', "Internal S"... is not valid JSON»: браузер
+    # получал страницу 500 и пытался разобрать её как JSON. Чтение вывода
+    # уводим в поток, событийный цикл не блокируется.
+    import subprocess as _sp
+
+    try:
+        proc = _sp.Popen(
+            [sys.executable, script, "--scan", path, "--db", db_path],
+            stdout=_sp.PIPE, stderr=_sp.STDOUT,
+            cwd=str(Path(__file__).parent),
+            creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        logger.exception("не смог запустить сканер")
+        raise HTTPException(status_code=500,
+                            detail=f"Не смог запустить сканер: {exc}") from exc
     logger.info(f"сканирование запущено: комната '{session_id}', папка {path}, БД {db_path}")
     _scan_processes[session_id] = proc
     _scan_status[session_id] = {"running": True, "tail": [], "ok": None, "returncode": None}
 
+    def _pump() -> None:
+        """Читает вывод сканера в отдельном потоке и ждёт его конца."""
+        if proc.stdout is not None:
+            for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    status = _scan_status[session_id]
+                    status["tail"] = (status["tail"] + [line])[-30:]
+        proc.wait()
+
     async def _watch_scan() -> None:
-        assert proc.stdout is not None
-        async for raw_line in proc.stdout:
-            line = raw_line.decode("utf-8", errors="replace").rstrip()
-            if line:
-                status = _scan_status[session_id]
-                status["tail"] = (status["tail"] + [line])[-30:]
-        await proc.wait()
+        await asyncio.to_thread(_pump)
         status = _scan_status[session_id]
         status["running"] = False
         status["returncode"] = proc.returncode
@@ -916,6 +1004,11 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
                 status["tail"] = (status["tail"] + [f"Не смог прочитать БД сканера: {db_path}"])[-30:]
         else:
             logger.info(f"сканирование комнаты '{session_id}' завершилось с кодом {proc.returncode}")
+            # Вывод сканера раньше жил только в status["tail"] — то есть в
+            # памяти процесса и в одной вкладке UI. В логе оставалось голое
+            # «завершилось с кодом 1» без единого намёка на причину.
+            for line in status["tail"][-15:]:
+                logger.info(f"[скан] {line}")
 
         status["loaded"] = loaded
         await room.broadcast_to_chat({
@@ -1013,6 +1106,10 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
     if not tracks:
         raise HTTPException(status_code=400, detail="Библиотека комнаты пуста")
 
+    # Лог на ВХОДЕ, а не только на выходе: если перебор падает, в логе
+    # раньше не было ни строчки, и снаружи это выглядело как «кнопка
+    # ничего не делает».
+    logger.info("подбор длительности '%s': начал, треков %d", session_id, len(tracks))
     body = body or {}
     exclude = body.get("exclude")
     kwargs = dict(
@@ -1039,6 +1136,10 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
         except ValueError:
             target += step
             continue
+        except Exception as exc:
+            logger.exception("подбор длительности сорвался на %.0f мин", target)
+            raise HTTPException(status_code=500,
+                                detail=f"Не смог построить план на {target:.0f} мин: {exc}") from exc
         q = mix_strategist.plan_quality(st)
         scored.append({"minutes": round(target),
                        "actual_minutes": st.get("total_duration_minutes"),

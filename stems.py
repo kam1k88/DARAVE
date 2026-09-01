@@ -1,5 +1,5 @@
 """
-stems.py — разделение треков на барабаны и всё остальное (Demucs).
+stems.py — разделение трека на четыре слоя: барабаны, бас, гармония, вокал.
 
 Зачем это вообще понадобилось. Сколько бы точно мы ни выравнивали темп,
 такты, фразы и точки входа — а всё это было починено и измерено, — два
@@ -9,24 +9,49 @@ stems.py — разделение треков на барабаны и всё �
 перебор +2..+3 dB над громчайшим из двух, и вычистить это эквалайзером
 нельзя — обеим дорожкам эти полосы нужны.
 
-Стемы снимают задачу, а не смягчают её: если у нас отдельно барабаны и
-отдельно музыка, то в любой момент времени можно играть барабаны ОДНОГО
-трека и музыку ДРУГОГО, и складывать нечему. Ровно это делает Traktor
-Stems, и ровно поэтому он звучит иначе.
+Стемы снимают задачу, а не смягчают её: если слои разделены, то в любой
+момент можно играть барабаны ОДНОГО трека и гармонию ДРУГОГО, и
+складывать нечему. Ровно это делает Traktor Stems, и ровно поэтому он
+звучит иначе.
 
-Почему именно two-stems=drums, а не полные четыре:
-  * бас нам отдельно не нужен — его и так чисто вырезает фильтр (см.
-    demo_render._split_low), это узкая полоса и она хорошо делится;
-  * вокал отдельно нужен только для акапельных наложений, это отдельная
-    техника, а не основной ход;
-  * барабаны от гармонии фильтром НЕ отделяются никак — вот ради чего
-    вообще нужна модель;
-  * два стема считаются примерно вдвое быстрее четырёх и занимают вдвое
-    меньше места.
+## Почему теперь четыре стема, а не два
 
-Формат — mp3 320: разница со стемами в WAV на слух не ловится (они всё
-равно идут под другой трек), а библиотека из 48 треков в WAV это ~12 ГБ
-против ~1.5 ГБ.
+Раньше здесь было two-stems=drums, и рассуждение было такое: бас чисто
+режется фильтром, вокал нужен редко. Оба довода оказались неверны, как
+только техники стали работать ПО СЛОЯМ:
+
+* **бас фильтром не режется.** Фильтр режет ПОЛОСУ, а не инструмент. Всё,
+  что живёт ниже 180 Гц, уходит вместе с басом: бочка, низ пэда, тело
+  саба. Обмен басом через EQ — это всегда обмен «бас плюс низ барабанов»,
+  и именно поэтому он слышен как провал, а не как обмен;
+* **вокал нужен не «редко», а в самом ценном приёме.** Акапелла поверх
+  чужого инструментала — то, чем открытый формат живёт; и он же нужен,
+  чтобы НЕ наложить два вокала (единственный клэш, который слышат все);
+* гармония отдельно от барабанов — то, ради чего модель и нужна: фильтром
+  это не делится никак.
+
+Четыре стема считаются дольше и занимают больше места. Это и есть цена.
+
+## Лестница качества
+
+    roformer  — htdemucs_ft на четыре слоя ПЛЮС Mel-Band/BS-Roformer на
+                вокал, и «гармония» пересчитывается как микс минус
+                барабаны, бас и роформерный вокал. Лучшее, что есть
+                сегодня; нужен пакет audio-separator и GPU.
+    demucs    — htdemucs_ft: четыре слоя одной моделью. Заметно лучше
+                базовой htdemucs (это её дообученная версия, считает
+                вчетверо дольше), новых зависимостей не нужно.
+    fast      — базовая htdemucs. Прилично, но на вокале слышны артефакты.
+    hpss      — без модели вообще: гармоника против ударных за секунды.
+                Грубо (тарелки утекают в гармонию, сустейн бочки в
+                барабаны), вокала не даёт совсем. Нужно ровно для одного:
+                услышать, что даёт сведение по слоям, ДО того как тратить
+                час машинного времени.
+
+`backend="auto"` выбирает лучшее из установленного, а не падает.
+
+Формат — mp3 320: стемы всё равно звучат под другой трек, разницу с WAV
+на них не поймать, а четыре слоя для 48 треков это ~3 ГБ против ~24 ГБ.
 """
 from __future__ import annotations
 
@@ -42,8 +67,101 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 STEM_DIR = HERE / "stems"
-MODEL = "htdemucs"
-PARTS = ("drums", "no_drums")
+
+MODEL = "htdemucs_ft"        # дообученная htdemucs: лучше базовой, считает вчетверо дольше
+FAST_MODEL = "htdemucs"
+
+# Слои, которые модель отдаёт. Порядок важен только для читаемости логов.
+PARTS = ("drums", "bass", "other", "vocals")
+
+# Комбинации, которые нужны техникам. Считаются суммой на лету — хранить
+# их отдельно значит хранить те же секунды дважды.
+COMBOS = {
+    "no_drums": ("bass", "other", "vocals"),
+    "instrumental": ("drums", "bass", "other"),
+    "acapella": ("vocals",),
+    "music": ("other", "vocals"),          # гармония с вокалом, без ритм-секции
+    "rhythm": ("drums", "bass"),           # ритм-секция целиком
+}
+
+# Модель роформера для вокала. Имена файлов в audio-separator меняются от
+# версии к версии, поэтому это список кандидатов: берём первый, который
+# отработал. Если ни один — остаёмся на вокале от demucs и честно пишем
+# это в meta.json, а не притворяемся, что посчитали лучшее.
+ROFORMER_MODELS = (
+    "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
+    "mel_band_roformer_kim_ft_unwa.ckpt",
+    "model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt",
+)
+
+AUDIO_EXT = (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg", ".opus")
+
+
+# --------------------------------------------------------------- окружение
+
+def has_module(name: str) -> bool:
+    import importlib.util
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+# Кандидаты в интерпретаторы, где может стоять demucs. Бэкенд DARAVE и
+# разделение стемов — это РАЗНЫЕ задачи с разными требованиями к версии
+# Python: companion'у нужен python-rtmidi (есть только до 3.12), а demucs
+# и torch на 3.14 просто нет колёс. Поэтому не требуем, чтобы всё стояло в
+# одном питоне, а ищем тот, где стоит нужное.
+_PY_CANDIDATES = (
+    r"C:\Python312\python.exe",
+    r"C:\Python311\python.exe",
+    r"C:\Python310\python.exe",
+)
+_demucs_py_cache: list | None = None
+
+
+def _python_has(exe: str, module: str, timeout: float = 25.0) -> bool:
+    try:
+        r = subprocess.run([exe, "-c", f"import {module}"], capture_output=True,
+                           text=True, timeout=timeout)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def demucs_python() -> str | None:
+    """Интерпретатор, в котором РЕАЛЬНО есть demucs, или None.
+
+    Раньше здесь безусловно стоял sys.executable, и на машине, где бэкенд
+    крутится под Python 3.14, а demucs поставился в 3.12, разделение
+    падало 65 раз подряд с одним и тем же «No module named demucs» — по
+    разу на трек. Ошибка была верная, а причина невидимая."""
+    global _demucs_py_cache
+    if _demucs_py_cache is not None:
+        return _demucs_py_cache[0]
+    found = None
+    if has_module("demucs"):
+        found = sys.executable
+    else:
+        cands = list(_PY_CANDIDATES)
+        for name in ("python3.12", "python3.11", "python3.10", "python3", "python"):
+            w = shutil.which(name)
+            if w:
+                cands.append(w)
+        if os.name == "nt":
+            local = os.environ.get("LOCALAPPDATA", "")
+            for v in ("312", "311", "310"):
+                cands.append(os.path.join(local, "Programs", "Python", f"Python{v}", "python.exe"))
+        seen = set()
+        for exe in cands:
+            if exe in seen or not exe:
+                continue
+            seen.add(exe)
+            if os.path.exists(exe) and exe != sys.executable and _python_has(exe, "demucs"):
+                found = exe
+                break
+    _demucs_py_cache = [found]
+    return found
 
 
 def device_info() -> dict:
@@ -52,16 +170,59 @@ def device_info() -> dict:
         import torch
     except Exception:
         return {"torch": False, "cuda": False, "name": None,
+                "demucs": has_module("demucs"), "audio_separator": has_module("audio_separator"),
                 "note": "torch не установлен: pip install -r requirements-stems.txt"}
     try:
         cuda = bool(torch.cuda.is_available())
         name = torch.cuda.get_device_name(0) if cuda else None
     except Exception:
         cuda, name = False, None
-    return {"torch": True, "cuda": cuda, "name": name,
-            "note": ("GPU: примерно минута-две на трек" if cuda
-                     else "только CPU: примерно 10 минут на трек")}
+    return {
+        "torch": True, "cuda": cuda, "name": name,
+        "demucs": bool(demucs_python()),
+        "demucs_python": demucs_python(),
+        "audio_separator": has_module("audio_separator"),
+        "note": ("GPU: примерно 2-4 минуты на трек в максимальном качестве" if cuda
+                 else "только CPU: 20-40 минут на трек в максимальном качестве"),
+    }
 
+
+def resolve_backend(backend: str = "auto") -> str:
+    """Лучшее из того, что реально установлено."""
+    if backend != "auto":
+        return backend
+    py = demucs_python()
+    if py and (has_module("audio_separator")
+               or (py != sys.executable and _python_has(py, "audio_separator"))):
+        return "roformer"
+    if py:
+        return "demucs"
+    return "hpss"
+
+
+def backend_problem(backend: str) -> str | None:
+    """Почему выбранный способ не сработает — ДО того, как начать перебор.
+
+    Проверяем один раз и вслух. Молча пробовать 65 раз подряд и получать
+    одну и ту же ошибку — это не «устойчивость к сбоям», это спам."""
+    if backend == "hpss":
+        return None
+    if not demucs_python():
+        return ("demucs не установлен ни в одном найденном Python. "
+                "Поставьте его: запустите setup_stems.ps1 из папки DARAVE — "
+                "он найдёт подходящий Python и поставит всё сам. "
+                "Быстрый способ посмотреть без модели: --backend hpss.")
+    if backend == "roformer":
+        py = demucs_python()
+        if not (has_module("audio_separator")
+                or (py != sys.executable and _python_has(py, "audio_separator"))):
+            return ("audio-separator не установлен — роформер на вокал недоступен. "
+                    "Считаю через htdemucs_ft (--backend demucs): четыре слоя, "
+                    "вокал чуть хуже роформера, но заметно лучше базовой htdemucs.")
+    return None
+
+
+# ------------------------------------------------------------------- кэш
 
 def stem_key(track_path: str) -> str:
     """Ключ папки со стемами. В него входит время правки и размер файла:
@@ -80,8 +241,24 @@ def stem_dir_for(track_path: str) -> Path:
 
 
 def stem_paths(track_path: str) -> dict | None:
-    """{'drums': ..., 'no_drums': ...} если стемы посчитаны, иначе None."""
+    """{'drums':…, 'bass':…, 'other':…, 'vocals':…} или None, если полного
+    комплекта нет. Неполный комплект — это не «частично готово», а «нечем
+    собрать деку»: сумма слоёв обязана давать исходный трек, иначе на
+    переходе поедет громкость.
+
+    Готовность определяет meta.json с complete=true, а не наличие файлов.
+    Проверено на своей же ошибке: прерванный проход оставил четыре файла,
+    из которых последний был дописан наполовину — по размеру он проходил
+    любую проверку, а звучал обрывом. Метка пишется ПОСЛЕДНЕЙ, поэтому
+    оборванный проход просто не считается сделанным и пересчитается."""
     d = stem_dir_for(track_path)
+    if not (d / "meta.json").exists():
+        return None
+    try:
+        if not json.loads((d / "meta.json").read_text(encoding="utf-8")).get("complete"):
+            return None
+    except (OSError, ValueError):
+        return None
     out = {}
     for part in PARTS:
         for ext in (".mp3", ".wav", ".flac"):
@@ -92,18 +269,85 @@ def stem_paths(track_path: str) -> dict | None:
     return out if len(out) == len(PARTS) else None
 
 
-def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0) -> dict:
-    """Быстрое разделение без модели: гармоника против ударных (HPSS).
+def stem_meta(track_path: str) -> dict:
+    """Чем именно посчитаны стемы этого трека — чтобы «качественные» не
+    оказались вчерашним HPSS-черновиком."""
+    f = stem_dir_for(track_path) / "meta.json"
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
-    Это заметно хуже Demucs — тарелки утекают в «музыку», а сустейн
-    бочки в «барабаны», — но работает мгновенно, ничего не скачивает и
-    не требует GPU. Нужно ровно для одного: услышать, что даёт сведение
-    по стемам, ДО того как тратить час машинного времени на нормальное
-    разделение. Если разница нравится — считаем Demucs.
+
+def has_vocals(track_path: str) -> bool:
+    """Есть ли у трека НАСТОЯЩИЙ вокальный слой.
+
+    У HPSS его нет и быть не может: метод делит спектр на ударное и
+    гармоническое, голос живёт в гармонической части целиком. Слой
+    записывается пустым сознательно — класть туда гармонию значило бы
+    обмануть техники, которые на голос рассчитывают. Но тогда «Акапелла
+    поверх» на таких стемах выдаёт тишину и выглядит как поломка рендера,
+    а не как отсутствие данных. Поэтому спрашивать надо здесь и заранее."""
+    m = stem_meta(track_path)
+    return bool(m.get("complete")) and m.get("backend") not in (None, "", "hpss")
+
+
+def _write_meta(dest: Path, **kw) -> None:
+    """Метка готовности. Пишется ТОЛЬКО когда все слои на месте."""
+    kw.setdefault("complete", True)
+    (dest / "meta.json").write_text(json.dumps(kw, ensure_ascii=False, indent=1),
+                                    encoding="utf-8")
+
+
+def _write_part(dest: Path, part: str, buf, sr: int, fmt: str) -> None:
+    """Один слой на диск. mp3 320 через LAME, как и весь остальной вывод
+    DARAVE: libsndfile отдаёт 74 кбит/с и битрейт ему не задать."""
+    import numpy as np
+    import soundfile as sf
+
+    data = np.asarray(buf)
+    if data.ndim == 1:
+        data = data[:, None]
+    if fmt == "mp3":
+        try:
+            import tempfile
+
+            import set_export
+            # Промежуточный WAV кладём во ВРЕМЕННУЮ папку системы, а не
+            # рядом с результатом: слой длинного трека это ~80 МБ, и если
+            # его не удалось убрать (сетевой диск, права, прерванный
+            # проход), в кэше стемов навсегда остаётся мусор вчетверо
+            # больше самого кэша.
+            with tempfile.TemporaryDirectory(prefix="darave_stem_") as td:
+                tmp = Path(td) / f"{part}.wav"
+                sf.write(str(tmp), data.astype("float32"), sr, subtype="PCM_16")
+                out = set_export._write_mp3(str(tmp), data, sr, 320)
+                shutil.copyfile(str(out), str(dest / f"{part}.mp3"))
+            return
+        except Exception:
+            pass
+    sf.write(str(dest / f"{part}.wav"), data.astype("float32"), sr, subtype="PCM_16")
+
+
+# ------------------------------------------------------- разделение: hpss
+
+def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0,
+                  fmt: str = "mp3") -> dict:
+    """Быстрое разделение без модели: гармоника против ударных.
+
+    Даёт три слоя из четырёх и честно кладёт пустой вокал: HPSS вокал не
+    выделяет в принципе, а класть туда гармонику значило бы обмануть
+    техники, которые на вокал рассчитывают. Бас берётся полосой ниже
+    180 Гц из гармонической части — это ровно то приближение, из-за
+    которого настоящие стемы и нужны, но для «послушать, стоит ли овчинка
+    выделки» годится.
     """
     import librosa
     import numpy as np
     import soundfile as sf
+    from scipy.signal import butter, sosfiltfilt
 
     dest = stem_dir_for(track_path)
     have = stem_paths(track_path)
@@ -113,96 +357,252 @@ def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0) -> dict
 
     t0 = time.time()
     try:
-        y, _sr = librosa.load(track_path, sr=sr, mono=True)
+        y, _sr = librosa.load(track_path, sr=sr, mono=False)
     except Exception as exc:
         return {"ok": False, "error": f"не читается: {exc}"}
-    if len(y) < sr:
+    y = np.atleast_2d(y)
+    if y.shape[0] == 1:
+        y = np.vstack([y, y])
+    if y.shape[1] < sr:
         return {"ok": False, "error": "слишком короткий"}
 
     # margin > 1 делает разделение жёстче: то, что не уверенно ударное и
-    # не уверенно гармоническое, уходит в остаток и не звучит дважды
-    harm, perc = librosa.effects.hpss(y, margin=(1.0, margin))
-    rest = y - perc      # всё, кроме ударных: гармоника + то, что не попало ни туда, ни туда
+    # не уверенно гармоническое, уходит в остаток и не звучит дважды.
+    #
+    # Маску считаем по МОНО-сумме и применяем к обоим каналам: полный HPSS
+    # на каждый канал вдвое дороже и на длинном треке это минуты, а
+    # разница в маске между каналами меньше, чем собственная погрешность
+    # метода. Стереокартина при этом сохраняется — маска применяется к
+    # спектру каждого канала отдельно.
+    mono = y.mean(axis=0)
+    S = librosa.stft(mono)
+    H, P = librosa.decompose.hpss(S, margin=(1.0, margin))
+    mag = np.abs(H) + np.abs(P) + 1e-9
+    mask_p = np.abs(P) / mag
+    perc = np.stack([librosa.istft(librosa.stft(y[c]) * mask_p, length=y.shape[1])
+                     for c in range(y.shape[0])])
+    rest = y - perc
+    sos = butter(4, 180.0 / (sr / 2), btype="lowpass", output="sos")
+    bass = sosfiltfilt(sos, rest, axis=1)
+    other = rest - bass
+    vocals = np.zeros_like(other)
 
-    for part, buf in (("drums", perc), ("no_drums", rest)):
-        peak = float(np.max(np.abs(buf))) or 1.0
-        sf.write(str(dest / f"{part}.wav"), (buf / max(peak, 1e-6) * 0.95).astype("float32"),
-                 sr, subtype="PCM_16")
-    (dest / "meta.json").write_text(json.dumps(
-        {"source": track_path, "model": "hpss", "seconds": round(time.time() - t0, 1)},
-        ensure_ascii=False), encoding="utf-8")
+    for part, buf in (("drums", perc), ("bass", bass), ("other", other), ("vocals", vocals)):
+        _write_part(dest, part, buf.T, sr, fmt)
+    _write_meta(dest, source=track_path, backend="hpss", model="hpss", format=fmt,
+                parts=list(PARTS), vocals="пустой: HPSS вокал не выделяет",
+                seconds=round(time.time() - t0, 1))
     paths = stem_paths(track_path)
     return ({"ok": True, "paths": paths, "seconds": round(time.time() - t0, 1)} if paths
             else {"ok": False, "error": "не записалось"})
 
 
-def separate_track(track_path: str, fmt: str = "mp3", model: str = MODEL,
-                   device: str | None = None, timeout: float = 3600.0,
-                   backend: str = "demucs") -> dict:
-    """Считает стемы одного трека. Возвращает {'ok', 'paths'|'error', 'seconds'}."""
-    if not os.path.exists(track_path):
-        return {"ok": False, "error": "файл не найден"}
-    if backend == "hpss":
-        return separate_hpss(track_path)
-    have = stem_paths(track_path)
-    if have:
-        return {"ok": True, "paths": have, "seconds": 0.0, "cached": True}
+# ----------------------------------------------------- разделение: demucs
 
-    dest = stem_dir_for(track_path)
-    dest.mkdir(parents=True, exist_ok=True)
+def _run(cmd: list[str], timeout: float) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"не уложился в {timeout / 60:.0f} мин"
+    except OSError as exc:
+        return False, str(exc)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+        return False, " / ".join(t.strip() for t in tail)
+    return True, ""
+
+
+def _demucs_four(track_path: str, dest: Path, model: str, fmt: str,
+                 device: str | None, timeout: float) -> tuple[bool, str]:
+    """Четыре слоя demucs прямо в dest."""
     tmp = dest / "_work"
-    if tmp.exists():
-        shutil.rmtree(tmp, ignore_errors=True)
+    shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
 
-    cmd = [sys.executable, "-m", "demucs", "-n", model, "--two-stems", "drums",
-           "-o", str(tmp)]
+    py = demucs_python() or sys.executable
+    cmd = [py, "-m", "demucs", "-n", model, "-o", str(tmp)]
     if fmt == "mp3":
         cmd += ["--mp3", "--mp3-bitrate", "320"]
     if device:
         cmd += ["-d", device]
     cmd.append(track_path)
 
-    t0 = time.time()
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    ok, err = _run(cmd, timeout)
+    if not ok:
         shutil.rmtree(tmp, ignore_errors=True)
-        return {"ok": False, "error": f"не уложился в {timeout / 60:.0f} мин"}
-    if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
-        shutil.rmtree(tmp, ignore_errors=True)
-        return {"ok": False, "error": "demucs: " + " / ".join(tail)}
+        return False, "demucs: " + err
 
-    # demucs кладёт результат в <out>/<model>/<имя трека>/{drums,no_drums}.*
-    produced = list(tmp.rglob("drums.*")) + list(tmp.rglob("no_drums.*"))
-    if not produced:
-        shutil.rmtree(tmp, ignore_errors=True)
-        return {"ok": False, "error": "demucs отработал, но файлов нет"}
-    for f in produced:
-        shutil.move(str(f), str(dest / f.name))
+    moved = 0
+    for part in PARTS:
+        found = sorted(tmp.rglob(f"{part}.*"))
+        if found:
+            shutil.move(str(found[0]), str(dest / found[0].name))
+            moved += 1
     shutil.rmtree(tmp, ignore_errors=True)
+    if moved < len(PARTS):
+        return False, f"demucs отдал {moved} слоёв из {len(PARTS)}"
+    return True, ""
+
+
+# --------------------------------------------------- разделение: roformer
+
+def _roformer_vocals(track_path: str, work: Path, model_name: str,
+                     timeout: float) -> Path | None:
+    """Вокал роформером. Возвращает файл вокала или None."""
+    work.mkdir(parents=True, exist_ok=True)
+    py = demucs_python() or sys.executable
+    cmd = [py, "-m", "audio_separator.utils.cli", track_path,
+           "--model_filename", model_name, "--output_dir", str(work),
+           "--output_format", "WAV"]
+    ok, _err = _run(cmd, timeout)
+    if not ok:
+        # у пакета две точки входа в разных версиях — пробуем консольную
+        ok, _err = _run(["audio-separator", track_path, "--model_filename", model_name,
+                         "--output_dir", str(work), "--output_format", "WAV"], timeout)
+    if not ok:
+        return None
+    cands = [f for f in work.glob("*.wav") if "vocal" in f.name.lower()
+             and "instrument" not in f.name.lower()]
+    return cands[0] if cands else None
+
+
+def _swap_in_roformer_vocals(dest: Path, track_path: str, voc_file: Path,
+                             fmt: str, sr: int = 44100) -> bool:
+    """Подменяет вокал роформерным и ПЕРЕСЧИТЫВАЕТ гармонию.
+
+    Просто положить чужой вокал рядом нельзя: сумма слоёв перестанет
+    давать исходный трек, и на переходе поедет громкость — тем сильнее,
+    чем громче вокал. Поэтому other := микс − барабаны − бас − вокал.
+    Так сумма сходится по построению, а не по удаче.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    def rd(p) -> np.ndarray | None:
+        try:
+            y, _ = sf.read(str(p), always_2d=True, dtype="float32")
+            return y
+        except Exception:
+            try:
+                import librosa
+                y, _ = librosa.load(str(p), sr=sr, mono=False)
+                y = np.atleast_2d(y)
+                return y.T if y.shape[0] <= 2 else y
+            except Exception:
+                return None
+
+    mix = rd(track_path)
+    voc = rd(voc_file)
+    if mix is None or voc is None:
+        return False
+    layers = {}
+    for part in ("drums", "bass"):
+        for ext in (".mp3", ".wav", ".flac"):
+            f = dest / f"{part}{ext}"
+            if f.exists():
+                layers[part] = rd(f)
+                break
+    if any(layers.get(p) is None for p in ("drums", "bass")):
+        return False
+
+    n = min(len(mix), len(voc), *(len(v) for v in layers.values()))
+    if n < sr:
+        return False
+
+    def fix(a):
+        a = a[:n]
+        return np.repeat(a, 2, axis=1) if a.shape[1] == 1 else a[:, :2]
+
+    mix, voc = fix(mix), fix(voc)
+    other = mix - fix(layers["drums"]) - fix(layers["bass"]) - voc
+
+    ext = ".mp3" if fmt == "mp3" else ".wav"
+    for part, buf in (("vocals", voc), ("other", other)):
+        for old in dest.glob(f"{part}.*"):
+            old.unlink(missing_ok=True)
+        if ext == ".mp3":
+            try:
+                import set_export
+                set_export._write_mp3(str(dest / f"{part}.wav"), buf, sr, 320)
+                Path(dest / f"{part}.wav").unlink(missing_ok=True)
+                continue
+            except Exception:
+                pass
+        sf.write(str(dest / f"{part}.wav"), buf, sr, subtype="PCM_16")
+    return True
+
+
+# ------------------------------------------------------------ точка входа
+
+def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
+                   device: str | None = None, timeout: float = 3600.0,
+                   backend: str = "auto") -> dict:
+    """Считает четыре слоя одного трека. {'ok', 'paths'|'error', 'seconds'}."""
+    if not os.path.exists(track_path):
+        return {"ok": False, "error": "файл не найден"}
+    backend = resolve_backend(backend)
+    if backend == "hpss":
+        return separate_hpss(track_path, fmt=fmt)
+
+    have = stem_paths(track_path)
+    if have:
+        return {"ok": True, "paths": have, "seconds": 0.0, "cached": True,
+                "backend": stem_meta(track_path).get("backend")}
+
+    model = model or (FAST_MODEL if backend == "fast" else MODEL)
+    dest = stem_dir_for(track_path)
+    dest.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+
+    ok, err = _demucs_four(track_path, dest, model, fmt, device, timeout)
+    if not ok:
+        return {"ok": False, "error": err}
+
+    vocals_from = model
+    if backend == "roformer":
+        work = dest / "_rof"
+        got = None
+        for name in ROFORMER_MODELS:
+            got = _roformer_vocals(track_path, work, name, timeout)
+            if got is not None:
+                if _swap_in_roformer_vocals(dest, track_path, got, fmt):
+                    vocals_from = name
+                break
+        shutil.rmtree(work, ignore_errors=True)
 
     paths = stem_paths(track_path)
     if not paths:
         return {"ok": False, "error": "стемы не собрались"}
-    (dest / "meta.json").write_text(json.dumps(
-        {"source": track_path, "model": model, "format": fmt,
-         "seconds": round(time.time() - t0, 1)}, ensure_ascii=False), encoding="utf-8")
-    return {"ok": True, "paths": paths, "seconds": round(time.time() - t0, 1)}
+    _write_meta(dest, source=track_path, backend=backend, model=model,
+                vocals_model=vocals_from, format=fmt, parts=list(PARTS),
+                seconds=round(time.time() - t0, 1))
+    return {"ok": True, "paths": paths, "backend": backend,
+            "vocals_model": vocals_from, "seconds": round(time.time() - t0, 1)}
 
 
-def separate_library(track_paths: list[str], fmt: str = "mp3", model: str = MODEL,
+def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None = None,
                      device: str | None = None, progress=None, log=print,
-                     stop_after: float | None = None, backend: str = "demucs") -> dict:
+                     stop_after: float | None = None, backend: str = "auto") -> dict:
     """Считает стемы для всей библиотеки, пропуская уже посчитанные."""
+    backend = resolve_backend(backend)
+    problem = backend_problem(backend)
+    if problem and backend == "roformer":
+        log("ВНИМАНИЕ: " + problem)
+        backend = "demucs"
+        problem = backend_problem(backend)
+    if problem:
+        log("НЕ ЗАПУСКАЮ: " + problem)
+        return {"total": len(track_paths), "already": 0, "done": 0,
+                "failed": [], "seconds": 0.0, "backend": backend,
+                "error": problem, "device": device_info()}
     todo = [p for p in track_paths if not stem_paths(p)]
     log(f"стемы: {len(track_paths) - len(todo)} уже есть, считать {len(todo)}")
     info = device_info()
     if backend == "hpss":
-        log("быстрое разделение (HPSS): без модели и GPU, качество ниже Demucs")
+        log("быстрое разделение (HPSS): без модели и GPU, вокала не будет")
     else:
         log(f"устройство: {'CUDA ' + str(info.get('name')) if info.get('cuda') else 'CPU'} — {info.get('note')}")
+        log(f"способ: {backend}" + (" (htdemucs_ft + роформер на вокал)" if backend == "roformer" else ""))
 
     done, failed = 0, []
     t0 = time.time()
@@ -222,36 +622,43 @@ def separate_library(track_paths: list[str], fmt: str = "mp3", model: str = MODE
 
     return {"total": len(track_paths), "already": len(track_paths) - len(todo),
             "done": done, "failed": failed, "seconds": round(time.time() - t0, 1),
-            "device": info}
+            "backend": backend, "device": info}
 
 
 def library_coverage(track_paths: list[str]) -> dict:
-    have = sum(1 for p in track_paths if stem_paths(p))
-    return {"tracks": len(track_paths), "with_stems": have,
-            "share": round(have / len(track_paths), 3) if track_paths else 0.0}
+    have = [p for p in track_paths if stem_paths(p)]
+    kinds: dict[str, int] = {}
+    for p in have:
+        kinds[stem_meta(p).get("backend", "?")] = kinds.get(stem_meta(p).get("backend", "?"), 0) + 1
+    return {"tracks": len(track_paths), "with_stems": len(have),
+            "share": round(len(have) / len(track_paths), 3) if track_paths else 0.0,
+            "by_backend": kinds}
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="DARAVE — разделение треков на барабаны и остальное")
+    ap = argparse.ArgumentParser(description="DARAVE — разделение треков на четыре слоя")
     ap.add_argument("--track", help="один файл")
     ap.add_argument("--dir", help="папка с музыкой")
     ap.add_argument("--format", default="mp3", choices=["mp3", "wav"])
     ap.add_argument("--device", default=None, help="cuda | cpu (по умолчанию — что найдёт demucs)")
-    ap.add_argument("--backend", default="demucs", choices=["demucs", "hpss"],
-                    help="demucs — качественно, но нужна модель и время; hpss — грубо, но сразу")
-    ap.add_argument("--info", action="store_true", help="только показать, есть ли GPU")
+    ap.add_argument("--backend", default="auto",
+                    choices=["auto", "roformer", "demucs", "fast", "hpss"],
+                    help="auto — лучшее из установленного; roformer — максимум качества; "
+                         "demucs — htdemucs_ft; fast — базовая htdemucs; hpss — без модели")
+    ap.add_argument("--info", action="store_true", help="только показать окружение")
     args = ap.parse_args()
 
     if args.info:
-        print(json.dumps(device_info(), ensure_ascii=False, indent=2))
+        info = device_info()
+        info["backend_auto"] = resolve_backend("auto")
+        print(json.dumps(info, ensure_ascii=False, indent=2))
         return 0
     paths = []
     if args.track:
         paths = [args.track]
     elif args.dir:
         for root, _d, files in os.walk(args.dir):
-            paths += [os.path.join(root, f) for f in files
-                      if f.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aiff"))]
+            paths += [os.path.join(root, f) for f in files if f.lower().endswith(AUDIO_EXT)]
     if not paths:
         print("Укажите --track или --dir")
         return 1

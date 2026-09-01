@@ -394,7 +394,12 @@ def classify_genre_instruments(path: str) -> dict | None:
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    # WAL и длинный busy_timeout: в этот же файл пишет фоновое уточнение BPM
+    # (fix_library_bpm), и на дефолтных 5 секундах ожидания скан падал с
+    # «database is locked» целиком, потеряв весь проход.
+    conn = sqlite3.connect(db_path, timeout=60.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=60000")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS tracks (
             path TEXT PRIMARY KEY,
@@ -424,7 +429,8 @@ def load_library_from_db(db_path: str, since_ts: float | None = None) -> list[di
     since_ts: если задан, вернуть только треки, отсканированные не раньше
     этого момента — так результат совпадает с "этим прогоном" сканера, а
     не со всем накопленным в БД за прошлые сканирования других папок."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=60.0)
+    conn.execute("PRAGMA busy_timeout=60000")
     conn.row_factory = sqlite3.Row
     try:
         if since_ts is not None:
@@ -472,6 +478,40 @@ def load_library_from_db(db_path: str, since_ts: float | None = None) -> list[di
     return out
 
 
+def _upsert_track(conn: sqlite3.Connection, path: Path, info: dict, tags: dict | None) -> None:
+    """Запись одного трека с повтором: файл базы делят сканер и фоновое
+    уточнение BPM, и короткая блокировка — норма, а не повод падать."""
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            conn.execute(
+                """INSERT INTO tracks (path, bpm, key, camelot, energy, brightness, danceability,
+                                        duration_seconds, structure_json, tags_json, scanned_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(path) DO UPDATE SET
+                       bpm=excluded.bpm, key=excluded.key, camelot=excluded.camelot,
+                       energy=excluded.energy, brightness=excluded.brightness,
+                       danceability=excluded.danceability, duration_seconds=excluded.duration_seconds,
+                       structure_json=excluded.structure_json, tags_json=excluded.tags_json,
+                       scanned_at=excluded.scanned_at""",
+                (
+                    str(path), info["bpm"], info["key"], info["camelot"], info["energy"],
+                    info["brightness"], info["danceability"], info["duration_seconds"],
+                    json.dumps(info["structure"]), json.dumps(tags) if tags else None, time.time(),
+                ),
+            )
+            conn.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            last = exc
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            time.sleep(2.0 * (attempt + 1))
+    raise last if last is not None else sqlite3.OperationalError("не смог записать трек")
+
+
 def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]:
     # Быстрая проверка ДО цикла по файлам: если librosa не установлена,
     # каждый файл провалится с одной и той же ModuleNotFoundError — вместо
@@ -504,23 +544,15 @@ def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]
             )
             continue
         tags = classify_genre_instruments(str(path)) if with_tags else None
-        conn.execute(
-            """INSERT INTO tracks (path, bpm, key, camelot, energy, brightness, danceability,
-                                    duration_seconds, structure_json, tags_json, scanned_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(path) DO UPDATE SET
-                   bpm=excluded.bpm, key=excluded.key, camelot=excluded.camelot,
-                   energy=excluded.energy, brightness=excluded.brightness,
-                   danceability=excluded.danceability, duration_seconds=excluded.duration_seconds,
-                   structure_json=excluded.structure_json, tags_json=excluded.tags_json,
-                   scanned_at=excluded.scanned_at""",
-            (
-                str(path), info["bpm"], info["key"], info["camelot"], info["energy"], info["brightness"],
-                info["danceability"], info["duration_seconds"],
-                json.dumps(info["structure"]), json.dumps(tags) if tags else None, time.time(),
-            ),
-        )
-        conn.commit()
+        try:
+            _upsert_track(conn, path, info, tags)
+        except sqlite3.Error as exc:
+            # База занята другим писателем (фоновое уточнение BPM пишет в тот
+            # же файл) или иначе не приняла запись. Раньше исключение летело
+            # наверх и убивало ВЕСЬ скан с кодом 1 — диджей видел «ошибку при
+            # сканировании» и терял весь проход из-за одного трека.
+            print(f"  не записан в БД ({exc!r})", file=sys.stderr)
+            continue
         # energy_parts — разбивка энергии по признакам, полезна при ручном
         # запуске (--print), но в БД её колонки нет: добавлять колонку в уже
         # существующие базы пришлось бы миграцией, а читать её всё равно

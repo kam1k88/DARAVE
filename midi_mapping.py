@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from mixxx_controls import (
     BY_ID,
+    DECK_NUMBER,
     FX_BY_TARGET,
     CC_NUMBER,
     DECK_CHANNEL,
@@ -67,7 +68,68 @@ def _channel_for(control_id: str, deck: str) -> int:
     return DECK_CHANNEL[deck]
 
 
+# --- приёмы вертушки: то, чего в каталоге контролов нет в принципе ---
+#
+# brake / spinback / softStart в Mixxx — НЕ ControlObject'ы, а функции
+# скрипт-движка (engine.brake(deck, activate, factor)). Их нельзя ни
+# замапить в XML, ни выставить через engine.setValue: искать их в
+# mixxx_catalog.json бесполезно, там их нет и не будет. Единственный путь —
+# позвать функцию на стороне скрипта, для чего в SysEx-протоколе заведена
+# отдельная операция "E" (engine), см. darave-controller-scripts.js.
+#
+# Остальные приёмы транспорта — обычные контролы, и идут через "S":
+#   loop_roll    -> beatlooproll_<доли>_activate (моментарный, со слипом)
+#   reverse_play -> reverseroll (censor: реверс со слипом)
+#   beatjump     -> beatjump (значение = сколько долей, со знаком)
+ENGINE_ACTIONS = {"brake": "brake", "spinback": "spinback", "soft_start": "softStart"}
+# Маркер «сообщения нет и не должно быть» — отличается от None, которым
+# _transport_message говорит «это вообще не транспортное действие».
+_NO_MESSAGE: list[int] = []
+# Ряд длин, которые Mixxx понимает в имени beatlooproll_<N>_activate
+ROLL_SIZES = (0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32)
+
+
+def _deck_group(deck: str) -> str:
+    return f"[Channel{DECK_NUMBER.get(deck, 1)}]"
+
+
+def _nearest_roll(beats: float) -> str:
+    best = min(ROLL_SIZES, key=lambda v: abs(v - float(beats)))
+    return f"{best:g}"
+
+
+def _transport_message(action: str, deck: str, params: dict, on: bool) -> list[int] | None:
+    """MIDI для действия, двигающего иглу. None — действие не транспортное."""
+    params = params or {}
+    group = _deck_group(deck)
+    if action in ENGINE_ACTIONS:
+        if not on:
+            # Отпускать эти приёмы НЕЛЬЗЯ: по документации Mixxx выключение
+            # brake/spinback/softStart «возвращает деку на нормальную
+            # скорость». То есть команда «отпустить тейп-стоп» отменила бы
+            # ровно то, ради чего он делался — дека поехала бы дальше.
+            # Приём кончается сам, когда обороты дошли до нуля.
+            return _NO_MESSAGE
+        factor = float(params.get("factor", 1.0))
+        rate = float(params.get("rate", -10.0))
+        return sysex_engine(ENGINE_ACTIONS[action], DECK_NUMBER.get(deck, 1),
+                            1, factor, rate)
+    if action == "loop_roll":
+        size = _nearest_roll(params.get("beats", 4))
+        return sysex_set(group, f"beatlooproll_{size}_activate", 1.0 if on else 0.0)
+    if action in ("reverse_play", "reverse_hold"):
+        return sysex_set(group, "reverseroll", 1.0 if on else 0.0)
+    if action == "beatjump":
+        if not on:
+            return _NO_MESSAGE
+        return sysex_set(group, "beatjump", float(params.get("beats", 4)))
+    return None
+
+
 def resolve_discrete(action: str, deck: str, params: dict) -> list[int]:
+    msg = _transport_message(action, deck, params, on=True)
+    if msg is not None:
+        return msg
     ctrl = BY_ID.get(action)
     channel = _channel_for(action, deck)
 
@@ -90,17 +152,34 @@ def resolve_discrete(action: str, deck: str, params: dict) -> list[int]:
     return note_on(channel, NOTE_NUMBER[action])
 
 
-def resolve_discrete_off(action: str, deck: str) -> list[int]:
+def resolve_discrete_off(action: str, deck: str, params: dict | None = None) -> list[int]:
     """Note Off — пара к resolve_discrete() для действий с удержанием
     (reverse_hold, sync_lock, fx_enable): зажать в начале события,
     отпустить в конце."""
+    msg = _transport_message(action, deck, params or {}, on=False)
+    if msg is not None:
+        # пустой список = отпускать нечего (см. _NO_MESSAGE)
+        return msg
     channel = _channel_for(action, deck)
     if action not in NOTE_NUMBER:
         raise ValueError(f"Unknown discrete action: {action}")
     return note_off(channel, NOTE_NUMBER[action])
 
 
+# Действия из словаря техник, у которых в Mixxx нет собственного контрола.
+#
+# "fx" — это dry/wet юнита, назначенного на деку: в Mixxx нет контрола
+# «включить фленджер», есть слот эффекта, и ЧТО в него загружено, решает
+# сам диджей (или скрипт перебором effect_selector — имени эффекта в
+# ControlObject'ах не существует). Поэтому живьём мы честно крутим микс
+# того эффекта, который в слоте уже стоит, а какой именно приём получится
+# — определяется набором в юните. В офлайн-рендере эффект известен по
+# имени и считается точно (см. demo_render, FX_SENDS/FX_INSERTS).
+RAMP_ALIASES = {"fx": "fx_mix"}
+
+
 def resolve_ramp_tick(action: str, deck: str, value_0_1: float) -> list[int]:
+    action = RAMP_ALIASES.get(action, action)
     if action not in CC_NUMBER:
         raise ValueError(f"Unknown ramp action: {action}")
     channel = _channel_for(action, deck)
@@ -187,6 +266,20 @@ def sysex_press(group: str, key: str) -> list[int]:
     """Нажатие кнопки: 1, затем 0. Часть контролов Mixxx реагирует на
     фронт и без отпускания остаётся «зажатой»."""
     return _sysex(f"P{SYSEX_SEP}{group}{SYSEX_SEP}{key}")
+
+
+def sysex_engine(func: str, deck_number: int, activate: int,
+                 factor: float = 1.0, rate: float = -10.0) -> list[int]:
+    """engine.brake / engine.spinback / engine.softStart на стороне Mixxx.
+
+    Это не setValue: у этих приёмов нет контрола, они реализованы функциями
+    скрипт-движка. Скрипт разбирает "E|<функция>|<дека>|<вкл>|<factor>|<rate>"
+    и зовёт нужную. factor управляет скоростью выбега (1 — как у вертушки,
+    больше — резче), rate у spinback — стартовая скорость назад."""
+    if func not in ("brake", "spinback", "softStart"):
+        raise ValueError(f"нет такой функции движка: {func}")
+    return _sysex(f"E{SYSEX_SEP}{func}{SYSEX_SEP}{int(deck_number)}{SYSEX_SEP}"
+                  f"{int(bool(activate))}{SYSEX_SEP}{factor:g}{SYSEX_SEP}{rate:g}")
 
 
 def decode_sysex(message: list[int]) -> str:

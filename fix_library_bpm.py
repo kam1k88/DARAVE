@@ -205,7 +205,15 @@ def stale_bpm_report(bpms: list[float]) -> dict:
 
 def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
            limit: int | None = None, progress=None, log=print) -> dict:
-    con = sqlite3.connect(db_path)
+    # WAL + длинный busy_timeout. В ЭТОТ ЖЕ файл базы пишет сканер
+    # библиотеки, и они запросто идут одновременно: диджей нажал
+    # «Сканировать», потом открыл «Стратегию» — и та кикнула уточнение BPM.
+    # В журнале по умолчанию писатели блокируют друг друга намертво, а
+    # таймаут sqlite — 5 секунд: сканер получал «database is locked» и падал
+    # с кодом 1 посреди прохода (в UI — «при сканировании вылазит ошибка»).
+    con = sqlite3.connect(db_path, timeout=60.0)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=60000")
     con.row_factory = sqlite3.Row
     rows = con.execute("SELECT path, bpm FROM tracks ORDER BY path").fetchall()
     if not rows:
@@ -251,6 +259,12 @@ def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
                 con.execute("UPDATE tracks SET bpm=? WHERE path=?", (new, path))
         if not dry_run and (dmap or cmap):
             _store_maps(con, path, dmap, cmap, emap)
+        if not dry_run:
+            # Коммитим ПОТРЕКОВО, а не одним куском в конце. Общий коммит
+            # держал транзакцию записи все 5-7 минут перемера — за это время
+            # любой другой писатель гарантированно упирался в блокировку.
+            # Плюс прерванный проход больше не теряет всю проделанную работу.
+            con.commit()
         if progress:
             progress(i + 1, len(rows))
         if (i + 1) % 10 == 0:

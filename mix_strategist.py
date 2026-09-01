@@ -265,13 +265,27 @@ def technique_candidates(a: dict, b: dict, compat: float, mismatch: bool,
             out.append((w, tid, why))
 
     if mismatch:
-        add(1.00, "DNB-02", f"темпы не сводятся ({a['bpm']:g} и {b['bpm']:g}) — держать их вместе фразу нельзя.")
-        add(0.70, "DNB-19", "темпы не сводятся — рез по границе фразы.")
+        # Здесь был голый рез, и это было полумерой. Когда темпы не
+        # сводятся, накладывать НЕЧЕГО — но это не значит «просто обруби».
+        # Живой диджей в этом месте делает разрыв ОСМЫСЛЕННЫМ: эхо-хвост
+        # держит гармонию последней фразы, когда трека уже нет, а бэкспин
+        # или тейп-стоп физически останавливают пластинку, и новый темп
+        # приходит с чистого листа. Так это описывают и учебники по
+        # открытому формату, и жанровые гайды: рез без ничего слышен как
+        # ошибка, эхо и вертушка — как решение.
+        add(1.00, "TT-07", f"темпы не сводятся ({a['bpm']:g} и {b['bpm']:g}) — "
+                           f"эхо держит фразу, бэкспин ставит точку, накладывать тут нечего.")
+        add(0.85, "TT-02", "темпы не сводятся — тейп-стоп честно останавливает старый, "
+                           "новый заходит со своего темпа.")
+        add(0.70, "DNB-02", "темпы не сводятся — короткий рез по границе фразы.")
+        add(0.55, "DNB-19", "темпы не сводятся — рез по границе фразы.")
         return sorted(out, reverse=True)
 
     if compat < 0.35:
         add(1.00, "DNB-07", f"тональности жёстко спорят ({a['camelot']} и {b['camelot']}) — "
                             f"фразу вместе они не выдержат, эхо закрывает стык.")
+        add(0.85, "TT-04", "тональности спорят — реверс-ролл на последнем такте: "
+                           "наложение короткое, и его нечему испортить.")
         add(0.80, "DNB-25", "основной ход — если на слух конфликт не мешает.")
         return sorted(out, reverse=True)
 
@@ -439,6 +453,9 @@ PRESETS = (
      "новый дразнит вспышками, потом заходит на своём дропе"),
     ("quick",  "Быстро",  ("DNB-02", "DNB-19", "DNB-07"),
      "короткий рез почти без наложения — когда треки спорят"),
+    ("trick",  "Трюком",  ("TT-01", "TT-02", "TT-05", "TT-07"),
+     "приём вертушки: бэкспин, тейп-стоп, сжимающийся лупролл — "
+     "им рвут сет и прыгают между жанрами, раз-два за выступление"),
 )
 
 
@@ -461,7 +478,9 @@ def transition_presets(cands: list[tuple[float, str, str]],
         tid = next((t for t in ladder if t in available), None) or \
               next((t for t in ladder if t in TECHNIQUES), ladder[0])
         is_cut = tid in CUT_TECHNIQUES
-        fp = late_from if key in ("cut", "quick") else best_from
+        # трюк — это тоже конец фразы: бэкспин делают на последней доле,
+        # а не в середине куска
+        fp = late_from if key in ("cut", "quick", "trick") else best_from
         # рез заводит трек там, где у него уже есть бит; классика и бленд —
         # интро поверх ещё играющего старого. Это разные точки.
         tp = best_to if is_cut or not to_points_blend else to_points_blend[0]
@@ -681,19 +700,42 @@ def _outgoing_cue(track: dict, bpm: float, needed_seconds: float) -> dict:
 
 
 def _incoming_cue(track: dict, bpm: float) -> dict:
-    """Откуда запускать ВХОДЯЩИЙ трек: первая граница фразы (обычно самое
-    начало), плюс — если есть дроп — через сколько тактов после старта он
-    прилетит. Это то, ради чего диджей и считает такты: чтобы дроп нового
-    трека попал куда задумано, а не «когда получится»."""
+    """Откуда запускать ВХОДЯЩИЙ трек.
+
+    Раньше здесь стояла ПЕРВАЯ граница фразы, то есть почти всегда самое
+    начало трека. Для плана сета эту ошибку уже чинили и мерили (см.
+    claude/mix-timing.md): у треков этой библиотеки интро без барабанов
+    длится 40-110 секунд, и заводить новый трек туда — значит резать с
+    громкого бита на эмбиентную подложку. Ни техника, ни точность фазы
+    этого не спасают: сводить просто не с чем.
+
+    Здесь тот же фикс: берём границу фразы не раньше, чем вступают
+    барабаны (карта барабанов посчитана по звуку — beatgrid.drum_map).
+    Если карты нет, остаётся прежнее поведение."""
     structure = track.get("structure") or {}
     bar_seconds = (60.0 / bpm * 4) if bpm else 1.4
     phrases = [float(x) for x in (structure.get("phrase_boundaries") or [])]
-    start = phrases[0] if phrases else 0.0
+    drums_at = 0.0
+    dm = structure.get("drum_map")
+    if isinstance(dm, dict):
+        try:
+            drums_at = max(0.0, float(dm.get("drums_start") or 0.0))
+        except (TypeError, ValueError):
+            drums_at = 0.0
+    after = [x for x in phrases if x >= drums_at - 0.05]
+    if after:
+        start = after[0]
+    elif drums_at > 0:
+        start = drums_at        # фраз после вступления барабанов нет — заходим по биту
+    else:
+        start = phrases[0] if phrases else 0.0
 
     out = {
         "time_seconds": round(start, 1),
         "bar_index": round(start / bar_seconds),
-        "label": f"с {_fmt_time(start)}" if start > 0.5 else "с начала трека",
+        "label": (f"с {_fmt_time(start)}" if start > 0.5 else "с начала трека")
+                 + (f" (бит с {_fmt_time(drums_at)})" if drums_at > 1.0 else ""),
+        "drums_start_seconds": round(drums_at, 1),
     }
     drops = structure.get("drops") or []
     if drops:
@@ -725,7 +767,8 @@ def technique_cue_hints(technique: Technique, a: dict, b: dict) -> dict:
     }
 
 
-def recommend_tracks_for_technique(technique: Technique, tracks: list[dict], top_n: int = 3) -> list[dict]:
+def recommend_tracks_for_technique(technique: Technique, tracks: list[dict], top_n: int = 3,
+                                   offset: int = 0) -> list[dict]:
     """Перебирает все упорядоченные пары треков библиотеки и возвращает
     top_n, лучше всего подходящих под критерии technique. O(N²) по трекам —
     для типичной библиотеки ди-джея (сотни, не миллионы треков) это доли
@@ -742,13 +785,39 @@ def recommend_tracks_for_technique(technique: Technique, tracks: list[dict], top
             scored.append((score, compat, bpm_diff_pct, a, b))
     scored.sort(key=lambda row: row[0], reverse=True)
 
+    # РАЗНООБРАЗИЕ. Раньше здесь был только запрет одной и той же пары в
+    # обе стороны, и этого мало: оценка пары почти не зависит от того, кто
+    # из двух треков стоит первым, поэтому «самый совместимый» трек
+    # библиотеки выигрывал в роли A во ВСЕХ трёх примерах. Диджей видел
+    # три карточки, отличающиеся только вторым треком, и справедливо
+    # говорил, что примеры некрасивые: приём показывали на одном и том же
+    # материале.
+    #
+    # Лимит на трек — два появления во всём списке. Ноль был бы слишком
+    # строг (половина библиотеки просто не попала бы в пары), а без лимита
+    # список вырождается в веер вокруг одного трека.
+    MAX_PER_TRACK = 2
+    used: dict[str, int] = {}
     out = []
     seen_pairs = set()
+    skipped = 0
     for score, compat, bpm_diff_pct, a, b in scored:
         key = frozenset((a.get("name"), b.get("name")))
         if key in seen_pairs:
             continue  # не показываем и A->B, и B->A одновременно — только лучшее направление
         seen_pairs.add(key)
+        na, nb = a.get("name"), b.get("name")
+        if used.get(na, 0) >= MAX_PER_TRACK or used.get(nb, 0) >= MAX_PER_TRACK:
+            continue
+        used[na] = used.get(na, 0) + 1
+        used[nb] = used.get(nb, 0) + 1
+        # offset — «покажи другие пары»: подбор ранжирует всю библиотеку,
+        # и следующие по счёту пары не хуже качественно, просто другие.
+        # Диджею важно именно это: услышать приём на СВОЁМ материале, а не
+        # три раза на одной и той же паре, которая алгоритму нравится.
+        if skipped < offset:
+            skipped += 1
+            continue
         el_a, el_b = _el_pair(a, b, el_map)
         out.append({
             "track_a": {"name": a["name"], "path": a.get("path"), "bpm": a["bpm"], "camelot": a["camelot"]},

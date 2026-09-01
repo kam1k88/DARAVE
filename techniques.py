@@ -44,6 +44,11 @@ class Technique:
     requires_decks: int
     params: list[TechniqueParam] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
+    # Техника РАССЧИТЫВАЕТ УСЛЫШАТЬ голос отдельно, а не просто ведёт его
+    # фейдером вместе с остальными слоями. Разница важная: обмен
+    # барабанами двигает и вокальный слой, но если тот пустой — приём всё
+    # равно звучит правильно. Акапелла на пустом слое даёт тишину.
+    needs_vocals: bool = False
 
     def param_defaults(self) -> dict[str, float]:
         return {p.key: p.default for p in self.params}
@@ -258,7 +263,10 @@ def _build_key_jump(source: str, target: str, bpm: float, p: dict) -> list[dict]
 def _build_reverse_drop(source: str, target: str, bpm: float, p: dict) -> list[dict]:
     hold_beats = p["reverse_beats"]
     return [
-        _hold(0, "reverse_hold", source, hold_beats),
+        # reverse_hold привязан к `reverseroll` Mixxx — это censor, то есть
+        # реверс СО СЛИПОМ: после отпускания трек идёт там же, где шёл бы.
+        {"beat_offset": 0, "action": "reverse_play", "deck": source, "kind": "hold",
+         "duration_beats": hold_beats, "params": {"slip": 1}},
         _discrete(hold_beats, "sync", target),
         _ramp(hold_beats, "crossfade", source, 1, 0.0, 1.0),
     ]
@@ -449,7 +457,11 @@ def _build_classic(source: str, target: str, bpm: float, p: dict) -> list[dict]:
 
     # короткий реверс прямо перед обменом — «вдох» перед сменой трека
     if rev > 0:
-        ev.append(_hold(swap_at - rev, "reverse_hold", source, rev))
+        # реверс не может начаться раньше самого сведения: при 32 долях и
+        # коротком заходе точка ухода уехала бы в отрицательное время
+        rev = min(rev, max(0.0, swap_at - 1.0))
+        if rev > 0:
+            ev.append(_hold(swap_at - rev, "reverse_hold", source, rev))
 
     # Середина входящего, пока обе деки идут барабанами. Снятого низа тут
     # мало: он разводит бочки, а «коняшки» дают ТЕЛА барабанов — 300-3000
@@ -515,8 +527,11 @@ def _build_stutter_effect(source: str, target: str, bpm: float, p: dict) -> list
     events = []
     for i in range(repeats):
         t = i * step
-        events.append(_discrete(t, "loop_activate", source, {"beats": step}))
-        events.append(_discrete(t + step * 0.5, "loop_exit", source))
+        # статтер — это РОЛЛ: со слипом, иначе каждый повтор уводил бы трек
+        # назад и к концу серии он отставал бы на всю их сумму
+        events.append({"beat_offset": t, "action": "loop_roll", "deck": source,
+                       "kind": "hold", "duration_beats": step,
+                       "params": {"beats": step * 0.5, "slip": 1}})
     events.append(_discrete(repeats * step, "sync", target))
     events.append(_discrete(repeats * step, "play_from_cue", target))
     events.append(_ramp(repeats * step, "crossfade", source, 4, 0.0, 1.0))
@@ -524,11 +539,15 @@ def _build_stutter_effect(source: str, target: str, bpm: float, p: dict) -> list
 
 
 def _build_backspin_transition(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    # Раньше это был reverse_hold + play_toggle: реверс на полной скорости
+    # и мьют. Бэкспин — другое: обороты стартуют в разы выше нормы и гаснут
+    # трением, вместе с ними уезжает высота. Сама остановка встроена в
+    # spinback, глушить деку отдельно не нужно.
     return [
-        _hold(0, "reverse_hold", source, p["spin_beats"]),
-        _discrete(p["spin_beats"], "play_toggle", source),  # стоп на "выезде" бэкспина
+        {"beat_offset": 0, "action": "spinback", "deck": source, "kind": "hold",
+         "duration_beats": p["spin_beats"], "params": {"rate": -9.0}},
         _discrete(p["spin_beats"], "play_toggle", target),
-        _ramp(p["spin_beats"], "crossfade", source, 0.1, 0.0, 1.0),  # мгновенный рез на target
+        _ramp(p["spin_beats"], "crossfade", source, 0.1, 0.0, 1.0),
     ]
 
 
@@ -563,11 +582,17 @@ def _build_bass_cut_swap(source: str, target: str, bpm: float, p: dict) -> list[
 
 
 def _build_a_cappella_overlay(source: str, target: str, bpm: float, p: dict) -> list[dict]:
-    raise NotImplementedError(
-        "A Cappella Overlay требует живого доступа к стемам (вокал отдельно) — "
-        "сейчас DARAVE умеет только офлайн-разделение (stems.py), живого "
-        "независимого канала под вокал на деке ещё нет (см. README 'Что дальше')."
-    )
+    """Историческое имя приёма «Акапелла поверх» (см. ST-01).
+
+    Здесь стояла заглушка с NotImplementedError: пока стемов не было,
+    честнее было отказаться, чем притвориться. Теперь слои считаются
+    офлайн, и приём собирается из тех же событий, что ST-01 — параметры
+    переводим в его словарь, чтобы не держать два разных рецепта одного
+    и того же."""
+    return _build_acappella_over(source, target, bpm, {
+        "hold_bars": float(p.get("overlay_bars", p.get("hold_bars", 8))),
+        "tail_beats": float(p.get("tail_beats", 4)),
+    })
 
 
 # --- реестр техник ---
@@ -666,10 +691,17 @@ _register(Technique(
 
 _register(Technique(
     id="DNB-09", name="A Cappella Overlay", category="dnb", difficulty=4,
-    description="Вокал одного трека поверх инструментала другого. Требует живого доступа к стемам — пока не реализовано (см. README).",
+    description="Вокал одного трека поверх инструментала другого. Историческое имя приёма «Акапелла поверх» (ST-01) — собирается теми же событиями.",
     bpm_delta_max=6, key_rule="compatible", energy_direction="any", requires_stems=True, requires_decks=2,
-    params=[],
-    steps=["(недоступно) Нужен отдельный канал под вокальный стем — сейчас DARAVE умеет только офлайн Demucs, не живое разделение на деке."],
+    needs_vocals=True,
+    params=[
+        TechniqueParam("overlay_bars", "Голос над новым треком", 8, 2, 32, "тактов"),
+        TechniqueParam("tail_beats", "Уход голоса в эхо", 4, 1, 16, "долей"),
+    ],
+    steps=["Завести новый инструменталом, его вокал выключен.",
+           "У старого погасить всё, кроме голоса.",
+           "Голос поёт над новым треком.",
+           "Голос уходит в эхо, у нового возвращается свой вокал."],
 ), _build_a_cappella_overlay)
 
 _register(Technique(
@@ -833,16 +865,20 @@ _register(Technique(
     description="Основной ход: новый заводится своим интро под старый со снятым низом, фразу-две они идут вместе, потом один обмен низом и старый уводится фильтром с эхом. Длина сведения — 4-12 тактов, как у живого диджея.",
     bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
-        TechniqueParam("blend_bars", "Длина сведения", 8, 4, 16, "тактов"),
-        TechniqueParam("entry_delay_bars", "Пауза перед входом нового", 0, 0, 4, "тактов"),
-        TechniqueParam("entry_ramp_beats", "Ввод нового за", 2, 1, 16, "долей"),
-        TechniqueParam("out_bars", "Из них на вывод старого", 4, 2, 8, "тактов"),
-        TechniqueParam("under_level", "Насколько слышен новый под старым", 0.40, 0.15, 0.6),
-        TechniqueParam("mid_duck", "Убрать середину у нового, пока играют оба", 0.0, 0.0, 0.8),
-        TechniqueParam("swap_bars", "Обмен низом за", 1, 0.5, 2, "тактов"),
-        TechniqueParam("loop_bars", "Луп последней фразы старого", 4, 0, 8, "тактов"),
+        # Диапазоны нарочно шире, чем нужно «по умолчанию»: значения по
+        # умолчанию — это то, как сводят обычно, а границы — предел, за
+        # которым техника перестаёт быть собой. Ручку, упёртую в край, слышно
+        # как ограничение инструмента, а не как решение.
+        TechniqueParam("blend_bars", "Длина сведения", 8, 2, 32, "тактов"),
+        TechniqueParam("entry_delay_bars", "Пауза перед входом нового", 0, 0, 8, "тактов"),
+        TechniqueParam("entry_ramp_beats", "Ввод нового за", 2, 1, 32, "долей"),
+        TechniqueParam("out_bars", "Из них на вывод старого", 4, 1, 16, "тактов"),
+        TechniqueParam("under_level", "Насколько слышен новый под старым", 0.40, 0.0, 1.0),
+        TechniqueParam("mid_duck", "Убрать середину у нового, пока играют оба", 0.0, 0.0, 1.0),
+        TechniqueParam("swap_bars", "Обмен низом за", 1, 0.25, 8, "тактов"),
+        TechniqueParam("loop_bars", "Луп последней фразы старого", 4, 0, 32, "тактов"),
         TechniqueParam("echo", "Эхо на уходе старого", 0.55, 0.0, 1.0),
-        TechniqueParam("reverse_beats", "Реверс перед обменом", 0, 0, 4, "долей"),
+        TechniqueParam("reverse_beats", "Реверс перед обменом", 0, 0, 32, "долей"),
     ],
     steps=["Sync, запустить новый трек с его интро.",
            "Низ у нового снят полностью — играет один бас, старого.",
@@ -851,6 +887,803 @@ _register(Technique(
            "На границе фразы — один обмен низом за такт.",
            "Старый уводится фильтром и уходит в эхо; хвост дилея склеивает стык."],
 ), _build_classic)
+
+
+
+# --- Приёмы вертушки: то, чем диджеи реально «рвут» сет ---
+#
+# Раньше в библиотеке они были только по названию: Backspin делался
+# действием reverse_hold, а оно в офлайн-рендере просто переворачивало
+# кусок буфера — реверс на ПОЛНОЙ скорости, без падения оборотов и без
+# падения высоты. То есть ровно того, по чему бэкспин и тейп-стоп узнаются
+# на слух, там не было вовсе.
+#
+# Теперь это отдельный словарь действий (см. transport.py), который двигает
+# ПОЗИЦИЮ ИГЛЫ, а не обрабатывает звук:
+#   brake        — выбег до остановки (тейп-стоп, «Stop» на Technics);
+#   spinback     — рука кидает пластинку назад в N крат, трение гасит;
+#   soft_start   — мотор разгоняется с нуля до рабочей скорости;
+#   reverse_play — реверс; со слипом это censor / reverse roll;
+#   loop_roll    — моментарный луп со слипом (после отпускания трек НЕ сбит);
+#   loop_activate/loop_exit — обычный луп;
+#   beatjump     — прыжок по сетке.
+#
+# Где эти приёмы уместны — не вкусовщина, а жанровая норма:
+#   * DnB / джангл / дабстеп — спинбэк и ревайнд это часть культуры
+#     («wheel-up»), спинбэком закругляют сведение;
+#   * хип-хоп / фанк — vinyl stop, бэкспин, рез, эхо;
+#   * хаус / транс — почти никогда: там длинный бленд и EQ;
+#   * техно — лупы и FX, но не вертушечные трюки;
+#   * открытый формат — всё сразу, и именно трюком делают прыжок
+#     между жанрами и темпами.
+# Поэтому автоматический выбор трюки НЕ ставит (кроме случая, когда темпы
+# объективно не сводятся), но они доступны пресетом и вручную.
+
+def _transport(beat_offset: float, action: str, deck: str, duration_beats: float,
+               params: dict | None = None) -> dict:
+    """Событие, двигающее иглу. duration_beats — сколько ДЛИТСЯ приём,
+    а не сколько материала он проматывает: бэкспин укладывается в одну
+    долю, но уводит трек на три-четыре доли назад."""
+    return {"beat_offset": beat_offset, "action": action, "deck": deck, "kind": "hold",
+            "duration_beats": duration_beats, "params": params or {}}
+
+
+def _land_on_bar(beats: float) -> float:
+    """Ближайшая ГРАНИЦА ТАКТА не раньше, чем через beats долей.
+
+    Приём вертушки не «начинается» на границе фразы — он на ней
+    ЗАКАНЧИВАЕТСЯ: бэкспин делают на последней доле перед «разом», а не
+    после него. Поэтому техника считает, где приём должен приземлиться, и
+    отступает назад на его длительность. Иначе между смертью старого трека
+    и стартом нового зияет дырка в три доли — ровно то, чего живой диджей
+    не допускает никогда."""
+    import math
+    return 4.0 * max(1.0, math.ceil(beats / 4.0))
+
+
+def _build_spinback_cut(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Классический бэкспин: последняя доля фразы — пластинку назад,
+    трек умирает, новый входит на «раз» следующего такта."""
+    spin = p["spin_beats"]
+    land = _land_on_bar(spin)
+    return [
+        _discrete(0, "sync", target),
+        _transport(land - spin, "spinback", source, spin, {"rate": -abs(p["spin_rate"])}),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_tape_stop(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Плёнка/пластинка тормозит до полной остановки: темп и высота уезжают
+    вниз вместе — это одно движение, а не эффект. Новый трек заходит с
+    границы такта после остановки."""
+    brake = p["brake_beats"]
+    land = _land_on_bar(brake)
+    start = land - brake
+    return [
+        _discrete(0, "sync", target),
+        _transport(start, "brake", source, brake, {"curve": p["curve"]}),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_power_off(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """«Выдернули из розетки»: очень долгий выбег, когда сет надо
+    переломить целиком. Это одноразовый приём — не способ сводить."""
+    coast = p["coast_beats"]
+    land = _land_on_bar(coast)
+    start = land - coast
+    return [
+        _discrete(0, "sync", target),
+        _transport(start, "brake", source, coast, {"curve": 1.15}),
+        _ramp(start, "fx_meta", source, coast, 0.0, 0.45),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_reverse_roll_in(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Reverse roll (censor) на уходящем: последний такт идёт задом наперёд,
+    но благодаря слипу трек НЕ сбивается — фраза кончается там же, где
+    кончилась бы. Под ним уже играет новый, и на «раз» они меняются."""
+    under = p["under_bars"] * 4
+    rev = min(p["reverse_beats"], max(1.0, under - 2))
+    level = 0.4          # насколько слышен новый, пока идёт под старым
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        # низ у нового снят: играет один бас, старого
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        # Слышимость входящей деки здесь ведёт КРОССФЕЙДЕР, а не
+        # volume_ramp: в рендере громкости дек сводятся равной мощностью
+        # именно по нему (см. demo_render, _equal_power(cf_env)), и дека,
+        # у которой фейдер на нуле, не зазвучит ни от какой громкости.
+        _ramp(0, "crossfade", source, 2, 0.0, level),
+        _ramp(2, "crossfade", source, under - rev - 2, level, level),
+        _transport(under - rev, "reverse_play", source, rev, {"slip": 1}),
+        _ramp(under - rev, "fx_meta", source, rev, 0.0, 0.5),
+        _cut(under, source, level, 1.0),
+        _ramp(under, "eq_low", target, 2, 0.0, EQ_UNITY),
+    ]
+
+
+def _build_loop_roll_build(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Лупролл, который вдвое короче на каждом шаге: 4 -> 2 -> 1 -> 1/2 ->
+    1/4. Ухо читает сжимающийся луп как разгон, и на «раз» после него
+    новый трек садится сам собой. Ролл идёт со слипом: если бы это был
+    обычный луп, трек уехал бы назад на всю сумму повторов."""
+    steps = int(p["steps"])
+    beats = float(p["start_beats"])
+    t = 0.0
+    events: list[dict] = [_discrete(0, "sync", target)]
+    for _ in range(max(1, steps)):
+        # луп надо УСЛЫШАТЬ повторённым: держим его хотя бы два оборота,
+        # иначе четырёхдольный «ролл» длиной в четыре доли — это просто
+        # трек, играющий сам себя, и ничего не происходит
+        hold = max(beats * 2.0, 1.0)
+        events.append(_transport(t, "loop_roll", source, hold, {"beats": beats, "slip": 1}))
+        t += hold
+        beats = max(0.125, beats / 2.0)
+    land = _land_on_bar(t)
+    events += [
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+    return events
+
+
+def _build_loop_out(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Уходящий уходит в луп на последней фразе и висит там, пока новый
+    заходит целиком. Луп — единственный способ дождаться фразы нового
+    трека, не обрывая старый на полуслове."""
+    loop_beats = p["loop_bars"] * 4
+    hold = max(p["hold_bars"] * 4, loop_beats + 4)
+    level = 0.4
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _discrete(0, "loop_activate", source, {"beats": loop_beats}),
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        _ramp(0, "crossfade", source, 2, 0.0, level),
+        _ramp(2, "crossfade", source, hold - 6, level, level),
+        _ramp(hold * 0.5, "filter_sweep", source, hold * 0.5, 0.0, 0.85, "ease_in"),
+        _ramp(hold - 4, "eq_low", source, 4, EQ_UNITY, 0.0),
+        _ramp(hold - 4, "eq_low", target, 4, 0.0, EQ_UNITY),
+        _discrete(hold, "loop_exit", source),
+        _ramp(hold - 4, "crossfade", source, 8, level, 1.0),
+    ]
+
+
+def _build_echo_spinback(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Эхо-хвост и бэкспин поверх него. Эхо держит гармонию последней
+    фразы, пока трека уже нет, — поэтому приём работает даже там, где
+    тональности спорят и темпы не сводятся."""
+    echo = p["echo_beats"]
+    spin = p["spin_beats"]
+    land = _land_on_bar(echo + spin)
+    open_at = max(0.0, land - spin - echo)
+    return [
+        _discrete(0, "sync", target),
+        # Посыл на дилей — это НЕ плавное нарастание с начала фразы.
+        # Диджей открывает его в конце, на последних долях: линия задержки
+        # должна забрать ПОСЛЕДНЮЮ фразу, ту, что будет звенеть над новым
+        # треком. Ручка, открытая с начала, забирает начало — ровно то,
+        # что было слышно как «эхо берёт первую половину».
+        _ramp(open_at, "fx_meta", source, 0.5, 0.0, 0.95),
+        _ramp(open_at + 0.5, "fx_meta", source, max(0.5, echo - 0.5), 0.95, 0.95),
+        _transport(land - spin, "spinback", source, spin, {"rate": -abs(p["spin_rate"])}),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_loop_choke_spin(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Луп делится пополам до предела, потом бэкспин.
+
+    То, что диджеи делают руками чаще всего: взять луп на последней фразе
+    и жать «половину» — 4 доли, 2, 1, 1/2, 1/4 — пока трек не свернётся в
+    гудящую точку. Ухо читает удвоение частоты повторов как разгон, и на
+    пределе разгон разрешается бэкспином.
+
+    Каждая ступень держится ОДИНАКОВОЕ время, а не одинаковое число
+    повторов: только тогда частота повторов удваивается на каждом шаге, и
+    получается разгон. Держать «по два оборота» значило бы, что каждая
+    следующая ступень вдвое короче предыдущей, и весь приём кончился бы,
+    не начавшись."""
+    step = float(p["step_beats"])
+    beats = float(p["start_beats"])
+    floor = float(p["min_beats"])
+    t = 0.0
+    ev: list[dict] = [_discrete(0, "sync", target)]
+    while True:
+        ev.append(_transport(t, "loop_roll", source, step, {"beats": beats, "slip": 1}))
+        t += step
+        if beats <= floor + 1e-6:
+            break
+        beats = max(floor, beats / 2.0)
+    spin = float(p["spin_beats"])
+    land = _land_on_bar(t + spin)
+    return ev + [
+        _transport(land - spin, "spinback", source, spin, {"rate": -abs(p["spin_rate"])}),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_rewind(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Ревайнд / wheel-up: пластинку уводят далеко назад, и новый трек
+    поднимается с нуля до рабочей скорости — так дроп читается как
+    объявленный. В джангле, DnB и дабстепе это часть культуры, а не трюк
+    ради трюка."""
+    spin = p["spin_beats"]
+    ramp = p["start_bars"] * 4
+    land = _land_on_bar(spin)
+    return [
+        _discrete(0, "sync", target),
+        _transport(land - spin, "spinback", source, spin, {"rate": -abs(p["spin_rate"])}),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+        _transport(land, "soft_start", target, ramp),
+    ]
+
+
+
+_register(Technique(
+    id="TT-01", name="Спинбэк в рез", category="turntable", difficulty=3,
+    description="Пластинку кидают назад на последней доле фразы: обороты и высота улетают вверх и гаснут, трек умирает, новый входит на «раз». Темпы и тональности при этом могут не сходиться вовсе — их ничто не накладывает.",
+    bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("spin_beats", "Длительность спина", 1, 0.25, 4, "долей"),
+        TechniqueParam("spin_rate", "Сила броска", 9, 3, 16, "крат"),
+    ],
+    steps=["Довести уходящий до последней доли фразы.",
+           "Бросок пластинки назад — обороты гаснут за долю.",
+           "Фейдер на новый трек, новый стартует с «раза» следующего такта."],
+), _build_spinback_cut)
+
+_register(Technique(
+    id="TT-02", name="Тейп-стоп", category="turntable", difficulty=2,
+    description="Выбег до полной остановки: темп и высота уезжают вниз ВМЕСТЕ, потому что это одно движение, а не эффект. Работает как знак препинания между кусками сета и как единственный честный способ сменить темп.",
+    bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("brake_beats", "Длительность выбега", 2, 0.5, 16, "долей"),
+        TechniqueParam("curve", "Характер торможения", 1.6, 1.0, 3.0),
+    ],
+    steps=["На границе фразы — тормоз уходящей деки.",
+           "Обороты падают за N долей, высота падает вместе с ними.",
+           "Новый трек — с «раза» следующего такта."],
+), _build_tape_stop)
+
+_register(Technique(
+    id="TT-03", name="Выключение мотора", category="turntable", difficulty=2,
+    description="Очень долгий выбег с эхом — «выдернули из розетки». Приём на один раз за сет: им ломают сет пополам или закрывают его.",
+    bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=False, requires_decks=2,
+    params=[TechniqueParam("coast_beats", "Длительность выбега", 8, 4, 32, "долей")],
+    steps=["Поднять эхо на уходящем.", "Отпустить мотор — трек вязнет и умирает.",
+           "Новый трек с границы такта."],
+), _build_power_off)
+
+_register(Technique(
+    id="TT-04", name="Реверс-ролл", category="turntable", difficulty=3,
+    description="Последний такт уходящего идёт задом наперёд, но со слипом: фраза кончается ровно там же, где кончилась бы. Новый трек уже играет под ним и забирает низ на «раз».",
+    bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("under_bars", "Новый идёт под старым", 8, 2, 32, "тактов"),
+        TechniqueParam("reverse_beats", "Длина реверса", 4, 1, 16, "долей"),
+    ],
+    steps=["Завести новый под играющим со снятым низом.",
+           "За N долей до границы фразы — реверс уходящего (censor).",
+           "На «раз» — фейдер и низ уходят новому."],
+), _build_reverse_roll_in)
+
+_register(Technique(
+    id="TT-05", name="Лупролл-билд", category="turntable", difficulty=4,
+    description="Лупролл, вдвое короче на каждом шаге: 4 → 2 → 1 → ½ → ¼. Сжимающийся луп ухо читает как разгон, и рез после него звучит как разрешение. Ролл идёт со слипом — трек не сбивается.",
+    bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("start_beats", "Стартовая длина лупа", 4, 1, 16, "долей"),
+        TechniqueParam("steps", "Сколько раз ужать", 4, 2, 6),
+    ],
+    steps=["Взять луп на последней фразе уходящего.",
+           "Ужимать вдвое каждый шаг, оставаясь на сетке.",
+           "На «раз» после последнего ролла — рез на новый трек."],
+), _build_loop_roll_build)
+
+_register(Technique(
+    id="TT-06", name="Луп-хвост", category="turntable", difficulty=2,
+    description="Уходящий уходит в луп на последней фразе и висит там, пока новый заходит целиком. Единственный способ дождаться фразы нового трека, не обрывая старый на полуслове — и то, чем чинят «у нового слишком длинное интро».",
+    bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("loop_bars", "Длина лупа", 4, 1, 16, "тактов"),
+        TechniqueParam("hold_bars", "Сколько держать", 8, 4, 32, "тактов"),
+    ],
+    steps=["Луп на последней фразе уходящего.",
+           "Новый заходит под ним со снятым низом.",
+           "Свип фильтра на уходящем, обмен низом за такт до конца.",
+           "Выход из лупа и фейдер на новый."],
+), _build_loop_out)
+
+_register(Technique(
+    id="TT-07", name="Эхо-хвост + спинбэк", category="turntable", difficulty=3,
+    description="Эхо забирает последнюю фразу, поверх хвоста — бэкспин. Эхо держит гармонию, когда трека уже нет, поэтому приём работает и на спорящих тональностях, и на несводимых темпах.",
+    bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("echo_beats", "Длина эха", 4, 2, 16, "долей"),
+        TechniqueParam("spin_beats", "Длительность спина", 1, 0.25, 4, "долей"),
+        TechniqueParam("spin_rate", "Сила броска", 9, 3, 16, "крат"),
+    ],
+    steps=["Поднять эхо на уходящем к границе фразы.",
+           "Бэкспин поверх хвоста эха.",
+           "Новый трек с «раза» следующего такта."],
+), _build_echo_spinback)
+
+_register(Technique(
+    id="TT-08", name="Ревайнд", category="turntable", difficulty=4,
+    description="Wheel-up: пластинку уводят далеко назад, и новый трек поднимается с нуля до рабочей скорости. В джангле, DnB и дабстепе это часть культуры — так объявляют дроп.",
+    bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
+    params=[
+        # Ревайнд — не бэкспин. Бэкспин укладывается в долю и звучит как
+        # точка; ревайнд тянут ЦЕЛЫЙ ТАКТ, и слышно, как пластинка едет.
+        # Раньше здесь стояло 2 доли на 12 крат: пулей, и за одну и ту же
+        # промотку назад. Теперь такт на шести кратах — та же дистанция,
+        # но её слышно.
+        TechniqueParam("spin_beats", "Длительность ревайнда", 4, 1, 16, "долей"),
+        TechniqueParam("spin_rate", "Сила броска", 6, 2, 20, "крат"),
+        TechniqueParam("start_bars", "Разгон нового", 1, 0.25, 4, "тактов"),
+    ],
+    steps=["Ревайнд уходящего — далеко назад.",
+           "Новый стартует с нуля и разгоняется до рабочей скорости.",
+           "Дроп попадает ровно на выход разгона."],
+), _build_rewind)
+
+
+
+# --- Техники по слоям (стемам) ---
+#
+# Всё, что выше, работает с готовым стерео-мастером: эквалайзер, фильтр,
+# фейдер. Этого достаточно, пока накладываются интро и хвост, и перестаёт
+# хватать ровно там, где начинается интересное — когда обе деки играют с
+# битом. Измерено на реальных переходах: 180-500 Гц и 500-2000 Гц дают
+# перебор +2..+3 dB над громчайшим из двух, и вычистить это эквалайзером
+# НЕЛЬЗЯ, потому что обеим дорожкам эти полосы нужны.
+#
+# Слои снимают задачу целиком: барабаны одного трека и гармония другого
+# не спорят, потому что их больше не складывают. Отсюда приёмы, которых
+# без разделения не существует в принципе:
+#   * акапелла поверх чужого инструментала;
+#   * обмен барабанами (то, что делает Traktor Stems);
+#   * честный обмен БАСОМ — именно инструментом, а не полосой ниже 180 Гц,
+#     в которую заодно попадает бочка и низ пэда;
+#   * дабл-дроп, в котором ритм-секция берётся у одного трека, а гармония
+#     у другого — и он не превращается в кашу.
+#
+# Слои: drums, bass, other (гармония), vocals. Действие stem_gain(слой)
+# работает как отдельный фейдер на каждый — так же, как на пульте со
+# стемами, ДО эквалайзера и фильтра канала.
+
+STEMS = ("drums", "bass", "other", "vocals")
+
+
+def _stem(beat_offset: float, deck: str, stem: str, duration_beats: float,
+          value_from: float, value_to: float, curve: str = "linear") -> dict:
+    """Фейдер одного слоя. 1.0 — слой звучит целиком, 0.0 — его нет."""
+    return {"beat_offset": beat_offset, "action": "stem_gain", "deck": deck,
+            "kind": "ramp", "duration_beats": max(0.01, duration_beats),
+            "value_from": value_from, "value_to": value_to, "curve": curve,
+            "params": {"stem": stem}}
+
+
+def _stems_at(beat: float, deck: str, levels: dict, ramp_beats: float = 0.5) -> list[dict]:
+    """Выставить сразу несколько слоёв деки. Не мгновенно, а за полдоли:
+    мгновенный обрыв слоя щёлкает так же, как мгновенный фейдер."""
+    return [_stem(beat, deck, k, ramp_beats, v, v) for k, v in levels.items()]
+
+
+def _build_acappella_over(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Вокал уходящего поверх инструментала входящего.
+
+    Приём открытого формата и главная причина, ради которой вокал вообще
+    выделяют отдельным слоем. Порядок такой: новый заходит инструменталом
+    (вокала у него нет — он выключен), у старого постепенно гаснет всё,
+    кроме голоса, и какое-то время голос старого поёт над новым треком.
+    Потом голос уходит в эхо, а у нового возвращается свой вокал."""
+    hold = p["hold_bars"] * 4
+    tail = p["tail_beats"]
+    ramp = 4.0
+    ev = [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "crossfade", source, ramp, 0.0, 0.5),
+        # у входящего вокала пока нет: два голоса разом — единственный
+        # клэш, который слышат вообще все
+        *_stems_at(0, target, {"vocals": 0.0}),
+    ]
+    # у уходящего гасим всё, кроме голоса
+    for part in ("drums", "bass", "other"):
+        ev.append(_stem(ramp, source, part, ramp, 1.0, 0.0, "ease_out"))
+    ev += [
+        _ramp(ramp, "crossfade", source, ramp, 0.5, 0.35),
+        # голос ещё поёт над новым треком
+        _ramp(hold - tail, "fx_meta", source, tail, 0.0, 0.9, "ease_in"),
+        _stem(hold - tail, source, "vocals", tail, 1.0, 0.0, "ease_out"),
+        _cut(hold, source, 0.35, 1.0),
+        _stem(hold, target, "vocals", ramp, 0.0, 1.0),
+    ]
+    return ev
+
+
+def _build_drum_swap(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Обмен барабанами: то, что делает Traktor Stems.
+
+    Новый трек заходит ОДНИМИ барабанами под гармонию старого — их некуда
+    складывать, потому что барабаны старого в этот момент выключены. Ухо
+    слышит смену ритма раньше, чем смену трека, и это самый плавный из
+    возможных переходов между разными по настроению вещами."""
+    under = p["under_bars"] * 4
+    swap = p["swap_beats"]
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "crossfade", source, 2, 0.0, 0.5),
+        # входящий — только барабаны
+        *_stems_at(0, target, {"bass": 0.0, "other": 0.0, "vocals": 0.0}),
+        # у уходящего барабаны уходят ровно в тот же момент
+        _stem(0, source, "drums", swap, 1.0, 0.0, "ease_out"),
+        # через фразу возвращаем новому всё остальное, у старого забираем
+        _stem(under, target, "bass", swap, 0.0, 1.0),
+        _stem(under, target, "other", swap, 0.0, 1.0),
+        _stem(under, target, "vocals", swap, 0.0, 1.0),
+        _stem(under, source, "bass", swap, 1.0, 0.0),
+        _stem(under, source, "other", swap, 1.0, 0.0, "ease_out"),
+        _stem(under, source, "vocals", swap, 1.0, 0.0, "ease_out"),
+        _ramp(under, "crossfade", source, swap * 2, 0.5, 1.0),
+    ]
+
+
+def _build_bass_handover(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Честный обмен басом — инструментом, а не полосой.
+
+    Обмен низом эквалайзером всегда забирает не только бас: ниже 180 Гц
+    живут ещё бочка и тело пэда, и поэтому «обмен низом» слышен как
+    короткий провал. Со слоями меняется ровно бас, а бочка обеих дек
+    остаётся на месте."""
+    under = p["under_bars"] * 4
+    swap = p["swap_beats"]
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "crossfade", source, 2, 0.0, p["under_level"]),
+        *_stems_at(0, target, {"bass": 0.0}),
+        _stem(under, target, "bass", swap, 0.0, 1.0),
+        _stem(under, source, "bass", swap, 1.0, 0.0),
+        _ramp(under, "crossfade", source, swap * 2, p["under_level"], 1.0),
+        _ramp(under + swap * 2, "fx_meta", source, 4, 0.0, 0.5),
+    ]
+
+
+def _build_stem_double_drop(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Дабл-дроп, который не превращается в кашу.
+
+    Обычный дабл-дроп — это два полных мастера разом, и звучит он ровно
+    так, как звучат два полных мастера разом. Со слоями ритм-секция
+    берётся у ОДНОГО трека, а гармония и голос у другого: слышно оба
+    трека, а складывать нечего."""
+    hold = p["hold_bars"] * 4
+    ramp = 2.0
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "crossfade", source, ramp, 0.0, 0.5),
+        # ритм — у уходящего, гармония и голос — у входящего
+        *_stems_at(0, target, {"drums": 0.0, "bass": 0.0}),
+        *_stems_at(0, source, {"other": 0.0, "vocals": 0.0}),
+        # к концу совмещения ритм отдаётся входящему
+        _stem(hold, target, "drums", ramp, 0.0, 1.0),
+        _stem(hold, target, "bass", ramp, 0.0, 1.0),
+        _stem(hold, source, "drums", ramp, 1.0, 0.0),
+        _stem(hold, source, "bass", ramp, 1.0, 0.0),
+        _ramp(hold, "crossfade", source, ramp * 2, 0.5, 1.0),
+    ]
+
+
+def _build_vocal_echo_out(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Уходящий разбирается на части: сначала уходит ритм, потом гармония,
+    последним остаётся голос — и уходит в эхо.
+
+    Это способ закончить трек, когда следующий совсем другой: к моменту
+    смены от старого остаётся один голос, и он не спорит ни с чем."""
+    step = p["step_bars"] * 4
+    tail = p["tail_beats"]
+    land = step * 3 + tail
+    return [
+        _discrete(0, "sync", target),
+        _stem(0, source, "drums", step, 1.0, 0.0, "ease_out"),
+        _stem(step, source, "bass", step, 1.0, 0.0, "ease_out"),
+        _stem(step * 2, source, "other", step, 1.0, 0.0, "ease_out"),
+        _ramp(step * 3, "fx_meta", source, tail, 0.0, 0.95, "ease_in"),
+        _stem(step * 3, source, "vocals", tail, 1.0, 0.0, "ease_out"),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+
+_register(Technique(
+    id="ST-01", name="Акапелла поверх", category="stems", difficulty=4,
+    description="Голос уходящего поёт над инструменталом входящего: у нового вокал выключен, у старого выключено всё, кроме голоса. Приём открытого формата и главная причина выделять вокал отдельным слоем.",
+    bpm_delta_max=6, key_rule="compatible", energy_direction="any", requires_stems=True, requires_decks=2,
+    needs_vocals=True,
+    params=[
+        TechniqueParam("hold_bars", "Голос над новым треком", 8, 2, 32, "тактов"),
+        TechniqueParam("tail_beats", "Уход голоса в эхо", 4, 1, 16, "долей"),
+    ],
+    steps=["Завести новый инструменталом, его вокал выключен.",
+           "У старого погасить барабаны, бас и гармонию — остаётся голос.",
+           "Голос поёт над новым треком заданное число тактов.",
+           "Голос уходит в эхо, у нового возвращается свой вокал."],
+), _build_acappella_over)
+
+_register(Technique(
+    id="ST-02", name="Обмен барабанами", category="stems", difficulty=3,
+    description="Новый заходит ОДНИМИ барабанами под гармонию старого — складывать нечего, потому что барабаны старого в этот момент выключены. Ухо слышит смену ритма раньше, чем смену трека.",
+    bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=True, requires_decks=2,
+    params=[
+        TechniqueParam("under_bars", "Барабаны нового под старым", 8, 2, 32, "тактов"),
+        TechniqueParam("swap_beats", "Длина обмена", 2, 0.5, 8, "долей"),
+    ],
+    steps=["Завести новый: только барабаны, остальное выключено.",
+           "У старого барабаны уходят в тот же момент.",
+           "Через фразу вернуть новому бас, гармонию и голос, у старого забрать."],
+), _build_drum_swap)
+
+_register(Technique(
+    id="ST-03", name="Обмен басом по слою", category="stems", difficulty=2,
+    description="Меняется ровно бас — инструмент, а не полоса ниже 180 Гц. Обмен низом эквалайзером всегда уносит с собой бочку и тело пэда, и поэтому слышен как провал; здесь бочка обеих дек остаётся на месте.",
+    bpm_delta_max=4, key_rule="compatible", energy_direction="any", requires_stems=True, requires_decks=2,
+    params=[
+        TechniqueParam("under_bars", "Новый под старым", 8, 2, 32, "тактов"),
+        TechniqueParam("swap_beats", "Длина обмена", 2, 0.5, 8, "долей"),
+        TechniqueParam("under_level", "Уровень нового под старым", 0.4, 0.2, 0.7),
+    ],
+    steps=["Завести новый с выключенным басом.",
+           "Держать фразу-две.", "На границе фразы обменять бас за N долей.",
+           "Вывести старого фейдером, хвост закрыть эхом."],
+), _build_bass_handover)
+
+_register(Technique(
+    id="ST-04", name="Дабл-дроп по слоям", category="stems", difficulty=5,
+    description="Ритм-секция от одного трека, гармония и голос от другого. Слышно оба трека сразу, а складывать нечего — то, чего обычный дабл-дроп из двух полных мастеров не умеет.",
+    bpm_delta_max=3, key_rule="compatible", energy_direction="up", requires_stems=True, requires_decks=2,
+    params=[TechniqueParam("hold_bars", "Сколько держать совмещение", 8, 2, 32, "тактов")],
+    steps=["Совместить дропы обоих треков.",
+           "Барабаны и бас — у уходящего, гармония и голос — у входящего.",
+           "К концу совмещения отдать ритм входящему."],
+), _build_stem_double_drop)
+
+_register(Technique(
+    id="ST-05", name="Разбор на слои", category="stems", difficulty=3,
+    description="Уходящий разбирается по частям: сначала уходят барабаны, потом бас, потом гармония, последним остаётся голос — и уходит в эхо. Способ закончить трек, когда следующий совсем другой.",
+    bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=True, requires_decks=2,
+    params=[
+        TechniqueParam("step_bars", "Шаг разбора", 2, 1, 8, "тактов"),
+        TechniqueParam("tail_beats", "Хвост голоса в эхе", 4, 1, 16, "долей"),
+    ],
+    steps=["Убрать барабаны.", "Через N тактов убрать бас.",
+           "Ещё через N — гармонию, остаётся голос.",
+           "Голос в эхо, новый трек с границы такта."],
+), _build_vocal_echo_out)
+
+
+
+_register(Technique(
+    id="TT-09", name="Луп в бэкспин", category="turntable", difficulty=4,
+    description="Луп делится пополам до предела — 4 доли, 2, 1, ½, ¼ — пока трек не свернётся в гудящую точку, и на пределе разгон разрешается бэкспином. То, что диджеи делают руками чаще всего.",
+    bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("start_beats", "Стартовая длина лупа", 4, 1, 16, "долей"),
+        TechniqueParam("min_beats", "До какой длины делить", 0.25, 0.0625, 2, "долей"),
+        TechniqueParam("step_beats", "Сколько держать ступень", 2, 0.5, 8, "долей"),
+        TechniqueParam("spin_beats", "Длительность спина", 1, 0.25, 4, "долей"),
+        TechniqueParam("spin_rate", "Сила броска", 9, 3, 16, "крат"),
+    ],
+    steps=["Взять луп на последней фразе уходящего.",
+           "Делить пополам, держа каждую ступень одинаковое время.",
+           "На пределе — бэкспин.",
+           "Новый трек с «раза» следующего такта."],
+), _build_loop_choke_spin)
+
+
+
+# --- Эффекты как часть техники ---
+#
+# До сих пор из эффектов техника умела ровно одно — эхо, и то под именем
+# fx_meta. Диджей работает не так: у него на пульте юнит с набором
+# эффектов, и выбор эффекта — часть приёма, а не отдельная кнопка.
+#
+# Делятся эффекты на два класса, и это определяет, где эффект стоит:
+#   ПОСЫЛ (эхо, реверб) — у них есть ХВОСТ, который обязан пережить увод
+#   трека. Считаются отдельной шиной и складываются в микс ПОСЛЕ фейдера.
+#   ВСТАВКА (фленджер, фейзер, вобл, перегруз, биткрашер, фильтр) —
+#   обрабатывают сигнал деки и живут ДО фейдера: увёл фейдер, эффекта
+#   тоже нет.
+# Признак простой: есть хвост — посыл, нет — вставка.
+#
+# Скорость качания задаётся В ДОЛЯХ, а не в герцах: иначе эффект не
+# попадает в темп, и это слышно сразу.
+
+FX_UNITS = ("echo", "reverb", "flanger", "phaser", "wobble", "distortion",
+            "bitcrush", "filter")
+
+
+def _fx(beat_offset: float, deck: str, unit: str, duration_beats: float,
+        value_from: float, value_to: float, curve: str = "linear", **params) -> dict:
+    """Эффект юнита на деке. value — dry/wet 0..1."""
+    if unit not in FX_UNITS:
+        raise ValueError(f"нет такого эффекта: {unit}")
+    p = {"unit": unit}
+    p.update({k: v for k, v in params.items() if v is not None})
+    return {"beat_offset": beat_offset, "action": "fx", "deck": deck, "kind": "ramp",
+            "duration_beats": max(0.01, duration_beats), "value_from": value_from,
+            "value_to": value_to, "curve": curve, "params": p}
+
+
+def _build_flanger_out(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Фленджер уводит старый трек: гребёнка съедает середину, и место
+    для нового освобождается само, без эквалайзера."""
+    sweep = p["sweep_bars"] * 4
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        _ramp(0, "crossfade", source, 2, 0.0, 0.4),
+        _fx(0, source, "flanger", sweep, 0.0, 0.9, "ease_in",
+            rate_beats=p["rate_beats"], depth_ms=p["depth_ms"]),
+        _ramp(sweep - 4, "eq_low", source, 4, EQ_UNITY, 0.0),
+        _ramp(sweep - 4, "eq_low", target, 4, 0.0, EQ_UNITY),
+        _ramp(sweep - 4, "crossfade", source, 8, 0.4, 1.0),
+    ]
+
+
+def _build_phaser_rise(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Фейзер на ВХОДЯЩЕМ: новый трек поднимается из-под старого сквозь
+    движущиеся вырезы. Слушатель слышит, что что-то приближается, задолго
+    до того, как поймёт, что именно."""
+    rise = p["rise_bars"] * 4
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        _fx(0, target, "phaser", rise, 0.95, 0.0, "ease_out", rate_beats=p["rate_beats"]),
+        _ramp(0, "crossfade", source, rise, 0.0, 0.5),
+        _ramp(rise, "eq_low", source, 4, EQ_UNITY, 0.0),
+        _ramp(rise, "eq_low", target, 4, 0.0, EQ_UNITY),
+        _ramp(rise, "crossfade", source, 8, 0.5, 1.0),
+    ]
+
+
+def _build_wobble_swap(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Вобл качает фильтр в темп, и под это качание меняются треки.
+    То, на чём стоит половина бас-музыки: обмен прячется в движении."""
+    hold = p["hold_bars"] * 4
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        _ramp(0, "crossfade", source, 2, 0.0, 0.45),
+        _fx(0, source, "wobble", hold, 0.0, 1.0, "ease_in", rate_beats=p["rate_beats"]),
+        _fx(hold, target, "wobble", 8, 1.0, 0.0, "ease_out", rate_beats=p["rate_beats"]),
+        _ramp(hold, "eq_low", source, 2, EQ_UNITY, 0.0),
+        _ramp(hold, "eq_low", target, 2, 0.0, EQ_UNITY),
+        _cut(hold, source, 0.45, 1.0),
+    ]
+
+
+def _build_reverb_out(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Реверб-хвост: комната забирает последнюю фразу и звенит поверх
+    пустоты, пока новый трек не встанет на ноги. Посыл открывается в
+    КОНЦЕ фразы — ручка решает, что попадёт в комнату, а не что из неё
+    выйдет."""
+    tail = p["tail_beats"]
+    land = _land_on_bar(tail + 2)
+    open_at = max(0.0, land - tail)
+    return [
+        _discrete(0, "sync", target),
+        _fx(open_at, source, "reverb", 0.5, 0.0, 0.95, "linear",
+            decay_beats=p["decay_beats"]),
+        _fx(open_at + 0.5, source, "reverb", max(0.5, tail - 0.5), 0.95, 0.95),
+        _ramp(land - 2, "eq_low", source, 2, EQ_UNITY, 0.0),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+def _build_crush_break(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Слом: перегруз и биткрашер за пару тактов превращают трек в
+    обломок, и на этом обломке происходит рез. Приём на один раз за сет —
+    он ломает не переход, а сет."""
+    bars = p["break_bars"] * 4
+    land = _land_on_bar(bars)
+    return [
+        _discrete(0, "sync", target),
+        _fx(0, source, "distortion", bars * 0.6, 0.0, 0.8, "ease_in", drive=p["drive"]),
+        _fx(bars * 0.5, source, "bitcrush", bars * 0.5, 0.0, 0.95, "ease_in",
+            bits=p["bits"], downsample=p["downsample"]),
+        _ramp(bars * 0.5, "eq_low", source, bars * 0.5, EQ_UNITY, 0.0),
+        _cut(land, source, 0.0, 1.0),
+        _discrete(land, "play_from_cue", target),
+    ]
+
+
+
+_register(Technique(
+    id="FX-01", name="Фленджер на увод", category="fx", difficulty=2,
+    description="Гребёнка фленджера съедает середину уходящего, и место для нового освобождается само — без эквалайзера. Скорость качания задаётся в долях, поэтому эффект всегда в темп.",
+    bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("sweep_bars", "Длительность свипа", 8, 2, 32, "тактов"),
+        TechniqueParam("rate_beats", "Период качания", 4, 0.25, 16, "долей"),
+        TechniqueParam("depth_ms", "Глубина", 3.5, 0.5, 12, "мс"),
+    ],
+    steps=["Завести новый со снятым низом.",
+           "Поднять фленджер на уходящем за N тактов.",
+           "Обмен низом и вывод фейдером."],
+), _build_flanger_out)
+
+_register(Technique(
+    id="FX-02", name="Фейзер-подъём", category="fx", difficulty=3,
+    description="Фейзер на ВХОДЯЩЕМ: новый трек поднимается из-под старого сквозь движущиеся вырезы. Слышно, что что-то приближается, задолго до того, как понятно, что именно.",
+    bpm_delta_max=6, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("rise_bars", "Длительность подъёма", 8, 4, 32, "тактов"),
+        TechniqueParam("rate_beats", "Период качания", 8, 0.5, 32, "долей"),
+    ],
+    steps=["Завести новый со снятым низом и фейзером на максимуме.",
+           "Постепенно убирать фейзер — трек «проявляется».",
+           "На границе фразы обмен низом и вывод."],
+), _build_phaser_rise)
+
+_register(Technique(
+    id="FX-03", name="Вобл-переход", category="fx", difficulty=3,
+    description="Фильтр качается в темп, и под это качание меняются треки: обмен прячется в движении. То, на чём стоит половина бас-музыки.",
+    bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("hold_bars", "Длительность качания", 8, 2, 32, "тактов"),
+        TechniqueParam("rate_beats", "Период качания", 1, 0.25, 8, "долей"),
+    ],
+    steps=["Завести новый со снятым низом.",
+           "Раскачать вобл на уходящем.",
+           "На «раз» — обмен низом и рез, вобл уезжает уже на новом."],
+), _build_wobble_swap)
+
+_register(Technique(
+    id="FX-04", name="Реверб-хвост", category="fx", difficulty=1,
+    description="Комната забирает последнюю фразу и звенит поверх пустоты, пока новый трек не встанет на ноги. Посыл открывается в КОНЦЕ фразы — ручка решает, что попадёт в комнату, а не что из неё выйдет.",
+    bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("tail_beats", "Что уходит в комнату", 4, 1, 16, "долей"),
+        TechniqueParam("decay_beats", "Длина хвоста", 4, 1, 16, "долей"),
+    ],
+    steps=["На последних долях фразы открыть посыл на реверб.",
+           "Убрать низ и увести фейдер — хвост остаётся.",
+           "Новый трек с «раза» следующего такта."],
+), _build_reverb_out)
+
+_register(Technique(
+    id="FX-05", name="Дисторшн-слом", category="fx", difficulty=4,
+    description="Перегруз и биткрашер за пару тактов превращают трек в обломок, и на этом обломке происходит рез. Приём на один раз за сет — он ломает не переход, а сет.",
+    bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("break_bars", "Длительность слома", 2, 1, 8, "тактов"),
+        TechniqueParam("drive", "Перегруз", 8, 2, 20),
+        TechniqueParam("bits", "Разрядность", 6, 3, 12, "бит"),
+        TechniqueParam("downsample", "Прореживание", 8, 1, 32, "раз"),
+    ],
+    steps=["Поднять перегруз на уходящем.",
+           "Поверх — биткрашер, трек рассыпается.",
+           "Рез на границе такта."],
+), _build_crush_break)
 
 
 def build_plan(technique_id: str, plan_id: str, source: str, target: str, bpm: float,

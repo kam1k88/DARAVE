@@ -82,6 +82,8 @@ DaraveController.sendRecordingStatus = function () {
 //     S|<группа>|<ключ>|<значение>      engine.setValue()
 //     T|<группа>|<ключ>                 переключить 0<->1
 //     P|<группа>|<ключ>                 «нажатие»: 1, затем 0
+//     E|<функция>|<дека>|<вкл>|<factor>|<rate>
+//                                       engine.brake / spinback / softStart
 // Разделитель "|" выбран потому, что в именах групп есть запятые не
 // встречаются, а вот сами группы содержат скобки: [EffectRack1_EffectUnit1].
 //
@@ -131,6 +133,40 @@ DaraveController.applyCommand = function (payload) {
         engine.beginTimer(DaraveController.PRESS_RELEASE_MS, function () {
             DaraveController.safeSet(parts[1], parts[2], 0);
         }, true);
+        return;
+    }
+
+    // E|<функция>|<дека>|<вкл>|<factor>|<rate> — приёмы вертушки.
+    //
+    // brake, spinback и softStart в Mixxx НЕ являются контролами: у них
+    // нет ни группы, ни ключа, их нельзя ни замапить в XML, ни выставить
+    // через engine.setValue — это функции скрипт-движка. Поэтому для них
+    // отдельная операция, а не "S".
+    //
+    // Важно про выключение: по документации Mixxx выключение любой из трёх
+    // «возвращает деку на нормальную скорость». Значит команду с
+    // activate=0 слать после тейп-стопа НЕЛЬЗЯ — она отменит остановку.
+    // DARAVE её и не шлёт (см. midi_mapping._NO_MESSAGE), но обрабатываем
+    // честно: если пришла — выполняем, это осознанный «отпустить тормоз».
+    if (op === "E" && parts.length >= 4) {
+        const func = parts[1];
+        const deck = parseInt(parts[2], 10);
+        const activate = parts[3] === "1";
+        const factor = parts.length > 4 ? parseFloat(parts[4]) : 1.0;
+        const rate = parts.length > 5 ? parseFloat(parts[5]) : -10.0;
+        try {
+            if (func === "brake") {
+                engine.brake(deck, activate, factor);
+            } else if (func === "spinback") {
+                engine.spinback(deck, activate, factor, rate);
+            } else if (func === "softStart") {
+                engine.softStart(deck, activate, factor);
+            } else {
+                print("[DARAVE] нет такой функции движка: " + func);
+            }
+        } catch (err) {
+            print("[DARAVE] " + func + " не выполнился: " + err);
+        }
         return;
     }
 

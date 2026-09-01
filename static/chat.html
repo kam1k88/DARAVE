@@ -249,7 +249,14 @@
   .tech-exec-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
   .tech-exec-hint.warn { color: var(--warn); }
   .tech-recommend { margin: 14px 0 20px; }
-  .tech-recommend h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+  .tech-recommend h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; display: flex; align-items: center; gap: 10px; }
+  .tech-more-btn { margin-left: auto; font: inherit; text-transform: none; letter-spacing: 0; cursor: pointer;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 3px 10px; }
+  .tech-more-btn:hover { color: var(--fg); border-color: #7c5cff; }
+  .tech-swap-btn { font: inherit; cursor: pointer; background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px; padding: 0 7px; line-height: 1.6; }
+  .tech-swap-btn:hover { color: #7c5cff; border-color: #7c5cff; }
+  .tech-swap-btn:disabled { opacity: .5; cursor: default; }
   .tech-recommend .empty-hint { font-size: 13px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   .tech-pair { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .tech-pair-tracks { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
@@ -966,17 +973,22 @@
           exclude: Array.from(excludedTracks),
         }),
       });
-      const d = await r.json();
-      if (r.status === 404) {
-        // Бэкенд в памяти старее файлов на диске — у него просто нет этого
-        // адреса. Раньше здесь писалось «Not Found», и было непонятно, что
-        // делать.
-        out.textContent = "";
-        addMessage("Бэкенд работает на старом коде — этой кнопки он ещё не знает. " +
-                   "Закройте всё через stop_darave.bat и запустите start_darave.bat.", "system");
+      // Ошибку сервера НЕЛЬЗЯ разбирать как JSON: при 500 приходит обычная
+      // страница, и r.json() бросает «Unexpected token 'I', "Internal S"...».
+      // Раньше это выглядело как «кнопка мигнула и ничего», потому что
+      // сообщение уходило в чат — на другую вкладку, где его не видно.
+      const raw = await r.text();
+      let d = {};
+      try { d = raw ? JSON.parse(raw) : {}; } catch (e) { d = {}; }
+      if (!r.ok) {
+        out.textContent = r.status === 404
+          ? "нужен перезапуск (stop_darave.bat -> start_darave.bat)"
+          : (d.detail || ("ошибка " + r.status));
+        out.title = raw.slice(0, 400);
+        out.style.color = "var(--danger)";
         return;
       }
-      if (!r.ok) { out.textContent = d.detail || "не вышло"; return; }
+      out.style.color = "";
       out.innerHTML = "";
       (d.best || []).forEach(function (p, i) {
         const b = document.createElement("button");
@@ -992,7 +1004,10 @@
         out.appendChild(b);
       });
       if (!(d.best || []).length) out.textContent = "вариантов нет";
-    } catch (err) { out.textContent = "ошибка сети"; }
+    } catch (err) {
+      out.textContent = "ошибка сети: " + err;
+      out.style.color = "var(--danger)";
+    }
   });
 
   let dragFrom = null;
@@ -1468,14 +1483,21 @@
   // mix_strategist.recommend_tracks_for_technique) и даём прослушать
   // офлайн-рендер (demo_render.py) без необходимости вручную выбирать деки.
   let recommendRequestSeq = 0;
+  // «Покажи другие пары»: смещение по ранжированному списку. Алгоритм
+  // ранжирует всю библиотеку, и пары за пределами первой тройки не хуже —
+  // просто другие. Диджею нужно услышать приём на СВОЁМ материале, а не
+  // третий раз на одной и той же паре, которая понравилась алгоритму.
+  const recommendOffset = {};
 
   async function loadTechniqueRecommendations(t) {
     const container = document.getElementById("tech-recommend");
     if (!container || !currentRoom) return;
     const mySeq = ++recommendRequestSeq;
+    const off = recommendOffset[t.id] || 0;
     try {
       const resp = await fetch(
-        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/recommend",
+        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) +
+        "/recommend?offset=" + off,
       );
       const data = await resp.json();
       if (mySeq !== recommendRequestSeq) return; // юзер уже переключился на другую технику
@@ -1525,29 +1547,61 @@
         (hint || "Не нашлось подходящих пар треков в текущей библиотеке.") + '</div>';
       return;
     }
-    container.innerHTML = '<h3>Примеры из вашей библиотеки</h3>';
+    container.innerHTML =
+      '<h3>Примеры из вашей библиотеки' +
+      '<button class="tech-more-btn" title="Показать следующие пары из библиотеки">🔀 другие пары</button>' +
+      '</h3>';
+    const more = container.querySelector(".tech-more-btn");
+    if (more) {
+      more.addEventListener("click", function () {
+        recommendOffset[t.id] = (recommendOffset[t.id] || 0) + pairs.length;
+        loadTechniqueRecommendations(t);
+      });
+    }
     pairs.forEach(function (pair, idx) {
       const box = document.createElement("div");
       box.className = "tech-pair";
-      box.innerHTML =
-        '<div class="tech-pair-tracks">' +
-          '<span class="tech-pair-track">' + pair.track_a.name + '</span>' +
-          '<span class="tech-pair-meta">' + pair.track_a.bpm.toFixed(1) + ' BPM · ' + pair.track_a.camelot + '</span>' +
-          '<span class="tech-pair-arrow">→</span>' +
-          '<span class="tech-pair-track">' + pair.track_b.name + '</span>' +
-          '<span class="tech-pair-meta">' + pair.track_b.bpm.toFixed(1) + ' BPM · ' + pair.track_b.camelot + '</span>' +
-        '</div>' +
-        '<div class="tech-pair-reason">' + pair.reason + '</div>' +
-        _cueHtml(pair.cue) +
-        '<div class="tech-pair-row">' +
-          '<button class="tech-demo-btn">🎧 Демо</button>' +
-          '<div class="tech-pair-player"></div>' +
-        '</div>';
-      const btn = box.querySelector(".tech-demo-btn");
-      const player = box.querySelector(".tech-pair-player");
-      btn.addEventListener("click", function () {
-        renderTechniqueDemo(t, pair, btn, player);
-      });
+      // pair мутируется при обмене местами — держим его в замыкании
+      function paint() {
+        box.innerHTML =
+          '<div class="tech-pair-tracks">' +
+            '<span class="tech-pair-track">' + pair.track_a.name + '</span>' +
+            '<span class="tech-pair-meta">' + pair.track_a.bpm.toFixed(1) + ' BPM · ' + pair.track_a.camelot + '</span>' +
+            '<button class="tech-swap-btn" title="Поменять треки местами: A→B и B→A — это разные переходы">⇄</button>' +
+            '<span class="tech-pair-track">' + pair.track_b.name + '</span>' +
+            '<span class="tech-pair-meta">' + pair.track_b.bpm.toFixed(1) + ' BPM · ' + pair.track_b.camelot + '</span>' +
+          '</div>' +
+          '<div class="tech-pair-reason">' + pair.reason + '</div>' +
+          _cueHtml(pair.cue) +
+          '<div class="tech-pair-row">' +
+            '<button class="tech-demo-btn">🎧 Демо</button>' +
+            '<div class="tech-pair-player"></div>' +
+          '</div>';
+        const btn = box.querySelector(".tech-demo-btn");
+        const player = box.querySelector(".tech-pair-player");
+        btn.addEventListener("click", function () {
+          renderTechniqueDemo(t, pair, btn, player);
+        });
+        const swap = box.querySelector(".tech-swap-btn");
+        swap.addEventListener("click", async function () {
+          const a = pair.track_a;
+          pair.track_a = pair.track_b;
+          pair.track_b = a;
+          swap.disabled = true;
+          // Точки сведения у A→B и B→A разные — пересчитываем на сервере
+          // тем же кодом, что рисует карточку, иначе подпись соврёт.
+          try {
+            const r = await fetch(
+              "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" +
+              encodeURIComponent(t.id) + "/cue?a=" + encodeURIComponent(pair.track_a.path) +
+              "&b=" + encodeURIComponent(pair.track_b.path));
+            const d = await r.json();
+            if (r.ok && d.cue) pair.cue = d.cue;
+          } catch (e) { /* подписи останутся прежними, звук всё равно верный */ }
+          paint();
+        });
+      }
+      paint();
       container.appendChild(box);
     });
   }

@@ -1,3 +1,1 @@
-darave is multifunctional full auto ai dj.
-prepare drag&draw your tracks and create final soundset as file or DAWs timeline instruction for manual control & experiments.
-best practices with 40+ adaptive techniques transitions with eq/fx/stems.
+darave is a multifunctional full auto ai dj agent. drag and drop your tracks and get your final mix as a file or step-by-step instructions in your daw for mixing experiments. best dj practices with over 40 adaptive eq/fx/stems transition techniques.

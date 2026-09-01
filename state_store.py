@@ -19,6 +19,9 @@ class DeckState:
     position: float  # 0..1, доля пройденного трека
     track_loaded: bool
     received_at: float  # time.time() локального companion, для контроля "свежести"
+    # Сколько слоёв у загруженного трека: 0 — обычный файл, 4 — .stem.mp4.
+    # По умолчанию 0, чтобы старый companion/скрипт не ломал разбор.
+    stem_count: int = 0
 
 
 class StateStore:

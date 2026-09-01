@@ -378,12 +378,15 @@
           <div class="scan-bar">
             <input id="scan-path-input" placeholder="Папка с музыкой, напр. C:\Music" autocomplete="off">
             <button id="scan-btn">🔍 Сканировать</button>
+            <button id="stems-btn" title="Разделить треки на слои и собрать .stem.mp4 рядом с каждым — их читает Mixxx">🎚 Стемы</button>
+            <button id="cues-btn" title="Расставить в Mixxx горячие метки: первый бит, билд, дроп, брейкдаун, луп, аутро. Mixxx должен быть ЗАКРЫТ.">📍 Метки в Mixxx</button>
+            <button id="cleanup-btn" title="Убрать демо, сеты, записи и оборванные папки стемов (последние остаются)">🧹 Убрать мусор</button>
             <span id="scan-status"></span>
           </div>
           <div id="scan-progress" style="display:none"></div>
           <div class="list-body">
             <table class="lib-table">
-              <thead><tr><th>Name</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
+              <thead><tr><th>Name</th><th>Жанр</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
               <tbody id="lib-tbody"></tbody>
             </table>
             <div id="lib-empty" class="detail-col empty" style="display:none;border:none;width:auto">
@@ -416,6 +419,9 @@
                      style="width:64px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
               мин
             </label>
+            <select id="genre-filter" title="Оставить в плане только выбранный жанр или поджанр. Треки без подписи остаются всегда — у поджанра источник есть не у всех.">
+              <option value="">жанр: все</option>
+            </select>
             <button id="suggest-length-btn" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
             <span id="length-picks" style="display:flex;gap:4px;align-items:center"></span>
             <div class="spacer"></div>
@@ -657,6 +663,7 @@
       const row = document.createElement("tr");
       row.innerHTML =
         "<td>" + (tr.name || "") + "</td>" +
+        "<td>" + genreCell(tr) + "</td>" +
         "<td>" + (tr.bpm !== undefined ? tr.bpm.toFixed(1) : "—") + "</td>" +
         "<td>" + camelotBadge(tr.camelot) + "</td>" +
         "<td>" + energyBar(tr.energy) + "</td>" +
@@ -664,6 +671,59 @@
       row.addEventListener("click", function () { selectLibraryRow(i); });
       tbody.appendChild(row);
     });
+  }
+
+  // Жанр и поджанр. Прочерк вместо выдуманной подписи — сознательно:
+  // поджанр по звуку не определяется (замер в genre.py), и «ликвид» на
+  // нейрофанке испортит порядок сета надёжнее, чем пустое поле.
+  const GENRE_RU = {dnb: "днб", techno: "техно", trance: "транс", house: "хаус",
+    dubstep: "дабстеп", breaks: "брейкс", hardcore: "хардкор", garage: "гэридж",
+    hiphop: "хип-хоп", ambient: "эмбиент", electronic: "электроника", other: "прочее"};
+  const SUB_RU = {neurofunk: "нейрофанк", liquid: "ликвид", jungle: "джангл",
+    jumpup: "джамп-ап", techstep: "техстеп", drumfunk: "драмфанк",
+    halftime: "халфтайм", minimal_dnb: "минимал", ragga: "рагга",
+    big_beat: "биг-бит", psytrance: "пситранс", tech_house: "тек-хаус",
+    deep: "дип", minimal: "минимал", dub_techno: "даб-техно"};
+  const SRC_RU = {tag: "из тега", filename: "из имени файла", artist: "по артисту",
+    bpm: "по темпу", clap: "модель"};
+
+  function genreCell(tr) {
+    if (!tr.genre && !tr.subgenre) return "<span style='opacity:.35'>—</span>";
+    const g = GENRE_RU[tr.genre] || tr.genre || "";
+    if (!tr.subgenre) return g;
+    const src = SRC_RU[tr.subgenre_source] || "";
+    return g + " · <b title='" + src + "'>" + (SUB_RU[tr.subgenre] || tr.subgenre) + "</b>";
+  }
+
+  // Фильтр жанров заполняется ТЕМ, ЧТО ЕСТЬ в библиотеке (ответ плана
+  // приносит genre_breakdown), а не полным списком из genre.py: показывать
+  // «пситранс: 0» в драм-н-бейсовой библиотеке незачем.
+  function genreFilterValue(kind) {
+    const v = document.getElementById("genre-filter").value;
+    if (!v || v[0] !== kind) return null;
+    return [v.slice(2)];
+  }
+
+  function fillGenreFilter(breakdown) {
+    const sel = document.getElementById("genre-filter");
+    if (!breakdown || sel.dataset.filled === "1") return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">жанр: все</option>';
+    Object.entries(breakdown.genres || {}).forEach(([g, n]) => {
+      if (g === "?") return;
+      const o = document.createElement("option");
+      o.value = "g:" + g;
+      o.textContent = (GENRE_RU[g] || g) + " (" + n + ")";
+      sel.appendChild(o);
+    });
+    Object.entries(breakdown.subgenres || {}).forEach(([g, n]) => {
+      const o = document.createElement("option");
+      o.value = "s:" + g;
+      o.textContent = "— " + (SUB_RU[g] || g) + " (" + n + ")";
+      sel.appendChild(o);
+    });
+    sel.value = cur;
+    sel.dataset.filled = "1";
   }
 
   function formatDuration(seconds) {
@@ -697,6 +757,73 @@
   }
 
   document.getElementById("lib-refresh-btn").addEventListener("click", loadLibrary);
+
+  document.getElementById("cleanup-btn").addEventListener("click", async function () {
+    const st = document.getElementById("scan-status");
+    st.textContent = "считаю, что можно убрать...";
+    try {
+      // Сначала ВСЕГДА показываем, что будет удалено, и только потом
+      // спрашиваем. Уборка необратима, а среди сетов может лежать тот,
+      // который диджей как раз собирался слушать.
+      const dry = await (await fetch("/api/cleanup", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({dry_run: true}),
+      })).json();
+      if (!dry.removed_count) { st.textContent = "чисто, убирать нечего"; return; }
+      const what = dry.by_folder.filter(f => f.removed.length)
+        .map(f => f.folder + ": " + f.removed.length).join(", ");
+      if (!confirm("Убрать " + dry.removed_count + " файлов (" + dry.freed_mb +
+                   " МБ)?\n" + what + "\n\nПоследние и свежие остаются.")) {
+        st.textContent = ""; return;
+      }
+      const r = await (await fetch("/api/cleanup", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({}),
+      })).json();
+      st.textContent = "убрано " + r.removed_count + " (" + r.freed_mb + " МБ)";
+    } catch (e) { st.textContent = "уборка не удалась: " + e; }
+  });
+
+  document.getElementById("cues-btn").addEventListener("click", async function () {
+    const st = document.getElementById("scan-status");
+    st.textContent = "смотрю, что можно расставить...";
+    try {
+      const dry = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/cues/export", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({dry_run: true}),
+      })).json();
+      if (dry.detail) { st.textContent = dry.detail; return; }
+      const sample = (dry.preview || []).map(p => "· " + p.track).slice(0, 3).join("\n");
+      // Mixxx держит библиотеку в памяти и перезапишет файл при выходе —
+      // предупредить надо ДО записи, а не объяснять потом, почему метки
+      // исчезли.
+      if (!confirm("Расставить метки для " + dry.tracks + " треков?\n" +
+                   (dry.missing ? dry.missing + " треков нет в медиатеке Mixxx.\n" : "") +
+                   "\nMIXXX ДОЛЖЕН БЫТЬ ЗАКРЫТ — иначе он перезапишет библиотеку " +
+                   "из памяти при выходе и метки пропадут.\n\n" + sample)) {
+        st.textContent = ""; return;
+      }
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/cues/export", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({}),
+      })).json();
+      st.textContent = "метки расставлены для " + r.tracks + " треков (копия библиотеки сохранена)";
+    } catch (e) { st.textContent = "не удалось: " + e; }
+  });
+
+  document.getElementById("stems-btn").addEventListener("click", async function () {
+    const st = document.getElementById("scan-status");
+    const path = document.getElementById("scan-path-input").value.trim();
+    if (!path) { st.textContent = "впишите папку с музыкой слева"; return; }
+    st.textContent = "запускаю разделение на слои...";
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/stems/build", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({dir: path}),
+      })).json();
+      st.textContent = r.detail || r.message || "разделение запущено — следите за логом";
+    } catch (e) { st.textContent = "не удалось: " + e; }
+  });
 
   // ----- Сканирование библиотеки прямо из UI (кнопка "🔍 Сканировать") -----
 
@@ -819,6 +946,7 @@
   });
   document.getElementById("only-mixable").addEventListener("change", function () { buildStrategy(); });
   document.getElementById("variant-select").addEventListener("change", function () { buildStrategy(); });
+  document.getElementById("genre-filter").addEventListener("change", function () { buildStrategy(); });
 
   async function buildStrategy(keepOverrides) {
     if (!currentRoom) return;
@@ -839,6 +967,8 @@
           track_order: manualOrder,
           only_mixable: document.getElementById("only-mixable").checked,
           exclude: Array.from(excludedTracks),
+          include_genres: genreFilterValue("g"),
+          include_subgenres: genreFilterValue("s"),
         }),
       });
       if (!resp.ok) {
@@ -848,6 +978,7 @@
       }
       currentStrategy = await resp.json();
       fillVariants(currentStrategy);
+      fillGenreFilter(currentStrategy.genre_breakdown);
       renderStrategy();
     } catch (e) {
       body.innerHTML = '<div class="empty" style="padding:18px">Ошибка сети: ' + e + '</div>';
@@ -1380,6 +1511,7 @@
   // сохраняем выбор между переключениями техник в рамках сессии вкладки.
   let techSourceDeck = "A";
   let techTargetDeck = "B";
+  let techThirdDeck = "C";
 
   function _deckOptionNames() {
     const names = Object.keys(currentDecks || {}).sort();
@@ -1419,16 +1551,27 @@
       '<div class="empty-hint">Подбираю подходящие треки…</div>' +
       '</div>';
 
-    if (!t.requires_stems) {
+    {
       const opts = _deckOptionNames();
       const optHtml = (selected) => opts.map(n => '<option value="' + n + '"' + (n === selected ? " selected" : "") + '>Дека ' + n + '</option>').join("");
+      // Третья дека — только у приёмов, которым она нужна (трипл-дроп).
+      // Раньше её имя было зашито как "C", и приём играл не на той деке,
+      // если трек лежал на D.
+      const thirdHtml = (t.requires_decks >= 3)
+        ? '<label>и <select id="tech-third-select">' + optHtml(techThirdDeck) + '</select></label>'
+        : '';
       html += '<div class="tech-exec">' +
         '<div class="tech-exec-row">' +
           '<label>С <select id="tech-source-select">' + optHtml(techSourceDeck) + '</select></label>' +
           '<label>на <select id="tech-target-select">' + optHtml(techTargetDeck) + '</select></label>' +
+          thirdHtml +
           '<button id="tech-exec-btn">▶ Выполнить</button>' +
         '</div>' +
         '<div class="tech-exec-hint" id="tech-exec-hint"></div>' +
+        (t.requires_stems
+          ? '<div class="stems-warning">Работает по слоям: на обеих деках должен быть ' +
+            'загружен .stem.mp4. Соберите их кнопкой «🎚 Стемы» во вкладке «Библиотека».</div>'
+          : '') +
         '</div>';
     }
 
@@ -1467,6 +1610,13 @@
       };
       srcSel.addEventListener("change", updateHint);
       tgtSel.addEventListener("change", updateHint);
+      const thirdSel = document.getElementById("tech-third-select");
+      if (thirdSel) {
+        thirdSel.addEventListener("change", function () {
+          techThirdDeck = thirdSel.value;
+        });
+        techThirdDeck = thirdSel.value;
+      }
       updateHint();
 
       document.getElementById("tech-exec-btn").addEventListener("click", function () {
@@ -1541,16 +1691,99 @@
     return html;
   }
 
+  // --- своя пара: любой трек, любая точка ------------------------------
+  // Рекомендации подбирают пары сами, и это удобно ровно до тех пор, пока
+  // диджей не хочет свести КОНКРЕТНЫЕ два трека в КОНКРЕТНЫХ местах.
+  // Здесь он выбирает и то, и другое; точки приходят с сервера уже
+  // названными («билд перед вторым дропом»), а не голыми секундами.
+  const cueCache = {};
+
+  async function loadCues(path) {
+    if (cueCache[path]) return cueCache[path];
+    const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                          "/cues?path=" + encodeURIComponent(path));
+    if (!r.ok) return { cues: [] };
+    cueCache[path] = await r.json();
+    return cueCache[path];
+  }
+
+  function fillCueSelect(sel, data) {
+    sel.innerHTML = '<option value="">точка: как решит DARAVE</option>';
+    (data.cues || []).forEach(function (c) {
+      const o = document.createElement("option");
+      o.value = c.time_seconds;
+      o.textContent = c.label;
+      o.title = c.hint || "";
+      sel.appendChild(o);
+    });
+    if (data.warning) {
+      const o = document.createElement("option");
+      o.disabled = true; o.textContent = "⚠ " + data.warning;
+      sel.appendChild(o);
+    }
+  }
+
+  function customPairHtml() {
+    const opts = libraryCache.map(function (tr) {
+      return '<option value="' + (tr.path || "").replace(/"/g, "&quot;") + '">' +
+             (tr.name || "") + '</option>';
+    }).join("");
+    return '' +
+      '<h3 style="margin-top:4px">Своя пара — любые треки и любые точки</h3>' +
+      '<div class="tech-pair" id="custom-pair">' +
+        '<div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:center">' +
+          '<span style="color:var(--muted);font-size:12px">уходит</span>' +
+          '<select id="cp-a">' + opts + '</select>' +
+          '<select id="cp-a-cue"><option value="">точка: как решит DARAVE</option></select>' +
+          '<span style="color:var(--muted);font-size:12px">входит</span>' +
+          '<select id="cp-b">' + opts + '</select>' +
+          '<select id="cp-b-cue"><option value="">точка: как решит DARAVE</option></select>' +
+        '</div>' +
+        '<div class="tech-pair-row" style="margin-top:8px">' +
+          '<button class="tech-demo-btn" id="cp-demo">🎧 Демо этой пары</button>' +
+          '<div class="tech-pair-player" id="cp-player"></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function wireCustomPair(t) {
+    const a = document.getElementById("cp-a"), b = document.getElementById("cp-b");
+    if (!a || !b) return;
+    if (libraryCache.length > 1) b.selectedIndex = 1;
+    async function refresh(sel, cueSel) {
+      if (!sel.value) return;
+      fillCueSelect(cueSel, await loadCues(sel.value));
+    }
+    a.addEventListener("change", () => refresh(a, document.getElementById("cp-a-cue")));
+    b.addEventListener("change", () => refresh(b, document.getElementById("cp-b-cue")));
+    refresh(a, document.getElementById("cp-a-cue"));
+    refresh(b, document.getElementById("cp-b-cue"));
+
+    document.getElementById("cp-demo").addEventListener("click", function () {
+      const btn = this, player = document.getElementById("cp-player");
+      const pair = {
+        track_a: { path: a.value, name: a.options[a.selectedIndex].textContent },
+        track_b: { path: b.value, name: b.options[b.selectedIndex].textContent },
+        source_at: document.getElementById("cp-a-cue").value || null,
+        target_at: document.getElementById("cp-b-cue").value || null,
+      };
+      renderTechniqueDemo(t, pair, btn, player);
+    });
+  }
+
   function renderRecommendedPairs(t, container, pairs, hint) {
     if (!pairs.length) {
-      container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' +
+      container.innerHTML = customPairHtml() +
+        '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' +
         (hint || "Не нашлось подходящих пар треков в текущей библиотеке.") + '</div>';
+      wireCustomPair(t);
       return;
     }
-    container.innerHTML =
+    container.innerHTML = customPairHtml() +
       '<h3>Примеры из вашей библиотеки' +
       '<button class="tech-more-btn" title="Показать следующие пары из библиотеки">🔀 другие пары</button>' +
       '</h3>';
+    wireCustomPair(t);
     const more = container.querySelector(".tech-more-btn");
     if (more) {
       more.addEventListener("click", function () {
@@ -1621,7 +1854,16 @@
         "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/demo",
         {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ track_a_path: pair.track_a.path, track_b_path: pair.track_b.path, param_overrides: overrides }),
+          // source_at/target_at — точки, выбранные диджеем вручную. Без
+          // них сервер считает свои (technique_cue_hints), и это верно
+          // для рекомендованных пар; но если точку выбрали явно, рендер
+          // обязан звучать именно оттуда, иначе подпись и звук разойдутся.
+          body: JSON.stringify({
+            track_a_path: pair.track_a.path, track_b_path: pair.track_b.path,
+            param_overrides: overrides,
+            source_at: pair.source_at || undefined,
+            target_at: pair.target_at || undefined,
+          }),
         },
       );
       const data = await resp.json();
@@ -1654,7 +1896,10 @@
         "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/execute",
         {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_deck: techSourceDeck, target_deck: techTargetDeck, param_overrides: overrides }),
+          body: JSON.stringify({
+            source_deck: techSourceDeck, target_deck: techTargetDeck,
+            third_deck: (t.requires_decks >= 3 ? techThirdDeck : undefined),
+            param_overrides: overrides }),
         },
       );
       const data = await resp.json();

@@ -93,13 +93,16 @@ def analyze_track(path: str) -> dict:
     y, sr = librosa.load(path, sr=22050, mono=True)
     duration = float(len(y) / sr)
 
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    # Огибающая атак считается ОДИН раз и переиспользуется: beat_track
+    # считает её внутри себя, и ниже она считалась ещё раз — полторы
+    # секунды на трек за одно и то же.
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
     bpm = float(tempo if np.isscalar(tempo) else tempo[0])
     if bpm <= 0 or len(beat_frames) == 0:
         # beat_track изредка не находит долей (тихие интро, нестандартный
         # ритм-рисунок) — не отдаём BPM=0, а пересчитываем через огибающую
         # onset'ов напрямую, это надёжнее для голого темпа (без самих долей).
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
         try:
             tempo_fn = librosa.feature.rhythm.tempo  # librosa >= 0.10.2
         except AttributeError:
@@ -107,13 +110,16 @@ def analyze_track(path: str) -> dict:
         tempo_fallback = tempo_fn(onset_envelope=onset_env, sr=sr)
         bpm = float(tempo_fallback[0]) if len(tempo_fallback) else 0.0
 
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+    # hop 4096 вместо 512: тональность берётся как СРЕДНЕЕ по всему
+    # треку, и профиль на крупном шаге совпадает с мелким до 1.000
+    # (проверено), а считается втрое дешевле.
+    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=4096)
     key = _estimate_key(chroma.mean(axis=1))
 
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
     energy, energy_parts = _estimate_energy(y, sr, onset_env, duration)
 
-    centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+    # Яркость — тоже одно число на трек, мелкий шаг ей не нужен.
+    centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=4096)[0]
     brightness = float(np.clip(centroid.mean() / (sr / 4), 0.0, 1.0))
     danceability = _estimate_danceability(librosa, np, beat_frames, sr, onset_env)
 
@@ -133,11 +139,19 @@ def analyze_track(path: str) -> dict:
 
         structure["drum_map"] = beatgrid.drum_map(y, sr, bpm)
         structure["chroma_map"] = beatgrid.chroma_map(y, sr, bpm)
+        # Карта энергии низа — дропы, брейкдауны, ямы. Раньше её считал
+        # ТОЛЬКО фоновый перемер BPM, то есть сразу после сканирования у
+        # трека не было ни одного дропа, и все именованные точки
+        # (cue_points.py) сводились к «первый бит» и «аутро». Считается
+        # она по тому же уже загруженному сигналу и стоит около секунды —
+        # держать её отдельным проходом незачем.
+        structure["energy_map"] = beatgrid.energy_map(y, sr, bpm)
     except Exception:
         pass
 
     return {
         "bpm": round(bpm, 2),
+        "genre": classify_track_genre(path, bpm),
         "key": key,
         "camelot": key_to_camelot(key),
         "energy": round(energy, 3),
@@ -368,6 +382,40 @@ def detect_structure(y, sr: int, bpm: float) -> dict:
     return {"drops": drops, "breakdowns": breakdowns, "phrase_boundaries": phrase_boundaries}
 
 
+def read_file_tags(path: str) -> dict:
+    """Жанр и исполнитель из самого файла. Нужны, чтобы подписать трек
+    жанром, не гадая по звуку (см. genre.py: догадка по звуку проверена и
+    не работает). mutagen — необязателен: без него разбираем имя файла."""
+    out = {"genre": None, "artist": None, "title": None}
+    try:
+        from mutagen import File as MutagenFile
+
+        m = MutagenFile(path, easy=True)
+        if m:
+            for field in ("genre", "artist", "title"):
+                val = m.get(field)
+                if val:
+                    out[field] = val[0]
+    except Exception:
+        pass
+    return out
+
+
+def classify_track_genre(path: str, bpm: float | None = None) -> dict | None:
+    """Жанр и, если он известен, поджанр. None — если не определилось
+    вовсе: пустое поле честнее выдуманного."""
+    try:
+        import genre as genre_mod
+    except Exception:
+        return None
+    tags = read_file_tags(path)
+    rec = genre_mod.classify(path, tags.get("genre"), tags.get("artist"), bpm)
+    if not rec.get("genre") and not rec.get("subgenre"):
+        return None
+    rec["title"] = tags.get("title")
+    return rec
+
+
 def classify_genre_instruments(path: str) -> dict | None:
     """Точка расширения под жанр/стиль/инструменты — требует внешней
     предобученной модели аудио-тегирования (не просто librosa). Пример:
@@ -466,6 +514,13 @@ def load_library_from_db(db_path: str, since_ts: float | None = None) -> list[di
             },
             "tags": json.loads(d["tags_json"]) if d["tags_json"] else None,
         })
+        tg = (out[-1]["tags"] or {}).get("genre") if out[-1]["tags"] else None
+        if tg:
+            out[-1]["genre"] = tg.get("genre")
+            out[-1]["subgenre"] = tg.get("subgenre")
+            out[-1]["genre_source"] = tg.get("genre_source")
+            out[-1]["subgenre_source"] = tg.get("subgenre_source")
+            out[-1]["artist"] = tg.get("artist")
 
     # Темп приводим ПО ВСЕЙ БИБЛИОТЕКЕ СРАЗУ, а не по одному треку.
     # Раньше каждый трек независимо сворачивался в фиксированное окно
@@ -544,6 +599,9 @@ def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]
             )
             continue
         tags = classify_genre_instruments(str(path)) if with_tags else None
+        if info.get("genre"):
+            tags = dict(tags or {})
+            tags["genre"] = info["genre"]
         try:
             _upsert_track(conn, path, info, tags)
         except sqlite3.Error as exc:

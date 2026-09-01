@@ -24,6 +24,8 @@
 // один SysEx-пакет. Поэтому телеметрия — здесь, таймером.
 //
 // Формат payload (см. companion/telemetry.py::parse_sysex_payload):
+// Шестое поле stem_count добавлено позже — старый companion его просто
+// не увидит, поэтому оно и стоит последним.
 //   "<deck>,<play 0|1>,<bpm>,<pos 0..1>,<track_loaded 0|1>"
 //   пример: "A,1,128.00,0.4123,1"
 // Плюс раз в тик — глобальный статус записи (не по деке): "R,<status>"
@@ -211,8 +213,12 @@ DaraveController.sendDeckTelemetry = function (deck) {
         position = 1;
     }
 
+    // Сколько слоёв у загруженного трека: 0 — обычный файл, 4 — стемовый
+    // (.stem.mp4). Без этого DARAVE не отличает «слои приглушены» от
+    // «слоёв нет вовсе» и стем-техника молча не делает ничего.
+    const stemCount = engine.getValue(group, "stem_count") || 0;
     const payload = deck.label + "," + playing + "," + bpm.toFixed(2) + "," +
-        position.toFixed(4) + "," + trackLoaded;
+        position.toFixed(4) + "," + trackLoaded + "," + stemCount;
 
     DaraveController.sendSysex(payload);
 };

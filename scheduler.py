@@ -93,7 +93,7 @@ class PlanScheduler:
             progress = i / n_ticks
             frac = self._apply_curve(progress, ev.curve, cycles)
             value = ev.value_from + (ev.value_to - ev.value_from) * frac
-            msg = resolve_ramp_tick(ev.action, ev.deck, value)
+            msg = resolve_ramp_tick(ev.action, ev.deck, value, ev.params)
             t = start_time + i * (duration / n_ticks)
             out.append(TimedMidiEvent(t, msg, f"{ev.action}@{ev.deck} tick{i}"))
         return out

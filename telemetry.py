@@ -46,7 +46,11 @@ def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
         parts = payload.split(",")
         if parts[0] == "R":
             return RecordingStatus(status=int(parts[1]))
-        deck, play_flag, bpm, pos, track_loaded_flag = parts
+        # Шестое поле (stem_count) появилось вместе с живыми стемами.
+        # Разбираем и старый формат: скрипт контроллера обновляется в
+        # Mixxx руками, и рассинхрон на один запуск — норма, а не сбой.
+        deck, play_flag, bpm, pos, track_loaded_flag = parts[:5]
+        stem_count = int(parts[5]) if len(parts) > 5 else 0
         return DeckState(
             deck=deck,
             playing=bool(int(play_flag)),
@@ -54,6 +58,7 @@ def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
             position=float(pos),
             track_loaded=bool(int(track_loaded_flag)),
             received_at=time.time(),
+            stem_count=stem_count,
         )
     except (UnicodeDecodeError, ValueError, IndexError):
         # Чужой/битый SysEx (например, от другого приложения на том же порту) —

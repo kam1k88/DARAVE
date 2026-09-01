@@ -65,6 +65,11 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    import stem_mp4
+except Exception:  # модуль независим от stems.py, но без него нет живого режима
+    stem_mp4 = None
+
 HERE = Path(__file__).parent
 STEM_DIR = HERE / "stems"
 
@@ -185,6 +190,26 @@ def device_info() -> dict:
         "note": ("GPU: примерно 2-4 минуты на трек в максимальном качестве" if cuda
                  else "только CPU: 20-40 минут на трек в максимальном качестве"),
     }
+
+
+def pick_device(device: str | None = None) -> str | None:
+    """Куда считать. По умолчанию — на видеокарту, если она есть.
+
+    Раньше device=None означало «пусть demucs решает сам», и demucs решал
+    правильно... когда torch собран с CUDA. На машине с RTX 4060 и
+    CPU-сборкой torch это молча превращалось в 20-40 минут на трек вместо
+    2-4, и понять это можно было только по времени. Теперь устройство
+    выбирается явно и попадает в лог."""
+    if device:
+        return device
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return None
 
 
 def resolve_backend(backend: str = "auto") -> str:
@@ -532,22 +557,105 @@ def _swap_in_roformer_vocals(dest: Path, track_path: str, voc_file: Path,
     return True
 
 
+# ------------------------------------------------- живой формат: stem.mp4
+
+def stem_mp4_for(track_path: str) -> Path | None:
+    """Готовый .stem.mp4 рядом с треком, если он есть и не устарел."""
+    if stem_mp4 is None:
+        return None
+    out = stem_mp4.stem_mp4_path(track_path)
+    if not out.exists():
+        return None
+    try:
+        if out.stat().st_mtime < os.path.getmtime(track_path):
+            return None  # трек заменили — стем устарел
+    except OSError:
+        return None
+    return out
+
+
+def build_live_stems(track_path: str, force: bool = False,
+                     bitrate: str = "256k") -> dict:
+    """Собирает .stem.mp4 рядом с треком из уже посчитанных слоёв.
+
+    Это и есть ответ на «почему живые стемы нельзя». Можно: Mixxx 2.6+
+    читает формат NI STEMS (провайдер «STEM with FFmpeg» регистрируется
+    на stem.mp4 и stem.m4a), и всё, чего не хватало DARAVE, — упаковать
+    четыре посчитанных слоя в один файл с манифестом. Отдельные wav'ы в
+    кэше Mixxx не видит и увидеть не может.
+
+    Файл кладётся В ПАПКУ С ТРЕКОМ, а не в кэш DARAVE: медиатека Mixxx
+    работает с файлами на диске, и стем в служебной папке для неё не
+    существует."""
+    if stem_mp4 is None:
+        return {"ok": False, "error": "модуль stem_mp4 не найден"}
+    paths = stem_paths(track_path)
+    if not paths:
+        return {"ok": False, "error": "слои ещё не посчитаны"}
+    out = stem_mp4.stem_mp4_path(track_path)
+    if out.exists() and not force:
+        try:
+            if out.stat().st_mtime >= os.path.getmtime(track_path):
+                bad = stem_mp4.verify(out)
+                if not bad:
+                    return {"ok": True, "path": str(out), "cached": True}
+        except OSError:
+            pass
+    try:
+        tags = _read_tags(track_path)
+        return stem_mp4.build_stem_mp4(
+            track_path, {k: paths[k] for k in stem_mp4.STEM_ORDER}, out,
+            bitrate=bitrate, title=tags.get("title"), artist=tags.get("artist"))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _read_tags(track_path: str) -> dict:
+    """Название и исполнитель из исходника — чтобы стем не появился в
+    медиатеке Mixxx безымянным."""
+    try:
+        from mutagen import File as MutagenFile
+
+        m = MutagenFile(track_path, easy=True)
+        if m:
+            return {"title": (m.get("title") or [None])[0],
+                    "artist": (m.get("artist") or [None])[0]}
+    except Exception:
+        pass
+    stem = Path(track_path).stem
+    if " - " in stem:
+        artist, title = stem.split(" - ", 1)
+        return {"title": title.strip(), "artist": artist.strip()}
+    return {"title": stem, "artist": None}
+
+
 # ------------------------------------------------------------ точка входа
 
 def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
                    device: str | None = None, timeout: float = 3600.0,
-                   backend: str = "auto") -> dict:
-    """Считает четыре слоя одного трека. {'ok', 'paths'|'error', 'seconds'}."""
+                   backend: str = "auto", live: bool = True) -> dict:
+    """Считает четыре слоя одного трека. {'ok', 'paths'|'error', 'seconds'}.
+
+    live=True (по умолчанию) — сразу собрать .stem.mp4 рядом с треком,
+    чтобы слои были доступны не только рендеру, но и Mixxx на живом
+    выступлении."""
     if not os.path.exists(track_path):
         return {"ok": False, "error": "файл не найден"}
     backend = resolve_backend(backend)
+    device = pick_device(device)
     if backend == "hpss":
-        return separate_hpss(track_path, fmt=fmt)
+        r = separate_hpss(track_path, fmt=fmt)
+        if r.get("ok") and live:
+            r["live"] = build_live_stems(track_path)
+        return r
 
     have = stem_paths(track_path)
     if have:
-        return {"ok": True, "paths": have, "seconds": 0.0, "cached": True,
-                "backend": stem_meta(track_path).get("backend")}
+        out = {"ok": True, "paths": have, "seconds": 0.0, "cached": True,
+               "backend": stem_meta(track_path).get("backend")}
+        if live:
+            out["live"] = build_live_stems(track_path)
+        return out
 
     model = model or (FAST_MODEL if backend == "fast" else MODEL)
     dest = stem_dir_for(track_path)
@@ -575,14 +683,18 @@ def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
         return {"ok": False, "error": "стемы не собрались"}
     _write_meta(dest, source=track_path, backend=backend, model=model,
                 vocals_model=vocals_from, format=fmt, parts=list(PARTS),
-                seconds=round(time.time() - t0, 1))
-    return {"ok": True, "paths": paths, "backend": backend,
-            "vocals_model": vocals_from, "seconds": round(time.time() - t0, 1)}
+                device=device or "cpu", seconds=round(time.time() - t0, 1))
+    out = {"ok": True, "paths": paths, "backend": backend, "device": device or "cpu",
+           "vocals_model": vocals_from, "seconds": round(time.time() - t0, 1)}
+    if live:
+        out["live"] = build_live_stems(track_path)
+    return out
 
 
 def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None = None,
                      device: str | None = None, progress=None, log=print,
-                     stop_after: float | None = None, backend: str = "auto") -> dict:
+                     stop_after: float | None = None, backend: str = "auto",
+                     live: bool = True) -> dict:
     """Считает стемы для всей библиотеки, пропуская уже посчитанные."""
     backend = resolve_backend(backend)
     problem = backend_problem(backend)
@@ -595,9 +707,17 @@ def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None
         return {"total": len(track_paths), "already": 0, "done": 0,
                 "failed": [], "seconds": 0.0, "backend": backend,
                 "error": problem, "device": device_info()}
+    device = pick_device(device)
     todo = [p for p in track_paths if not stem_paths(p)]
     log(f"стемы: {len(track_paths) - len(todo)} уже есть, считать {len(todo)}")
     info = device_info()
+    if live and stem_mp4 is None:
+        log("ВНИМАНИЕ: модуль stem_mp4 не найден — .stem.mp4 собран не будет")
+        live = False
+    if live and not stem_mp4.ffmpeg_exe():
+        log("ВНИМАНИЕ: не найден ffmpeg — .stem.mp4 собран не будет. "
+            "Поставьте: winget install Gyan.FFmpeg")
+        live = False
     if backend == "hpss":
         log("быстрое разделение (HPSS): без модели и GPU, вокала не будет")
     else:
@@ -610,7 +730,8 @@ def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None
         if stop_after and time.time() - t0 > stop_after:
             failed.append({"path": p, "error": "остановлено по времени"})
             break
-        r = separate_track(p, fmt=fmt, model=model, device=device, backend=backend)
+        r = separate_track(p, fmt=fmt, model=model, device=device, backend=backend,
+                           live=live)
         if r.get("ok"):
             done += 1
             log(f"  [{i + 1}/{len(todo)}] {os.path.basename(p)[:48]} — {r.get('seconds', 0):.0f}с")
@@ -620,9 +741,28 @@ def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None
         if progress:
             progress(i + 1, len(todo), done, len(failed))
 
+    # Треки, у которых слои были посчитаны раньше, но живого файла ещё нет:
+    # догоняем их без пересчёта модели — это секунды на трек.
+    live_built, live_failed = 0, []
+    if live:
+        for p in track_paths:
+            if p in todo or stem_mp4_for(p) or not stem_paths(p):
+                continue
+            r = build_live_stems(p)
+            if r.get("ok"):
+                live_built += 1
+            else:
+                live_failed.append({"path": p, "error": r.get("error")})
+        if live_built:
+            log(f"собрано .stem.mp4 из готовых слоёв: {live_built}")
+        for f in live_failed[:5]:
+            log(f"  .stem.mp4 не собрался: {os.path.basename(f['path'])[:48]} — {f['error']}")
+
     return {"total": len(track_paths), "already": len(track_paths) - len(todo),
             "done": done, "failed": failed, "seconds": round(time.time() - t0, 1),
-            "backend": backend, "device": info}
+            "backend": backend, "device": info,
+            "live_mp4": sum(1 for p in track_paths if stem_mp4_for(p)),
+            "live_failed": live_failed}
 
 
 def library_coverage(track_paths: list[str]) -> dict:
@@ -630,9 +770,12 @@ def library_coverage(track_paths: list[str]) -> dict:
     kinds: dict[str, int] = {}
     for p in have:
         kinds[stem_meta(p).get("backend", "?")] = kinds.get(stem_meta(p).get("backend", "?"), 0) + 1
+    live = [p for p in track_paths if stem_mp4_for(p)]
     return {"tracks": len(track_paths), "with_stems": len(have),
             "share": round(len(have) / len(track_paths), 3) if track_paths else 0.0,
-            "by_backend": kinds}
+            "by_backend": kinds,
+            "live_mp4": len(live),
+            "live_share": round(len(live) / len(track_paths), 3) if track_paths else 0.0}
 
 
 def main() -> int:
@@ -646,11 +789,25 @@ def main() -> int:
                     help="auto — лучшее из установленного; roformer — максимум качества; "
                          "demucs — htdemucs_ft; fast — базовая htdemucs; hpss — без модели")
     ap.add_argument("--info", action="store_true", help="только показать окружение")
+    ap.add_argument("--no-live", action="store_true",
+                    help="не собирать .stem.mp4 (по умолчанию собирается рядом с треком)")
+    ap.add_argument("--only-live", action="store_true",
+                    help="ничего не считать, только собрать .stem.mp4 из готовых слоёв")
+    ap.add_argument("--rebuild-live", action="store_true",
+                    help="пересобрать .stem.mp4, даже если он уже есть")
+    ap.add_argument("--mp4-bitrate", default="256k",
+                    help="битрейт каждой дорожки .stem.mp4 (по умолчанию 256k)")
     args = ap.parse_args()
 
     if args.info:
         info = device_info()
         info["backend_auto"] = resolve_backend("auto")
+        info["device_auto"] = pick_device() or "cpu"
+        info["ffmpeg"] = (stem_mp4.ffmpeg_exe() if stem_mp4 else None)
+        info["live_stems"] = bool(info["ffmpeg"]) and stem_mp4 is not None
+        if not info["live_stems"]:
+            info["live_note"] = ("для .stem.mp4 нужен ffmpeg: "
+                                 "winget install Gyan.FFmpeg")
         print(json.dumps(info, ensure_ascii=False, indent=2))
         return 0
     paths = []
@@ -658,11 +815,34 @@ def main() -> int:
         paths = [args.track]
     elif args.dir:
         for root, _d, files in os.walk(args.dir):
-            paths += [os.path.join(root, f) for f in files if f.lower().endswith(AUDIO_EXT)]
+            for f in files:
+                low = f.lower()
+                # сами стемовые файлы — не исходники, иначе разделим стем стема
+                if low.endswith((".stem.mp4", ".stem.m4a")):
+                    continue
+                if low.endswith(AUDIO_EXT):
+                    paths.append(os.path.join(root, f))
     if not paths:
         print("Укажите --track или --dir")
         return 1
-    r = separate_library(paths, fmt=args.format, device=args.device, backend=args.backend)
+
+    if args.only_live:
+        built, failed = 0, []
+        for p in paths:
+            r = build_live_stems(p, force=args.rebuild_live, bitrate=args.mp4_bitrate)
+            if r.get("ok"):
+                built += 1
+                print(f"  {os.path.basename(p)[:56]} — "
+                      + ("уже был" if r.get("cached") else f"{r.get('bytes', 0) / 1e6:.0f} МБ"))
+            elif r.get("error") != "слои ещё не посчитаны":
+                failed.append((p, r.get("error")))
+                print(f"  {os.path.basename(p)[:56]} — ОШИБКА: {r.get('error')}")
+        print(json.dumps({"live_mp4": built, "failed": len(failed)},
+                         ensure_ascii=False, indent=2))
+        return 0
+
+    r = separate_library(paths, fmt=args.format, device=args.device,
+                         backend=args.backend, live=not args.no_live)
     print(json.dumps({k: v for k, v in r.items() if k != "failed"}, ensure_ascii=False, indent=2))
     return 0
 

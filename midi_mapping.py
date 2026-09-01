@@ -177,9 +177,45 @@ def resolve_discrete_off(action: str, deck: str, params: dict | None = None) -> 
 # имени и считается точно (см. demo_render, FX_SENDS/FX_INSERTS).
 RAMP_ALIASES = {"fx": "fx_mix"}
 
+# --- живые стемы -------------------------------------------------------
+# Порядок обязан совпадать с порядком дорожек в .stem.mp4 (stem_mp4.py,
+# STEM_ORDER) и с нумерацией групп в Mixxx: дорожка 1 файла -> Stem1.
+# Разъедутся — и «убрать барабаны» уберёт вокал.
+STEM_INDEX = {"drums": 1, "bass": 2, "other": 3, "vocals": 4}
 
-def resolve_ramp_tick(action: str, deck: str, value_0_1: float) -> list[int]:
+
+def stem_group(deck: str, stem: str) -> str:
+    """[Channel1_Stem1] и так далее — так Mixxx называет каналы слоёв
+    (src/engine/channels/enginedeck.cpp, getGroupForStem)."""
+    idx = STEM_INDEX.get(stem)
+    if idx is None:
+        raise ValueError(f"Неизвестный слой: {stem}")
+    return f"[Channel{DECK_NUMBER[deck]}_Stem{idx}]"
+
+
+def stem_volume_message(deck: str, stem: str, value_0_1: float) -> list[int]:
+    """Громкость одного слоя живьём.
+
+    Идёт SysEx'ом, а не CC: контролов слоёв в XML-биндингах нет и быть не
+    может — Mixxx создаёт их по четыре на КАЖДУЮ деку, это ещё 32 адреса,
+    и половина сборок без __STEM__ их не имеет вовсе. SysEx достаёт любой
+    контрол по имени и молча ничего не делает, если его нет."""
+    return sysex_set(stem_group(deck, stem), "volume",
+                     max(0.0, min(1.0, float(value_0_1))))
+
+
+def stem_mute_message(deck: str, stem: str, on: bool) -> list[int]:
+    return sysex_set(stem_group(deck, stem), "mute", 1.0 if on else 0.0)
+
+
+def resolve_ramp_tick(action: str, deck: str, value_0_1: float,
+                      params: dict | None = None) -> list[int]:
     action = RAMP_ALIASES.get(action, action)
+    if action == "stem_gain":
+        stem = (params or {}).get("stem")
+        if not stem:
+            raise ValueError("stem_gain без params['stem']")
+        return stem_volume_message(deck, stem, value_0_1)
     if action not in CC_NUMBER:
         raise ValueError(f"Unknown ramp action: {action}")
     channel = _channel_for(action, deck)

@@ -226,15 +226,63 @@ def _build_double_drop(source: str, target: str, bpm: float, p: dict) -> list[di
 
 
 def _build_triple_drop(source: str, target: str, bpm: float, p: dict) -> list[dict]:
-    third = p.get("third_deck", "C")
-    align = p["align_bars"] * 4
-    return [
+    """Три дропа в один удар. Третья дека здесь настоящая, а не для вида.
+
+    Прежняя версия слала на третью деку один `sync` и больше ничего: дека
+    не запускалась, громкость не поднималась, низ не разводился. То есть
+    «поддержка трёх дек» состояла в том, что третьей деке сообщали темп, а
+    играли по-прежнему вдвоём.
+
+    Главная опасность приёма — не темп и не тональность, а НИЗ. Три баса
+    одновременно не складываются ни в какой музыкальный результат: это
+    просто перегруз в 30-80 Гц, и слышно его как гудение, а не как мощь.
+    Поэтому бас играет РОВНО ОДИН, и это входящая дека B; у C низ снят на
+    всё время приёма и не возвращается, а у A уходит в момент дропа. Так
+    же поступают и живьём: дабл- и трипл-дроп держат на одном сабе.
+
+    Обе входящие деки заводятся ЗАРАНЕЕ, за align тактов до совпадения, —
+    их дропы обязаны прийти в один и тот же удар, а не подъехать по
+    очереди. Точку старта считает mix_points (`pre_drop`), здесь мы только
+    выдерживаем расстояние."""
+    third = p.get("third_deck") or "C"
+    align = float(p["align_bars"]) * 4
+    hold = float(p.get("hold_beats", 16))
+    unity = EQ_UNITY
+    ev = [
+        # обе входящие деки: темп, запуск, низ снят
         _discrete(0, "sync", target),
         _discrete(0, "sync", third),
-        _ramp(0, "crossfade", source, align, 0.0, 0.66),
-        _ramp(align, "crossfade", source, 2, 0.66, 1.0),
-        _discrete(align + 2, "loop_exit", source),
+        _hold(0, "sync_lock", target, align + hold + 8),
+        _hold(0, "sync_lock", third, align + hold + 8),
+        _ramp(0, "eq_low", target, 1, 0.0, 0.0),
+        _ramp(0, "eq_low", third, 1, 0.0, 0.0),
+        _discrete(0, "play_from_cue", target),
+        _discrete(0, "play_from_cue", third),
+        # заходят тихо и вместе — до дропа их не должно быть слышно как
+        # отдельные треки
+        _ramp(0, "volume_ramp", target, align, 0.0, 0.55),
+        _ramp(0, "volume_ramp", third, align, 0.0, 0.45),
     ]
+    # МОМЕНТ ДРОПА: три трека звучат вместе, бас один — у входящей B.
+    ev += [
+        _ramp(align, "volume_ramp", target, 2, 0.55, 1.0),
+        _ramp(align, "volume_ramp", third, 2, 0.45, 0.85),
+        _ramp(align, "eq_low", target, 2, 0.0, unity),
+        _ramp(align, "eq_low", source, 2, unity, 0.0),
+        # у третьей деки низ так и остаётся снятым — она добавляет
+        # барабаны и гармонию, но не бас
+    ]
+    # Держим совмещение, потом остаётся одна дека.
+    out = align + hold
+    ev += [
+        _ramp(out, "crossfade", source, 4, 0.0, 1.0),
+        _ramp(out, "volume_ramp", third, 8, 0.85, 0.0),
+        _discrete(out + 4, "loop_exit", source),
+        _ramp(out + 4, "eq_low", source, 2, 0.0, unity),
+        _ramp(out + 8, "eq_low", third, 2, 0.0, unity),
+    ]
+    ev.sort(key=lambda e: e["beat_offset"])
+    return ev
 
 
 def _build_loop_and_roll(source: str, target: str, bpm: float, p: dict) -> list[dict]:
@@ -708,8 +756,13 @@ _register(Technique(
     id="DNB-10", name="Triple Drop", category="dnb", difficulty=5,
     description="Три трека сведены так, что их дропы совпадают одновременно — нужна 3-я дека.",
     bpm_delta_max=4, key_rule="compatible", energy_direction="up", requires_stems=False, requires_decks=3,
-    params=[TechniqueParam("align_bars", "Такты совмещения", 8, 4, 16, "тактов")],
-    steps=["Sync target и третью деку.", "Свести громкости до 2/3.", "На точке совпадения дропов — докроссфейдить, выйти из петли source."],
+    params=[
+        TechniqueParam("align_bars", "За сколько тактов до дропа заводить обе деки", 8, 2, 32, "тактов"),
+        TechniqueParam("hold_beats", "Сколько держать все три вместе", 16, 4, 64, "долей"),
+    ],
+    steps=["Обе входящие деки завести за N тактов до их дропов, низ снят у обеих.",
+           "В момент дропа — низ возвращается ТОЛЬКО у одной деки: три баса не складываются.",
+           "Держать совмещение, потом увести старую и третью, оставить одну."],
 ), _build_triple_drop)
 
 _register(Technique(
@@ -1686,14 +1739,251 @@ _register(Technique(
 ), _build_crush_break)
 
 
+# --------------------------------------------------------- своя техника
+#
+# Каталог из 38 приёмов отвечает на вопрос «как это делают». Он не
+# отвечает на вопрос «а если вот так»: у каждой техники три-десять
+# ползунков, и всё, чего в них нет, недостижимо — хочешь эхо длиннее, а
+# обмен низом короче, и чтобы вокал нового заходил раньше барабанов, —
+# такой техники в списке нет и не будет, потому что комбинаций больше,
+# чем можно перечислить.
+#
+# «Своя» — это не ещё одна техника, а пульт: один набор ползунков на
+# всё, что DARAVE вообще умеет отправить в Mixxx. Эквалайзер обеих дек,
+# фильтр, посыл на эффект, четыре слоя на каждой деке, луп, реверс,
+# бэкспин, бросок, кроссфейд, пауза перед входом.
+#
+# Значения по умолчанию — это «Классика» (DNB-25), то есть то, как сводят
+# в девяти случаях из десяти. Ползунок, оставленный на месте, ничего не
+# меняет; сдвинутый — меняет ровно одно. Так проще услышать, что делает
+# каждый, чем начиная с нуля.
+#
+# Ноль в ползунке всегда означает «этого действия нет», а не «действие с
+# нулевой силой»: событие просто не попадает в план. Иначе каждый
+# невыключенный приём слал бы в Mixxx рампу из нуля в ноль, и на длинном
+# сведении их набирались бы сотни.
+
+CUSTOM_PARAMS = [
+    # --- общая форма перехода ---
+    TechniqueParam("blend_bars", "Длина сведения", 8, 2, 64, "тактов"),
+    TechniqueParam("out_bars", "Из них на вывод старого", 4, 1, 32, "тактов"),
+    TechniqueParam("entry_delay_bars", "Пауза перед входом нового", 0, 0, 16, "тактов"),
+    TechniqueParam("entry_ramp_beats", "Ввод нового за", 2, 0.25, 32, "долей"),
+    TechniqueParam("under_level", "Уровень нового под старым", 0.40, 0.0, 1.0),
+    TechniqueParam("hold_bars", "Сколько держать совмещение", 0, 0, 32, "тактов"),
+    TechniqueParam("xfade_curve", "Форма кроссфейда: 0 плавно, 1 резко", 0.0, 0.0, 1.0),
+
+    # --- эквалайзер: обмен и подрезка ---
+    TechniqueParam("swap_bars", "Длина обмена низом", 1, 0.125, 16, "тактов"),
+    TechniqueParam("low_kill_new", "Снять низ у нового", 1.0, 0.0, 1.0),
+    TechniqueParam("mid_duck_new", "Убрать середину у нового", 0.0, 0.0, 1.0),
+    TechniqueParam("high_duck_new", "Убрать верх у нового", 0.0, 0.0, 1.0),
+    TechniqueParam("mid_duck_old", "Убрать середину у старого на выводе", 0.0, 0.0, 1.0),
+    TechniqueParam("high_duck_old", "Убрать верх у старого на выводе", 0.0, 0.0, 1.0),
+
+    # --- фильтр и эффекты ---
+    TechniqueParam("filter_old", "Свип фильтра на старом", 0.0, 0.0, 1.0),
+    TechniqueParam("filter_new", "Свип фильтра на новом (снизу вверх)", 0.0, 0.0, 1.0),
+    TechniqueParam("echo", "Сила эха на уходе старого", 0.55, 0.0, 1.0),
+    TechniqueParam("echo_beats", "Длина эха", 8, 1, 64, "долей"),
+    TechniqueParam("fx_new", "Эффект на новом", 0.0, 0.0, 1.0),
+
+    # --- слои (работают, если на деке .stem.mp4) ---
+    TechniqueParam("stem_drums_new", "Барабаны нового под старым", 0.0, 0.0, 1.0),
+    TechniqueParam("stem_bass_new", "Бас нового под старым", 0.0, 0.0, 1.0),
+    TechniqueParam("stem_other_new", "Гармония нового под старым", 1.0, 0.0, 1.0),
+    TechniqueParam("stem_vocals_new", "Вокал нового под старым", 1.0, 0.0, 1.0),
+    TechniqueParam("stem_drums_old", "Барабаны старого на выводе", 1.0, 0.0, 1.0),
+    TechniqueParam("stem_vocals_old", "Вокал старого на выводе", 1.0, 0.0, 1.0),
+
+    # --- транспорт ---
+    TechniqueParam("loop_bars", "Луп последней фразы старого", 4, 0, 32, "тактов"),
+    TechniqueParam("reverse_beats", "Реверс перед обменом", 0, 0, 32, "долей"),
+    TechniqueParam("spin_beats", "Длительность бэкспина", 0, 0, 16, "долей"),
+    TechniqueParam("throw_amount", "Сила броска (лупролл)", 0, 0, 1.0),
+    TechniqueParam("throw_beats", "Длина броска", 1, 0.125, 8, "долей"),
+]
+
+_STEM_KEYS = (("drums", "stem_drums"), ("bass", "stem_bass"),
+              ("other", "stem_other"), ("vocals", "stem_vocals"))
+
+
+def _build_custom(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Собирает переход из ползунков. Ничего не решает за диджея."""
+    unity = EQ_UNITY
+
+    blend = max(2.0, float(p.get("blend_bars", 8)))
+    out_bars = min(float(p.get("out_bars", 4)), max(1.0, blend / 2.0))
+    hold_bars = max(0.0, float(p.get("hold_bars", 0)))
+    under_bars = max(1.0, blend - out_bars) + hold_bars
+
+    intro = under_bars * 4          # долей: новый идёт под старым
+    out = out_bars * 4              # долей: вывод старого
+    delay = max(0.0, float(p.get("entry_delay_bars", 0))) * 4
+    swap_at = delay + intro
+    end = swap_at + out
+
+    ramp_in = _clamp(float(p.get("entry_ramp_beats", 2)), 0.25, max(0.25, intro))
+    under = float(p.get("under_level", 0.40))
+    swap = _clamp(float(p.get("swap_bars", 1)) * 4, 0.5, max(0.5, out))
+    curve = "linear" if float(p.get("xfade_curve", 0.0)) < 0.5 else "ease_in"
+
+    ev: list[dict] = [
+        _discrete(delay, "sync", target),
+        _hold(delay, "sync_lock", target, end - delay + 4),
+        _discrete(delay, "play_from_cue", target),
+    ]
+
+    # --- эквалайзер нового, пока он под старым --------------------------
+    # Низ снимается ПЕРЕД вводом фейдера, а не одновременно с ним: иначе
+    # первые доли играют два баса, и слышно это отчётливее всего.
+    kill = float(p.get("low_kill_new", 1.0))
+    ev.append(_ramp(max(0.0, delay - 1), "eq_low", target, 1,
+                    unity * (1.0 - kill), unity * (1.0 - kill)))
+    for key, action in (("mid_duck_new", "eq_mid"), ("high_duck_new", "eq_high")):
+        duck = float(p.get(key, 0.0))
+        if duck > 0.01:
+            ev.append(_ramp(delay, action, target, ramp_in, unity, unity * (1.0 - duck)))
+
+    # --- слои нового, пока он под старым --------------------------------
+    for stem, key in _STEM_KEYS:
+        val = p.get(f"{key}_new")
+        if val is None or abs(float(val) - 1.0) < 0.01:
+            continue  # 1.0 = слой звучит как есть, событие не нужно
+        ev.append(_stem(delay, target, stem, max(0.25, ramp_in), 1.0, float(val)))
+
+    # --- ввод нового ----------------------------------------------------
+    ev.append(_ramp(delay, "crossfade", source, ramp_in, 0.0, under, curve))
+
+    # --- фильтр и эффект на новом ---------------------------------------
+    if float(p.get("filter_new", 0.0)) > 0.01:
+        amt = float(p["filter_new"])
+        # Снизу вверх: у входящего фильтр открывается, а не закрывается.
+        ev.append(_ramp(delay, "filter_sweep", target, intro, -amt, 0.0))
+    if float(p.get("fx_new", 0.0)) > 0.01:
+        ev.append(_discrete(delay, "fx_enable", target))
+        ev.append(_ramp(delay, "fx_mix", target, intro, 0.0, float(p["fx_new"])))
+        ev.append(_ramp(end, "fx_mix", target, 2, float(p["fx_new"]), 0.0))
+
+    # --- луп последней фразы старого ------------------------------------
+    loop_bars = min(float(p.get("loop_bars", 0)), under_bars)
+    if loop_bars >= 1:
+        ev.append(_discrete(swap_at - loop_bars * 4, "loop_activate",
+                            source, {"beats": loop_bars * 4}))
+
+    # --- приёмы перед обменом -------------------------------------------
+    rev = float(p.get("reverse_beats", 0))
+    if rev >= 0.25:
+        ev.append(_hold(swap_at - rev, "reverse_hold", source, rev))
+    spin = float(p.get("spin_beats", 0))
+    if spin >= 0.25:
+        # Бэкспин кончается сам — отпускать его нельзя (см. midi_mapping),
+        # поэтому это _discrete, а не _hold.
+        ev.append(_discrete(swap_at, "spinback", source,
+                            {"factor": 1.0 + spin / 8.0, "rate": -10.0}))
+    throw = float(p.get("throw_amount", 0))
+    if throw > 0.01:
+        beats = float(p.get("throw_beats", 1))
+        ev.append(_hold(swap_at, "loop_roll", target, beats, ))
+        ev[-1]["params"] = {"beats": beats}
+
+    # --- обмен низом ----------------------------------------------------
+    ev.append(_ramp(swap_at, "eq_low", target, swap, unity * (1.0 - kill), unity))
+    ev.append(_ramp(swap_at, "eq_low", source, swap, unity, 0.0))
+    # Середина и верх нового возвращаются на место вместе с низом: если
+    # оставить их подрезанными, новый трек так и играет глухим.
+    for key, action in (("mid_duck_new", "eq_mid"), ("high_duck_new", "eq_high")):
+        if float(p.get(key, 0.0)) > 0.01:
+            ev.append(_ramp(swap_at, action, target, swap,
+                            unity * (1.0 - float(p[key])), unity))
+    for stem, key in _STEM_KEYS:
+        val = p.get(f"{key}_new")
+        if val is None or abs(float(val) - 1.0) < 0.01:
+            continue
+        ev.append(_stem(swap_at, target, stem, swap, float(val), 1.0))
+
+    # --- вывод старого ---------------------------------------------------
+    ev.append(_ramp(swap_at, "crossfade", source, out, under, 1.0, curve))
+    if float(p.get("filter_old", 0.0)) > 0.01:
+        ev.append(_ramp(swap_at, "filter_sweep", source, out, 0.0,
+                        float(p["filter_old"])))
+    for key, action in (("mid_duck_old", "eq_mid"), ("high_duck_old", "eq_high")):
+        duck = float(p.get(key, 0.0))
+        if duck > 0.01:
+            ev.append(_ramp(swap_at, action, source, out, unity, unity * (1.0 - duck)))
+    for stem, key in (("drums", "stem_drums"), ("vocals", "stem_vocals")):
+        val = p.get(f"{key}_old")
+        if val is None or abs(float(val) - 1.0) < 0.01:
+            continue
+        ev.append(_stem(swap_at, source, stem, out, 1.0, float(val)))
+
+    # --- эхо на уходе ----------------------------------------------------
+    echo = float(p.get("echo", 0.55))
+    if echo > 0.01:
+        echo_beats = max(1.0, float(p.get("echo_beats", 8)))
+        # Эхо включается ДО конца вывода и тянется ПОСЛЕ него: смысл его в
+        # том, что хвост старого звучит уже поверх нового и склеивает стык.
+        start = max(swap_at, end - echo_beats / 2.0)
+        ev.append(_discrete(start, "fx_enable", source))
+        ev.append(_ramp(start, "fx_mix", source, echo_beats / 2.0, 0.0, echo))
+        ev.append(_ramp(end, "fx_mix", source, echo_beats, echo, 0.0))
+
+    # --- уборка за собой --------------------------------------------------
+    ev.append(_discrete(end, "loop_exit", source))
+    ev.append(_ramp(end + 2, "eq_low", source, 2, 0.0, unity))
+    for action, key in (("eq_mid", "mid_duck_old"), ("eq_high", "high_duck_old")):
+        if float(p.get(key, 0.0)) > 0.01:
+            ev.append(_ramp(end + 2, action, source, 2,
+                            unity * (1.0 - float(p[key])), unity))
+    if float(p.get("filter_old", 0.0)) > 0.01:
+        ev.append(_ramp(end + 2, "filter_sweep", source, 2, float(p["filter_old"]), 0.0))
+    for stem, key in (("drums", "stem_drums"), ("vocals", "stem_vocals")):
+        val = p.get(f"{key}_old")
+        if val is not None and abs(float(val) - 1.0) >= 0.01:
+            ev.append(_stem(end + 2, source, stem, 2, float(val), 1.0))
+
+    ev.sort(key=lambda e: e["beat_offset"])
+    return ev
+
+
+_register(Technique(
+    id="CUSTOM", name="Своя техника", category="custom", difficulty=3,
+    description=(
+        "Пульт, а не приём: все ползунки EQ, фильтра, эффектов, слоёв и "
+        "транспорта сразу. По умолчанию стоит «Классика» — ползунок на "
+        "месте ничего не меняет, сдвинутый меняет ровно одно. Слои "
+        "действуют, только если на деке лежит .stem.mp4."),
+    bpm_delta_max=None, key_rule="any", energy_direction="any",
+    requires_stems=False, requires_decks=2,
+    params=CUSTOM_PARAMS,
+    steps=["Крутите ползунки и слушайте демо — каждая правка проигрывается сразу.",
+           "Ползунок на нуле означает «этого действия нет», а не «сила нулевая».",
+           "Слои (стемы) работают, если трек загружен как .stem.mp4."],
+), _build_custom)
+
+
 def build_plan(technique_id: str, plan_id: str, source: str, target: str, bpm: float,
-                overrides: dict | None = None) -> dict:
+                overrides: dict | None = None, third: str | None = None) -> dict:
+    """third — третья дека для приёмов с requires_decks=3.
+
+    Раньше её имя жило в `params` со значением по умолчанию "C", а params
+    состоит из ЧИСЛОВЫХ ползунков — то есть передать другую деку было
+    нечем, и трипл-дроп всегда играл на C, даже если трек лежал на D."""
     if technique_id not in TECHNIQUES:
         raise ValueError(f"Unknown technique: {technique_id}")
     technique = TECHNIQUES[technique_id]
     params = technique.param_defaults()
     if overrides:
         params.update({k: v for k, v in overrides.items() if k in params})
+    if technique.requires_decks >= 3:
+        if not third:
+            raise ValueError(
+                f"«{technique.name}» играется на трёх деках — укажите третью "
+                f"(source={source}, target={target}). Она должна быть загружена "
+                f"и видна в телеметрии.")
+        if third in (source, target):
+            raise ValueError(f"Третья дека не может совпадать с {source} или {target}")
+        params["third_deck"] = third
     events = _BUILDERS[technique_id](source, target, bpm, params)
     return {
         "plan_id": plan_id,

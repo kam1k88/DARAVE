@@ -76,11 +76,11 @@ def candidates_for_outgoing(track: dict, bpm: float, needed_seconds: float,
     for t in energy_breaks:
         if earliest <= t <= latest:
             out.append(_point("breakdown", t, bar_seconds, duration, latest,
-                              f"брейкдаун на {_fmt(t)} — низ уходит сам"))
+                              "брейкдаун — низ уходит сам"))
     for t in [float(x) for x in (emap.get("pits") or [])]:
         if earliest <= t <= latest:
             out.append(_point("pit", t, bar_seconds, duration, latest,
-                              f"яма на {_fmt(t)}"))
+                              "яма перед дропом"))
 
     if not energy_breaks:
         # карты энергии ещё нет (библиотека не пересчитана) — работаем по старому
@@ -88,20 +88,20 @@ def candidates_for_outgoing(track: dict, bpm: float, needed_seconds: float,
             t = float(bd.get("start_seconds", 0.0))
             if earliest <= t <= latest:
                 out.append(_point("breakdown", t, bar_seconds, duration, latest,
-                                  f"брейкдаун на {_fmt(t)}"))
+                                  "брейкдаун"))
 
     for t in structure.get("phrase_boundaries") or []:
         t = float(t)
         if earliest <= t <= latest and t > 0.5:
             out.append(_point("phrase", t, bar_seconds, duration, latest,
-                              f"граница фразы на {_fmt(t)}"))
+                              "граница фразы"))
 
     energy_drops = [float(x) for x in (emap.get("drops") or [])]
     for t in (energy_drops or [float(d.get("time_seconds", 0.0))
                                for d in (structure.get("drops") or [])]):
         if earliest <= t <= latest:
             out.append(_point("drop", t, bar_seconds, duration, latest,
-                              f"дроп на {_fmt(t)}"))
+                              "дроп"))
 
     if want_seconds is not None:
         # Ровно та секунда, которую просит хронометраж, — на случай, когда
@@ -111,7 +111,7 @@ def candidates_for_outgoing(track: dict, bpm: float, needed_seconds: float,
         t = round(t / bar_seconds) * bar_seconds
         if t > 0.5:
             out.append(_point("timed", t, bar_seconds, duration, latest,
-                              f"по хронометражу на {_fmt(t)}"))
+                              "по хронометражу сета"))
 
     # «Хвост» — это конец трека, а не место по хронометражу. Пока он
     # добавлялся всегда, он обходил окно поиска и утаскивал уход на
@@ -119,11 +119,11 @@ def candidates_for_outgoing(track: dict, bpm: float, needed_seconds: float,
     # только как запасной вариант, когда времени не задано.
     if duration and latest > earliest and want_seconds is None:
         out.append(_point("tail", latest, bar_seconds, duration, latest,
-                          f"за {needed_seconds:.0f}с до конца ({_fmt(latest)})"))
+                          f"хвост трека, за {needed_seconds:.0f}с до конца"))
 
     if not out:
         out.append(_point("tail", max(earliest, 0.0), bar_seconds, duration or 1.0, 0.0,
-                          "структуру найти не удалось — увожу по хронометражу"))
+                          "по хронометражу (структуру найти не удалось)"))
 
     _snap_all_to_phrase(out, bar_seconds, duration)
 
@@ -209,6 +209,11 @@ def _snap_all_to_phrase(points: list[dict], bar_seconds: float, duration: float,
             t = min(t, max(0.0, duration - bar_seconds))
         p["time_seconds"] = round(t, 2)
         p["bar_index"] = round(t / bar_seconds) if bar_seconds else 0
+        # Подпись содержит время, а мы его только что сдвинули: без
+        # пересборки в списке стояло бы «брейкдаун · 3:12» на секунде
+        # 3:07, и диджей выбирал бы одно, а получал другое.
+        if p.get("name"):
+            p["label"] = f"{p['name']} · {_fmt(p['time_seconds'])}"
     _dedupe(points, min_gap_seconds=bar_seconds * PHRASE_BARS * 0.5)
 
 
@@ -300,7 +305,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
 
     out.append({
         "kind": "start", "time_seconds": 0.0, "bar_index": 0,
-        "label": "с начала трека",
+        "name": "с начала трека", "label": "с начала трека · 0:00",
         "hint": ("интро успевает развернуться" if not long_intro
                  else f"осторожно: до бита {intro_bars} тактов почти пустого интро"),
         "score": (0.95 if not long_intro else 0.45) * (0.5 if short_slot else 1.0),
@@ -328,7 +333,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
             out.append({
                 "kind": "drop_sync", "time_seconds": round(t, 1),
                 "bar_index": round(t / bar_seconds),
-                "label": f"дроп на смене ({_fmt(t)})",
+                "name": "дроп нового ровно на смене", "label": f"дроп нового ровно на смене · {_fmt(t)}",
                 "hint": f"дроп нового придёт ровно в конец сведения, на {_fmt(drop_t)}",
                 "score": 1.05 if drop_t == energy_drops[0] else 0.95,
                 "exact": True,
@@ -344,7 +349,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
             out.append({
                 "kind": "pre_drop", "time_seconds": round(t, 1),
                 "bar_index": round(t / bar_seconds),
-                "label": f"за {bars_before} тактов до дропа ({_fmt(t)})",
+                "name": f"за {bars_before} тактов до дропа", "label": f"за {bars_before} тактов до дропа · {_fmt(t)}",
                 "hint": f"вход, после которого дроп нового трека приходит ровно через {bars_before} тактов "
                         f"— так его слышно как событие, а не как «что-то началось»",
                 "score": score,
@@ -354,7 +359,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
         out.append({
             "kind": "intro_lead", "time_seconds": round(intro_entry, 1),
             "bar_index": round(intro_entry / bar_seconds),
-            "label": f"интро под старый трек ({_fmt(intro_entry)})",
+            "name": "интро под старый трек", "label": f"интро под старый трек · {_fmt(intro_entry)}",
             "hint": (f"новый заходит своим интро поверх ещё играющего старого, "
                      f"а его барабаны приходят на {_fmt(drums_from)} — ровно когда старый уходит"),
             "score": 1.10,
@@ -363,7 +368,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
         out.append({
             "kind": "body", "time_seconds": round(drums_from, 1),
             "bar_index": round(drums_from / bar_seconds),
-            "label": f"где вступают барабаны ({_fmt(drums_from)})",
+            "name": "первый бит", "label": f"первый бит · {_fmt(drums_from)}",
             "hint": "измерено по самому треку: раньше этого места бита нет",
             "score": 1.05 if want_drums else 0.6,
         })
@@ -371,7 +376,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
         out.append({
             "kind": "body", "time_seconds": round(body_start, 1),
             "bar_index": round(body_start / bar_seconds),
-            "label": f"где вступают барабаны ({_fmt(body_start)})",
+            "name": "конец интро", "label": f"конец интро · {_fmt(body_start)}",
             "hint": "пропустить интро без бита и войти сразу в ритм",
             "score": 0.85,
         })
@@ -381,7 +386,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
             out.append({
                 "kind": "phrase", "time_seconds": round(t, 1),
                 "bar_index": round(t / bar_seconds),
-                "label": f"с границы фразы {_fmt(t)}",
+                "name": "начало фразы", "label": f"начало фразы · {_fmt(t)}",
                 "hint": "пропустить интро и войти сразу в тело трека",
                 "score": 0.7,
             })
@@ -390,7 +395,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
         out.append({
             "kind": "drop", "time_seconds": round(t, 1),
             "bar_index": round(t / bar_seconds),
-            "label": f"сразу с дропа {_fmt(t)}",
+            "name": "сразу с дропа", "label": f"сразу с дропа · {_fmt(t)}",
             "hint": "жёстко и сразу в лоб — годится для быстрого реза, не для бленда",
             "score": 0.85 if short_slot else 0.5,
         })
@@ -410,7 +415,7 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
             out = [{
                 "kind": "body", "time_seconds": round(drums_from, 1),
                 "bar_index": round(drums_from / bar_seconds),
-                "label": f"где вступают барабаны ({_fmt(drums_from)})",
+                "name": "первый бит", "label": f"первый бит · {_fmt(drums_from)}",
                 "hint": "единственное место, где у трека есть бит на всю длину сведения",
                 "score": 1.0,
             }]
@@ -435,7 +440,13 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
 
 
 def _point(kind: str, t: float, bar_seconds: float, duration: float,
-           latest: float, label: str) -> dict:
+           latest: float, name: str) -> dict:
+    """name — это РОЛЬ точки, без времени: «брейкдаун после второго дропа».
+
+    Время подставляется здесь и всегда одинаково, следом за ролью. Раньше
+    подпись собиралась в каждом месте по-своему («дроп на 0:37», «за 30с
+    до конца (5:12)»), и выбирать приходилось по секундам, хотя диджей
+    выбирает место: первый бит, конец интро, билд, дроп."""
     # Чем ближе к предельно поздней допустимой точке, тем лучше: уводить
     # трек с середины — значит не дать ему доиграть.
     lateness = (t / latest) if latest > 0 else 0.0
@@ -444,7 +455,8 @@ def _point(kind: str, t: float, bar_seconds: float, duration: float,
         "kind": kind,
         "time_seconds": round(t, 1),
         "bar_index": round(t / bar_seconds) if bar_seconds else 0,
-        "label": label,
+        "name": name,
+        "label": f"{name} · {_fmt(t)}",
         "hint": KIND_HINT.get(kind, ""),
         "score": round(score, 3),
     }

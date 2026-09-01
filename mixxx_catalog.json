@@ -8964,6 +8964,81 @@
     "15",
     "16"
    ]
+  },
+  {
+   "family": "stem",
+   "key": "volume",
+   "group_template": "[Channel{n}_Stem{i}]",
+   "params": [
+    "n",
+    "i"
+   ],
+   "scope": "слой деки (1 барабаны, 2 бас, 3 гармония, 4 вокал)",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 1.0,
+   "instances": 16
+  },
+  {
+   "family": "stem",
+   "key": "mute",
+   "group_template": "[Channel{n}_Stem{i}]",
+   "params": [
+    "n",
+    "i"
+   ],
+   "scope": "слой деки (1 барабаны, 2 бас, 3 гармония, 4 вокал)",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
+  },
+  {
+   "family": "stem",
+   "key": "stem_count",
+   "group_template": "[Channel{n}]",
+   "params": [
+    "n"
+   ],
+   "scope": "сколько слоёв у загруженного трека (0 или 4)",
+   "kind": "range",
+   "min": 0.0,
+   "max": 4.0,
+   "neutral": 0.0,
+   "instances": 4
+  },
+  {
+   "family": "stem",
+   "key": "super1",
+   "group_template": "[QuickEffectRack1_[Channel{n}_Stem{i}]]",
+   "params": [
+    "n",
+    "i"
+   ],
+   "scope": "ручка эффекта слоя (фильтр по умолчанию)",
+   "kind": "range",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.5,
+   "instances": 16
+  },
+  {
+   "family": "stem",
+   "key": "enabled",
+   "group_template": "[QuickEffectRack1_[Channel{n}_Stem{i}]]",
+   "params": [
+    "n",
+    "i"
+   ],
+   "scope": "включить эффект слоя",
+   "kind": "toggle",
+   "min": 0.0,
+   "max": 1.0,
+   "neutral": 0.0,
+   "instances": 16
   }
- ]
+ ],
+ "stem_note": "Стем-контролы Mixxx 2.6+ создаются на каждую деку и живут всегда, но действуют только когда на деке .stem.mp4. В дампе co_dump их нет — он снят на сборке без __STEM__."
 }

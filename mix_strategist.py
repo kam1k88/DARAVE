@@ -953,6 +953,27 @@ def plan_layout(ordered: list[dict], target_minutes: float | None) -> dict:
             "planned_minutes": round(slot * n / 60.0, 1)}
 
 
+def genre_breakdown(tracks: list[dict]) -> dict:
+    """Сколько чего в библиотеке: жанры, поджанры и сколько без подписи.
+
+    Нужно интерфейсу, чтобы фильтр показывал реальные варианты, а не
+    полный список из genre.py, в котором половина пустая."""
+    genres: dict[str, int] = {}
+    subs: dict[str, int] = {}
+    for t in tracks:
+        g = t.get("genre")
+        genres[g or "?"] = genres.get(g or "?", 0) + 1
+        sub = t.get("subgenre")
+        if sub:
+            subs[sub] = subs.get(sub, 0) + 1
+    return {
+        "genres": dict(sorted(genres.items(), key=lambda kv: -kv[1])),
+        "subgenres": dict(sorted(subs.items(), key=lambda kv: -kv[1])),
+        "unlabelled": genres.get("?", 0),
+        "without_subgenre": len(tracks) - sum(subs.values()),
+    }
+
+
 def plan_quality(strategy: dict) -> dict:
     """Насколько удачен план ЦЕЛИКОМ — одним числом.
 
@@ -999,7 +1020,9 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
                   fit_mode: str = "compress",
                   track_order: list[str] | None = None,
                   only_mixable: bool = True,
-                  exclude: list[str] | None = None) -> dict:
+                  exclude: list[str] | None = None,
+                  include_genres: list[str] | None = None,
+                  include_subgenres: list[str] | None = None) -> dict:
     """Главная точка входа: аналитические записи треков -> план сета.
 
     target_minutes — желаемая длительность; лишние треки отбрасываются.
@@ -1020,6 +1043,22 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
         tracks = [t for t in tracks if t.get("name") not in dropped_by_hand]
         if not tracks:
             raise ValueError("Из плана убраны все треки — верните хотя бы один.")
+
+    # Отбор по жанру и поджанру. Треки БЕЗ подписи не выкидываются: у
+    # поджанра источник есть далеко не у всех (см. genre.py), и молча
+    # терять половину библиотеки из-за пустого поля — худшее, что тут
+    # можно сделать. Фильтр убирает только то, про что ТОЧНО известно,
+    # что оно другого жанра.
+    if include_genres:
+        want = {g.lower() for g in include_genres}
+        tracks = [t for t in tracks
+                  if not t.get("genre") or str(t["genre"]).lower() in want]
+    if include_subgenres:
+        want = {g.lower() for g in include_subgenres}
+        tracks = [t for t in tracks
+                  if not t.get("subgenre") or str(t["subgenre"]).lower() in want]
+    if not tracks:
+        raise ValueError("По выбранным жанрам не осталось ни одного трека.")
 
     el_map = library_energy_levels(tracks)
     if track_order:

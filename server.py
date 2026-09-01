@@ -184,6 +184,20 @@ async def _lifespan(app: FastAPI):
 
     asyncio.get_event_loop().run_in_executor(None, _warm)
     logger.info("код: " + _code_fingerprint_line())
+
+    # Уборка на СТАРТЕ, а не на выходе. Запуск backend'а — это и есть
+    # начало новой сессии, а выход бывает и по kill'у, когда обработчик
+    # завершения не вызывается вовсе. Правило «оставить последнее»
+    # (housekeeping.SWEEP_RULES) сохраняет свежие сеты и демо: диджей
+    # часто возвращается к тому, что собрал полчаса назад.
+    try:
+        import housekeeping
+
+        asyncio.get_event_loop().run_in_executor(
+            None, lambda: housekeeping.session_cleanup(log=logger.info))
+    except Exception:
+        logger.exception("уборка при старте не удалась (не критично)")
+
     yield
 
 
@@ -296,17 +310,11 @@ async def execute_technique(session_id: str, technique_id: str, body: dict | Non
     if technique_id not in TECHNIQUES:
         raise HTTPException(status_code=404, detail=f"Неизвестная техника: {technique_id}")
     technique = TECHNIQUES[technique_id]
-    if technique.requires_stems:
-        raise HTTPException(
-            status_code=400,
-            detail=f"«{technique.name}» работает по слоям. Офлайн-демо для неё есть "
-                   f"(стемы считает stems.py), а живьём в Mixxx отдельных каналов "
-                   f"под слои нет — исполнить на деках нечем.",
-        )
 
     body = body or {}
     source = body.get("source_deck", "A")
     target = body.get("target_deck", "B")
+    third = body.get("third_deck")
     overrides = body.get("param_overrides")
 
     telemetry = room.latest_telemetry
@@ -316,15 +324,51 @@ async def execute_technique(session_id: str, technique_id: str, body: dict | Non
             detail=f"Дека {source} или {target} не видна в телеметрии (сейчас есть: {list(telemetry.keys())}) — companion подключён и деки загружены?",
         )
 
+    if technique.requires_stems:
+        # Mixxx 2.6+ умеет играть слои сам, если на деке лежит .stem.mp4.
+        # Раньше здесь стоял безусловный отказ «живьём отдельных каналов
+        # под слои нет» — он был верен для 2.4 и перестал быть верным.
+        # Теперь спрашиваем деку, а не догадываемся: stem_count приходит
+        # телеметрией и равен 4 у стемового файла и 0 у обычного.
+        plain = [d for d in (source, target)
+                 if int(telemetry.get(d, {}).get("stem_count") or 0) < 4]
+        if plain:
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{technique.name}» работает по слоям, а на деке "
+                       f"{' и '.join(plain)} обычный файл без слоёв. "
+                       f"Соберите стемы: python stems.py --dir \"путь к музыке\" — "
+                       f"рядом с треком появится .stem.mp4, загрузите в Mixxx его. "
+                       f"Если стемы уже есть, обновите скрипт контроллера в Mixxx: "
+                       f"без поля stem_count в телеметрии дека выглядит обычной.",
+            )
+
+    if technique.requires_decks >= 3:
+        # Третью деку не угадываем: раньше она была зашита как "C", и
+        # приём молча играл не на той деке, если трек лежал на D.
+        if not third:
+            free = [d for d in sorted(telemetry) if d not in (source, target)
+                    and telemetry[d].get("track_loaded")]
+            third = free[0] if free else None
+        if not third:
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{technique.name}» играется на трёх деках, а кроме "
+                       f"{source} и {target} ни на одной деке нет загруженного трека.")
+        if third not in telemetry:
+            raise HTTPException(status_code=400,
+                                detail=f"Дека {third} не видна в телеметрии")
+
     bpm = telemetry[source].get("bpm") or 128.0
     plan_id = f"tech_{session_id}_{source}_to_{target}_{technique_id}"
     try:
-        plan = build_plan(technique_id, plan_id, source, target, bpm, overrides)
+        plan = build_plan(technique_id, plan_id, source, target, bpm, overrides,
+                          third=third)
     except NotImplementedError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     sent = await room.send_plan_to_companion(plan)
-    return JSONResponse({"ok": sent, "plan_id": plan_id})
+    return JSONResponse({"ok": sent, "plan_id": plan_id, "third_deck": third})
 
 
 @app.get("/api/rooms/{session_id}/techniques/{technique_id}/recommend")
@@ -367,6 +411,54 @@ async def technique_cue_for_pair(session_id: str, technique_id: str,
     if ta is None or tb is None:
         raise HTTPException(status_code=400, detail="Трек не найден в библиотеке комнаты")
     return JSONResponse({"cue": mix_strategist.technique_cue_hints(TECHNIQUES[technique_id], ta, tb)})
+
+
+@app.get("/api/rooms/{session_id}/cues")
+async def track_cues(session_id: str, path: str = "", name: str = "") -> JSONResponse:
+    """Именованные точки одного трека: первый бит, конец интро, билд, дроп,
+    брейкдаун, аутро, места под луп. Роль впереди, время следом — диджей
+    выбирает место, а не секунду."""
+    import cue_points
+
+    room = sessions.get_or_create(session_id)
+    track = None
+    for t in room.library_tracks:
+        if (path and t.get("path") == path) or (name and t.get("name") == name):
+            track = t
+            break
+    if track is None:
+        raise HTTPException(status_code=404, detail="Трек не найден в библиотеке комнаты")
+    data = cue_points.cues_for_track(track)
+    data["track"] = {"name": track.get("name"), "path": track.get("path"),
+                     "bpm": track.get("bpm"),
+                     "duration_seconds": track.get("duration_seconds")}
+    if not data["anchored"]:
+        data["warning"] = ("карты барабанов у трека нет — сетка тактов условная. "
+                           "Отсканируйте библиотеку заново.")
+    return JSONResponse(data)
+
+
+@app.post("/api/rooms/{session_id}/cues/export")
+async def export_cues_to_mixxx(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Выгружает точки всей библиотеки в горячие метки Mixxx.
+
+    body: {"dry_run": true} — показать, что будет записано;
+          {"slots": 8}      — сколько кнопок занимать.
+    ВАЖНО: Mixxx должен быть закрыт — он держит библиотеку в памяти и
+    перезапишет файл при выходе."""
+    import mixxx_cues
+
+    body = body or {}
+    room = sessions.get_or_create(session_id)
+    if not room.library_tracks:
+        raise HTTPException(status_code=400,
+                            detail="Библиотека комнаты пуста — сначала отсканируйте музыку")
+    r = await asyncio.to_thread(
+        mixxx_cues.export_library, room.library_tracks, None,
+        bool(body.get("dry_run")), logger.info, int(body.get("slots") or 8))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error") or "не вышло")
+    return JSONResponse(r)
 
 
 @app.post("/api/rooms/{session_id}/techniques/{technique_id}/demo")
@@ -870,6 +962,27 @@ def _kick_bpm_refine(session_id: str, force: bool = False) -> None:
     _bpm_refine_tasks[session_id] = asyncio.create_task(_refine_room_bpm(session_id, force=force))
 
 
+@app.post("/api/cleanup")
+async def cleanup_now(body: dict | None = None) -> JSONResponse:
+    """Убрать демо, сеты, записи и оборванные папки стемов.
+
+    body: {"dry_run": true} — только показать, что было бы удалено;
+          {"all": true}     — убрать всё, не оставляя последних файлов."""
+    import housekeeping
+
+    body = body or {}
+    rules = dict(housekeeping.SWEEP_RULES)
+    if body.get("all"):
+        for name in housekeeping.SWEEP_RULES:
+            housekeeping.SWEEP_RULES[name] = (0, 0.0)
+    try:
+        report = housekeeping.session_cleanup(
+            dry_run=bool(body.get("dry_run")), log=logger.info)
+    finally:
+        housekeeping.SWEEP_RULES.update(rules)
+    return JSONResponse(report)
+
+
 @app.post("/api/rooms/{session_id}/library/refine-bpm")
 async def refine_library_bpm(session_id: str, body: dict | None = None) -> JSONResponse:
     """Ручной запуск того же уточнения (обычно оно идёт само)."""
@@ -1030,6 +1143,105 @@ async def library_scan_status(session_id: str) -> JSONResponse:
     return JSONResponse(status)
 
 
+# Разделение на слои идёт подпроцессом и часами: держим его состояние
+# рядом со сканом и по тем же правилам (один проход на комнату).
+_stem_processes: dict[str, object] = {}
+_stem_status: dict[str, dict] = {}
+
+
+@app.post("/api/rooms/{session_id}/stems/build")
+async def start_stems_build(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Кнопка «🎚 Стемы»: разделить треки папки на четыре слоя и собрать
+    рядом с каждым .stem.mp4 — файл, который Mixxx играет по слоям.
+
+    body: {"dir": путь, "backend": "auto|roformer|demucs|fast|hpss",
+           "only_live": true}  — only_live не считает модель, а только
+    упаковывает уже посчитанные слои в .stem.mp4 (секунды на трек)."""
+    import stems as _stems
+
+    body = body or {}
+    proc = _stem_processes.get(session_id)
+    if proc is not None and getattr(proc, "poll", lambda: 0)() is None:
+        raise HTTPException(status_code=409, detail="Разделение уже идёт — дождитесь конца")
+
+    path = (body.get("dir") or "").strip()
+    if not path:
+        raise HTTPException(status_code=400, detail="Укажите папку с музыкой")
+    if not Path(path).exists():
+        raise HTTPException(status_code=400, detail=f"Папка не найдена: {path}")
+
+    backend = body.get("backend") or "auto"
+    # Отказ ДО запуска, а не через час перебора: чего не хватает, видно
+    # сразу, и видно человеческим текстом с командой установки.
+    problem = _stems.backend_problem(_stems.resolve_backend(backend))
+    if problem and not body.get("only_live"):
+        raise HTTPException(status_code=400, detail=problem)
+    if _stems.stem_mp4 is None or not _stems.stem_mp4.ffmpeg_exe():
+        raise HTTPException(
+            status_code=400,
+            detail="Для .stem.mp4 нужен ffmpeg, а его нет в PATH. "
+                   "Поставьте: winget install Gyan.FFmpeg — и перезапустите DARAVE.")
+
+    cmd = [sys.executable, str(Path(__file__).parent / "stems.py"),
+           "--dir", path, "--backend", backend]
+    if body.get("only_live"):
+        cmd.append("--only-live")
+
+    import subprocess as _sp
+
+    try:
+        proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                         cwd=str(Path(__file__).parent),
+                         creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Не смог запустить stems.py: {exc}") from exc
+
+    info = _stems.device_info()
+    logger.info(f"стемы: запуск для '{path}', способ {backend}, "
+                f"устройство {'CUDA ' + str(info.get('name')) if info.get('cuda') else 'CPU'}")
+    _stem_processes[session_id] = proc
+    _stem_status[session_id] = {"running": True, "tail": [], "ok": None,
+                                "device": info, "backend": backend}
+
+    def _pump() -> None:
+        if proc.stdout is not None:
+            for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    st = _stem_status[session_id]
+                    st["tail"] = (st["tail"] + [line])[-40:]
+        proc.wait()
+
+    async def _watch() -> None:
+        await asyncio.to_thread(_pump)
+        st = _stem_status[session_id]
+        st["running"] = False
+        st["ok"] = proc.returncode == 0
+        for line in st["tail"][-15:]:
+            logger.info(f"[стемы] {line}")
+        room = sessions.get_or_create(session_id)
+        await room.broadcast_to_chat({"type": "stems_finished", "ok": st["ok"],
+                                      "tail": st["tail"][-5:]})
+
+    asyncio.create_task(_watch())
+    hint = ("собираю .stem.mp4 из готовых слоёв" if body.get("only_live")
+            else ("считаю на видеокарте " + str(info.get("name")) if info.get("cuda")
+                  else "считаю на процессоре — это долго, поставьте torch с CUDA"))
+    return JSONResponse({"ok": True, "started": True, "detail": "Разделение запущено: " + hint})
+
+
+@app.get("/api/rooms/{session_id}/stems/status")
+async def stems_status(session_id: str) -> JSONResponse:
+    import stems as _stems
+
+    st = dict(_stem_status.get(session_id, {"running": False, "tail": [], "ok": None}))
+    room = sessions.get_or_create(session_id)
+    paths = [t.get("path") for t in room.library_tracks if t.get("path")]
+    if paths:
+        st["coverage"] = _stems.library_coverage(paths)
+    return JSONResponse(st)
+
+
 @app.post("/api/rooms/{session_id}/strategy")
 async def compute_strategy(session_id: str, body: dict | None = None) -> JSONResponse:
     """Строит план сета (см. mix_strategist.py) по загруженной библиотеке
@@ -1068,7 +1280,10 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
         target_minutes=body.get("target_minutes") or DEFAULT_SET_MINUTES,
         variant=int(body.get("variant") or 0),
         overrides=body.get("overrides"),
+        include_genres=body.get("include_genres"),
+        include_subgenres=body.get("include_subgenres"),
     )
+    strategy["genre_breakdown"] = mix_strategist.genre_breakdown(room.library_tracks)
     room.last_strategy = strategy
 
     # Пишем в лог, ЧТО реально получилось с энергией: без этого «EL всё ещё

@@ -53,7 +53,7 @@ BY_KEY: dict[str, list[dict]] = {}
 for _e in ENTRIES:
     BY_KEY.setdefault(_e["key"], []).append(_e)
 
-FAMILY_ORDER = ("deck", "eq", "quickfx", "fxunit", "fxslot", "master",
+FAMILY_ORDER = ("deck", "eq", "quickfx", "stem", "fxunit", "fxslot", "master",
                 "library", "autodj", "recording", "sampler", "mic", "aux", "preview")
 
 
@@ -73,6 +73,9 @@ FAMILY_BY_PARAMS = {
     frozenset(("u", "s")): ("fxslot",),
     frozenset(("u",)): ("fxunit",),
     frozenset(("n",)): ("deck", "eq", "eqrack", "quickfx", "quickfx_e"),
+    # Слой деки адресуется ДВУМЯ числами: дека и номер слоя. Ни одно
+    # другое семейство такой пары не требует, поэтому выбор однозначен.
+    frozenset(("n", "i")): ("stem",),
     frozenset(("i",)): ("sampler", "mic", "aux", "preview"),
     frozenset(): ("master", "library", "autodj", "recording"),
 }

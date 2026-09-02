@@ -1307,6 +1307,54 @@ def render_demo(
             auto_gate = {"source": ga / over, "target": gb / over}
             stem_swap = (float(np.argmax(gb > 0.5)) / sr if np.any(gb > 0.5) else None)
 
+        # Обработка ОТДЕЛЬНОГО слоя. Всё, что здесь есть, невозможно
+        # сделать на канале целиком, и ради этого слои и разделяют:
+        #   * stem_eq   — срез полосы у одного слоя. Нужен, когда две
+        #     бочки складываются: они гасят друг друга по фазе и вместе
+        #     звучат ТИШЕ и пустее, чем порознь. Лечится тем, что у
+        #     одной срезают низ и оставляют щелчок;
+        #   * stem_phase — инверсия фазы слоя, второе лекарство от того
+        #     же: иногда достаточно перевернуть, а не резать;
+        #   * stem_pitch — сдвиг одного слоя на полутона. Мелодия,
+        #     поднятая на октаву, перестаёт спорить с чужим басом и
+        #     превращается в атмосферный верх;
+        #   * stem_fx   — посыл на эффект С ОДНОГО СЛОЯ. Вокал уходит в
+        #     эхо, а барабаны продолжают бить сухими — на полном миксе
+        #     так не получится в принципе.
+        stem_fx_events = [e for e in events if e["action"] == "stem_fx"]
+
+        def _layer_events(action, deck_name, part):
+            return [e for e in events
+                    if e["action"] == action and e["deck"] == deck_name
+                    and (e.get("params") or {}).get("stem") == part]
+
+        def _stem_eq_apply(layer, evs):
+            """Полосовые ручки на одном слое. gain 1.0 — полоса на месте."""
+            for band, (kind, f1, f2) in (("low", ("low", 200.0, None)),
+                                         ("mid", ("band", 300.0, 3000.0)),
+                                         ("high", ("high", 3000.0, None))):
+                band_ev = [e for e in evs if (e.get("params") or {}).get("band") == band]
+                if not band_ev:
+                    continue
+                env = _envelope_array(_piecewise_ramp(band_ev, spb, default=1.0),
+                                      timeline_start, n, sr,
+                                      step_sec=_events_step_sec(band_ev, spb))
+                if np.allclose(env, 1.0):
+                    continue
+                if kind == "low":
+                    sos = butter(2, min(f1 / (sr / 2), 0.99), btype="lowpass", output="sos")
+                elif kind == "high":
+                    sos = butter(2, min(f1 / (sr / 2), 0.99), btype="highpass", output="sos")
+                else:
+                    sos = butter(2, [min(f1 / (sr / 2), 0.98), min(f2 / (sr / 2), 0.99)],
+                                 btype="bandpass", output="sos")
+                bandbuf = sosfiltfilt(sos, layer, axis=0)
+                layer = layer - bandbuf + bandbuf * _env(np.clip(env, 0.0, 4.0), layer)
+            return layer
+
+        stem_fx_returns: dict[str, np.ndarray] = {}
+        drum_layers: dict[str, np.ndarray] = {}
+
         for deck_name in ("source", "target"):
             parts = stem_bufs[deck_name]
             mine = [e for e in stem_events if e["deck"] == deck_name]
@@ -1323,9 +1371,122 @@ def render_demo(
                 else:
                     gain = None
                 layer = buf if gain is None else buf * _env(np.clip(gain, 0.0, 1.0), buf)
+
+                # фаза — до всего остального: она меняет знак, а не тембр
+                for e in _layer_events("stem_phase", deck_name, part):
+                    if float(e.get("value_to", 1.0)) > 0.5:
+                        st = _clamp(_sample_idx(e["beat_offset"] * spb, timeline_start, sr), 0, n)
+                        layer = layer.copy()
+                        layer[st:] = -layer[st:]
+
+                eq_ev = _layer_events("stem_eq", deck_name, part)
+                if eq_ev:
+                    layer = _stem_eq_apply(layer.copy(), eq_ev)
+
+                for e in _layer_events("stem_pitch", deck_name, part):
+                    semis = float(e.get("value_to", 0.0))
+                    if abs(semis) < 0.05:
+                        continue
+                    start, end = _event_window(e, spb)
+                    a = _clamp(_sample_idx(start, timeline_start, sr), 0, n)
+                    b = _clamp(_sample_idx(end, timeline_start, sr), 0, n)
+                    if b - a < sr * 0.3:
+                        b = n
+                    try:
+                        seg = layer[a:b]
+                        if seg.ndim > 1:
+                            sh = np.stack([librosa.effects.pitch_shift(
+                                np.ascontiguousarray(seg[:, c]), sr=sr, n_steps=semis)
+                                for c in range(seg.shape[1])], axis=1)
+                        else:
+                            sh = librosa.effects.pitch_shift(
+                                np.ascontiguousarray(seg), sr=sr, n_steps=semis)
+                        layer = layer.copy()
+                        layer[a:b] = _fit_length(sh, b - a)
+                    except Exception:
+                        pass
+
+                for e_unit in ("echo", "reverb"):
+                    evs = [e for e in stem_fx_events
+                           if e["deck"] == deck_name
+                           and (e.get("params") or {}).get("stem") == part
+                           and ((e.get("params") or {}).get("unit") or "echo") == e_unit]
+                    if not evs:
+                        continue
+                    env = _envelope_array(_piecewise_ramp(evs, spb, default=0.0),
+                                          timeline_start, n, sr,
+                                          step_sec=_events_step_sec(evs, spb))
+                    if np.max(env) <= 0.02:
+                        continue
+
+                    def _pp(key, default):
+                        for e in evs:
+                            v = (e.get("params") or {}).get(key)
+                            if v is not None:
+                                try:
+                                    return float(v)
+                                except (TypeError, ValueError):
+                                    pass
+                        return default
+
+                    if e_unit == "echo":
+                        wet = _echo_return(layer, sr, env,
+                                           delay_sec=_pp("delay_beats", 0.75) * spb)
+                    else:
+                        wet = _reverb_return(layer, sr, env,
+                                             decay_sec=_pp("decay_beats", 4.0) * spb)
+                    stem_fx_returns[deck_name] = (
+                        wet if deck_name not in stem_fx_returns
+                        else stem_fx_returns[deck_name] + wet)
+
+                if part == "drums":
+                    drum_layers[deck_name] = layer
                 acc = layer.copy() if acc is None else acc + layer
             if acc is not None:
                 decks[deck_name] = acc
+
+        # --- сайдчейн: чужая бочка «продавливает» эту деку ---
+        #
+        # Ради чего. В дабл-дропе барабаны берут у одного трека, а
+        # мелодию и бас у другого — и они звучат как две отдельные
+        # записи, потому что ничто их не связывает ритмически. В студии
+        # это лечат компрессором с боковой цепью: мелодия приседает на
+        # каждый удар бочки. Тот же приём здесь: огибающая считается по
+        # слою барабанов ДРУГОЙ деки, поэтому «насос» попадает точно в
+        # чужую бочку, а не в сетку.
+        for e in [x for x in events if x["action"] == "sidechain"]:
+            deck_name = e["deck"]
+            src_deck = (e.get("params") or {}).get("from_deck") or (
+                "target" if deck_name == "source" else "source")
+            drums = drum_layers.get(src_deck)
+            buf = decks.get(deck_name)
+            if drums is None or buf is None:
+                continue
+            depth = _clamp(float(e.get("value_to", 0.6)), 0.0, 1.0)
+            start, end = _event_window(e, spb)
+            a = _clamp(_sample_idx(start, timeline_start, sr), 0, n)
+            b = n if end <= start else _clamp(_sample_idx(end, timeline_start, sr), 0, n)
+            if b <= a:
+                continue
+            # быстрый детектор по низу: бочка, а не весь барабанный слой
+            sos = butter(2, min(140.0 / (sr / 2), 0.99), btype="lowpass", output="sos")
+            low = np.abs(sosfilt(sos, _mono(drums)))
+            # атака мгновенная, отпускание ~120 мс — как у обычного
+            # компрессора с боковой цепью
+            rel = int(0.12 * sr)
+            follow = np.copy(low)
+            if rel > 1:
+                k = np.exp(-1.0 / rel)
+                for i in range(1, len(follow)):
+                    if follow[i] < follow[i - 1] * k:
+                        follow[i] = follow[i - 1] * k
+            peak = float(np.max(follow[a:b])) if b > a else 0.0
+            if peak <= 1e-6:
+                continue
+            duck = 1.0 - depth * np.clip(follow / peak, 0.0, 1.0)
+            gate = np.ones(n)
+            gate[a:b] = duck[a:b]
+            decks[deck_name] = buf * _env(gate, buf)
 
     # --- 1b. ручки EQ (eq_low/eq_mid/eq_high) — непрерывные, не toggle ---
     # 1.0 = штатный уровень, 0.0 = полоса убрана. Приближаем полкой:
@@ -1412,6 +1573,13 @@ def render_demo(
 
     # --- 5. fx_meta — посыл на дилей. Возврат идёт МИМО фейдера ---
     fx_returns: dict[str, np.ndarray] = {}
+    # Посылы, снятые с ОТДЕЛЬНЫХ слоёв (см. блок 1c), возвращаются здесь
+    # же и тем же путём: мимо фейдера, чтобы хвост пережил уход деки.
+    try:
+        for _d, _w in stem_fx_returns.items():
+            fx_returns[_d] = _w if _d not in fx_returns else fx_returns[_d] + _w
+    except NameError:
+        pass
     for deck in ("source", "target"):
         # fx_mix (dry/wet юнита) и fx_meta (параметр эффекта) в реальном
         # Mixxx крутятся вместе — для демо берём максимум как «глубину эха».
@@ -1598,9 +1766,19 @@ def render_demo(
     if "target" in transport_info:
         tgt_used_seconds = max(0.0, (transport_info["target"]["advance"] - start_sample) / sr)
 
-    import soundfile as sf
+    # Демо пишем в mp3, а не в wav. Отбор швов — это десятки прослушиваний
+    # за вечер, и каждый wav на 25 секунд стерео это 4-5 МБ против 600 КБ
+    # у mp3 320. Для «послушать и решить» разницы на слух нет, а разница в
+    # мусоре на диске — восьмикратная. Расширение выходного файла решает:
+    # .mp3 -> LAME, что угодно другое -> прежний wav.
+    if str(out_path).lower().endswith(".mp3"):
+        import set_export
 
-    sf.write(out_path, mix.astype(np.float32), sr, subtype="PCM_16")
+        set_export._write_mp3(str(out_path), mix.astype(np.float32), sr, 320)
+    else:
+        import soundfile as sf
+
+        sf.write(out_path, mix.astype(np.float32), sr, subtype="PCM_16")
 
     return {
         "duration_seconds": round(total_duration, 2),

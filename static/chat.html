@@ -179,6 +179,49 @@
   .energy-bar { display: inline-block; width: 80px; height: 6px; border-radius: 3px; background: #2c313d; overflow: hidden; vertical-align: middle; }
   .energy-bar > span { display: block; height: 100%; }
 
+  /* ===== Отбор (судейский цикл) ===== */
+  #audition-view .seam-card {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; max-width: 760px;
+  }
+  #audition-view .seam-tracks { font-size: 17px; line-height: 1.5;
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; }
+  #audition-view .seam-tracks .arrow { color: var(--accent); font-size: 22px; }
+  #audition-view .aud-track b { font-weight: 600; }
+  #audition-view .aud-facts { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  #audition-view .reject-row button[data-reason="genre_a"],
+  #audition-view .reject-row button[data-reason="genre_b"] { border-style: dashed; }
+  @media (max-width: 720px) {
+    #audition-view .seam-tracks { grid-template-columns: 1fr; }
+    #audition-view .seam-tracks .arrow { justify-self: start; }
+  }
+  #audition-view .seam-meta {
+    margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted);
+  }
+  #audition-view .seam-meta span {
+    background: var(--panel-3); border-radius: 6px; padding: 3px 9px;
+  }
+  #audition-view .seam-actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+  #audition-view .seam-actions button { padding: 9px 14px; font-size: 13px; }
+  #audition-view .btn-yes { background: #1f6f4a; border-color: #2c8f61; color: #eaf7f0; font-weight: 600; }
+  #audition-view .reject-row { margin-top: 12px; }
+  #audition-view .reject-row .hint { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  #audition-view .reject-row button { font-size: 12px; padding: 7px 11px; }
+  #audition-view .progress-line {
+    margin-bottom: 16px; font-size: 13px; color: var(--muted);
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+  }
+  #audition-view .progress-line b { color: var(--text); }
+  #audition-view .bar {
+    flex: 1; min-width: 120px; max-width: 260px; height: 6px;
+    background: var(--panel-3); border-radius: 3px; overflow: hidden;
+  }
+  #audition-view .bar i { display: block; height: 100%; background: var(--accent); }
+  #audition-view .built { margin-top: 20px; max-width: 760px; }
+  #audition-view .built table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #audition-view .built td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  #audition-view .built td.tech { color: var(--muted); white-space: nowrap; }
+
   /* ===== Стратегия ===== */
   #strategy-view .list-body { padding: 18px; }
   .arc-chart { display: flex; gap: 3px; align-items: flex-end; height: 90px; margin: 8px 0 20px; }
@@ -206,6 +249,13 @@
     background: var(--accent); color: #fff; border: none; border-radius: 8px;
     width: 30px; height: 30px; cursor: pointer; font-size: 13px;
   }
+  .transition-card .demo-btn {
+    margin-left: 6px; background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--accent); border-radius: 8px;
+    height: 30px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .transition-card .demo-btn:hover { background: var(--accent); color: #fff; }
   .track-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
   .track-row .grip { color: var(--muted); cursor: grab; user-select: none; }
   .track-row.dragging { opacity: .4 }
@@ -334,6 +384,7 @@
     <button data-view="library"><span>📚</span><span class="label">Библ.</span></button>
     <button data-view="strategy"><span>🗺</span><span class="label">Страт.</span></button>
     <button data-view="technique"><span>🎛</span><span class="label">Техн.</span></button>
+    <button data-view="audition"><span>⚖</span><span class="label">Отбор</span></button>
   </nav>
 
   <div id="shell">
@@ -378,15 +429,16 @@
           <div class="scan-bar">
             <input id="scan-path-input" placeholder="Папка с музыкой, напр. C:\Music" autocomplete="off">
             <button id="scan-btn">🔍 Сканировать</button>
-            <button id="stems-btn" title="Разделить треки на слои и собрать .stem.mp4 рядом с каждым — их читает Mixxx">🎚 Стемы</button>
+            <button id="stems-btn" title="Одной кнопкой: доложить роформерный вокал к уже посчитанным трекам, досчитать остальные (drums/bass/other — htdemucs_ft, вокал — роформер) и собрать .stem.mp4 рядом с каждым — их читает Mixxx">🎚 Стемы (всё сразу)</button>
             <button id="cues-btn" title="Расставить в Mixxx горячие метки: первый бит, билд, дроп, брейкдаун, луп, аутро. Mixxx должен быть ЗАКРЫТ.">📍 Метки в Mixxx</button>
+            <button id="bpm-btn" title="Перемерить темп и заново посчитать карты барабанов, энергии и гармонии. Нужно, если BPM выглядит вдвое или в полтора раза меньше настоящего.">🥁 Перемерить темп</button>
             <button id="cleanup-btn" title="Убрать демо, сеты, записи и оборванные папки стемов (последние остаются)">🧹 Убрать мусор</button>
             <span id="scan-status"></span>
           </div>
           <div id="scan-progress" style="display:none"></div>
           <div class="list-body">
             <table class="lib-table">
-              <thead><tr><th>Name</th><th>Жанр</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
+              <thead><tr><th>Name</th><th title="Готовы ли слои: без них половина приёмов звучит как обычный кроссфейд">STEMS</th><th>Жанр</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
               <tbody id="lib-tbody"></tbody>
             </table>
             <div id="lib-empty" class="detail-col empty" style="display:none;border:none;width:auto">
@@ -431,6 +483,10 @@
             <button id="render-full-btn" title="Весь сет целиком одним треком, в едином темпе">💿 Собрать сет целиком</button>
             <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)" title="Убрать треки, которые не свести ни с чем в этой библиотеке (чужой темп)">
               <input id="only-mixable" type="checkbox" checked> только сводимые</label>
+            <select id="add-track-select" title="Добавить трек в конец плана — дальше перетащите на место"
+                    style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
+              <option value="">+ добавить трек…</option>
+            </select>
             <button id="build-strategy-btn">🗺 Построить план</button>
           </div>
           <div class="list-body" id="strategy-body">
@@ -448,6 +504,21 @@
           <div class="list-body" id="tech-list"></div>
         </div>
         <div class="detail-col" id="tech-detail" style="width:auto;flex:1"><div class="empty">Выберите технику слева</div></div>
+      </div>
+    </div>
+    <!-- ===== Отбор ===== -->
+    <div id="audition-view" class="view">
+      <div style="padding:24px 28px;overflow:auto">
+        <h1 style="margin:0 0 6px">Отбор швов</h1>
+        <div style="color:var(--muted);font-size:13px;max-width:760px;margin-bottom:18px">
+          Система предлагает шов — пару треков, приём и две точки в секциях. Послушайте и решите.
+          Одобренные копятся в пул; отказ спрашивает, ЧТО именно не так, и следующее предложение
+          меняет именно это. Когда цепочка накроет всю библиотеку, сет соберётся сам.
+        </div>
+
+        <div class="progress-line" id="aud-progress"></div>
+        <div id="aud-card"><div class="empty">Загружаю предложение...</div></div>
+        <div class="built" id="aud-built"></div>
       </div>
     </div>
   </div>
@@ -492,9 +563,265 @@
         loadRememberedScanPath();
         resumeScanStatusIfRunning();
       }
-      if (btn.dataset.view === "technique" && !techniquesCache) loadTechniques();
+      // Справочник техник нужен не только вкладке «Техника»: из него
+      // строится выпадающий список в настройщике перехода в Стратегии.
+      // Пока он грузился только там, в Стратегии список был ПУСТ — и
+      // новые приёмы «не появлялись» просто потому, что появиться было
+      // неоткуда.
+      if (["technique", "strategy"].indexOf(btn.dataset.view) >= 0 && !techniquesCache) {
+        loadTechniques().then(function () {
+          if (btn.dataset.view === "strategy" && currentStrategy) renderStrategy();
+        });
+      }
+      // Выпадающие списки треков («Своя пара» в Технике, «+ добавить трек»
+      // в Стратегии) строятся из libraryCache. Он заполняется только во
+      // вкладке «Библиотека» — поэтому, если зайти в «Технику» напрямую,
+      // в списке треков было пусто и выбрать было нечего. Это и есть та
+      // самая давняя поломка: селекторы дек статичные и работали, а
+      // трековые молча оставались пустыми.
+      if (["technique", "audition", "strategy"].indexOf(btn.dataset.view) >= 0) {
+        if (!libraryCache.length) loadLibrary();
+        else onLibraryReady();
+      }
+      if (btn.dataset.view === "audition") loadAudition();
     });
   });
+
+  // ===================== Отбор швов =====================
+  //
+  // Судейский цикл: предложили — послушали — вердикт. Прослушивание
+  // офлайн-рендером тем же эндпоинтом, что и демо техники: он умеет
+  // произвольную пару и точки, а значит звучит РОВНО то, что написано
+  // на карточке, — это уже чинили однажды и повторять не хочется.
+
+  let audSeam = null;
+  let audAudio = null;
+  let audDemoFile = null;   // отклонённое демо удаляем, чтобы не копить мусор
+
+  const REJECT_REASONS = [
+    ["technique", "другая техника", "оставить треки и стык, взять другой приём"],
+    ["junction", "другой стык", "оставить треки и приём, взять другие секции"],
+    ["first", "другой трек A", "оставить второй трек, искать другой первый"],
+    ["second", "другой трек B", "оставить первый трек, искать другой второй"],
+    ["pair", "другие треки A и B", "искать другую пару целиком"],
+    ["genre_a", "другой жанр A", "оставить второй трек, взять первый из другого поджанра"],
+    ["genre_b", "другой жанр B", "оставить первый трек, взять второй из другого поджанра"],
+  ];
+
+  // Громкость плеера живёт между карточками: диджей выставляет её один
+  // раз, а карточка перерисовывается после каждого вердикта.
+  let audVolume = 1.0;
+
+  function audKeyNote(seam) {
+    const d = seam.key_distance;
+    if (d === null || d === undefined) return "";
+    const txt = d === 0 ? "та же тональность" : d === 1 ? "соседняя тональность" : d + " шага по кругу";
+    const color = d <= 1 ? "var(--accent)" : d <= 3 ? "var(--muted)" : "#c98b8b";
+    return '<span style="color:' + color + '">' + txt + "</span>";
+  }
+
+  function audTrackLine(seam, side) {
+    const name = seam[side + "_name"] || "?";
+    const bpm = seam[side + "_bpm"];
+    const key = seam[side + "_key"];
+    const gen = seam[side + "_genre"];
+    return '<div class="aud-track">' +
+      '<b>' + escapeHtml(name) + '</b> ' +
+      (key ? camelotBadge(key) : "") +
+      '<span class="aud-facts">' +
+        (bpm ? Math.round(bpm) + " BPM" : "") +
+        (gen ? " · " + escapeHtml(gen) : "") +
+        (seam[side + "_stems"] ? ' · <span style="color:#4fd18b">STEM</span>'
+                               : ' · <span style="opacity:.5">без стемов</span>') +
+      "</span></div>";
+  }
+
+  function audFmt(sec) {
+    if (sec === null || sec === undefined) return "—";
+    const m = Math.floor(sec / 60), r = Math.round(sec % 60);
+    return m + ":" + String(r).padStart(2, "0");
+  }
+
+  function renderAudProgress(p) {
+    const el = document.getElementById("aud-progress");
+    if (!p) { el.innerHTML = ""; return; }
+    const pct = Math.round((p.longest_chain || 0) / Math.max(1, p.tracks_total) * 100);
+    el.innerHTML =
+      '<span>одобрено <b>' + p.approved + '</b></span>' +
+      '<span>отклонено <b>' + p.rejected + '</b></span>' +
+      '<span>цепочка <b>' + (p.longest_chain || 0) + '</b> из ' + p.tracks_total + '</span>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      (p.ready ? '<span style="color:var(--accent)">сет готов — можно собирать</span>' : "");
+  }
+
+  function renderSeam(seam) {
+    audSeam = seam;
+    const el = document.getElementById("aud-card");
+    if (!seam) {
+      el.innerHTML = '<div class="empty">Швов больше нет — всё, что можно было предложить, уже отсужено. ' +
+        'Соберите сет из пула кнопкой ниже.</div>' + audBuildButton();
+      return;
+    }
+    el.innerHTML =
+      '<div class="seam-card">' +
+        '<div class="seam-tracks">' + audTrackLine(seam, "a") +
+          '<span class="arrow">→</span>' + audTrackLine(seam, "b") + '</div>' +
+        '<div class="seam-meta">' +
+          '<span>' + escapeHtml(seam.technique) + " (" + seam.technique_id + ")</span>" +
+          '<span>стык ' + escapeHtml(seam.pair_label || "?") + "</span>" +
+          "<span>" + seam.bars + " тактов</span>" +
+          "<span>уход " + audFmt(seam.exit_seconds) + "</span>" +
+          "<span>вход " + audFmt(seam.entry_seconds) + "</span>" +
+          (audKeyNote(seam) ? "<span>" + audKeyNote(seam) + "</span>" : "") +
+        "</div>" +
+        '<div class="seam-actions">' +
+          '<button id="aud-play">▶ Послушать</button>' +
+          '<button id="aud-yes" class="btn-yes">✓ Нравится — в пул</button>' +
+        "</div>" +
+        // Полноценный плеер, а не new Audio(): демо надо переслушивать
+        // с середины и сравнивать на одной громкости, а невидимый
+        // объект не даёт ни того, ни другого.
+        '<audio id="aud-audio" controls preload="none" ' +
+          'style="width:100%;margin-top:10px;display:none"></audio>' +
+        '<div class="reject-row">' +
+          '<div class="hint">Не нравится? Скажите, что именно — от этого зависит следующее предложение:</div>' +
+          REJECT_REASONS.map(function (r) {
+            return '<button class="aud-no" data-reason="' + r[0] + '" title="' + r[2] + '">' +
+              r[1] + "</button>";
+          }).join(" ") +
+        "</div>" +
+        '<div id="aud-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>' +
+      "</div>" + audBuildButton();
+
+    document.getElementById("aud-play").addEventListener("click", auditionPlay);
+    document.getElementById("aud-yes").addEventListener("click", function () {
+      auditionVerdict("approved", null);
+    });
+    document.querySelectorAll(".aud-no").forEach(function (b) {
+      b.addEventListener("click", function () { auditionVerdict("rejected", b.dataset.reason); });
+    });
+    const bb = document.getElementById("aud-build");
+    if (bb) bb.addEventListener("click", auditionBuild);
+  }
+
+  function audBuildButton() {
+    return '<div style="margin-top:18px"><button id="aud-build">🧩 Собрать сет из пула → в Стратегию</button>' +
+      '<span style="margin-left:10px;font-size:12px;color:var(--muted)">' +
+      'порядок и точки берутся из одобренных швов, длительность — фактическая</span></div>';
+  }
+
+  async function loadAudition() {
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/audition/next")).json();
+      if (r.detail) { document.getElementById("aud-card").innerHTML = '<div class="empty">' + escapeHtml(r.detail) + "</div>"; return; }
+      renderAudProgress(r.progress);
+      renderSeam((r.candidates || [])[0] || null);
+    } catch (e) {
+      document.getElementById("aud-card").innerHTML = '<div class="empty">не удалось: ' + e + "</div>";
+    }
+  }
+
+  async function auditionPlay() {
+    if (!audSeam) return;
+    const st = document.getElementById("aud-status");
+    st.textContent = "рендерю переход...";
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+          "/techniques/" + encodeURIComponent(audSeam.technique_id) + "/demo", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          track_a_path: audSeam.a_path, track_b_path: audSeam.b_path,
+          source_at: audSeam.exit_seconds, target_at: audSeam.entry_seconds,
+        }),
+      })).json();
+      if (!r.url && !r.filename) { st.textContent = "не вышло: " + (r.detail || r.error || "нет файла"); return; }
+      const url = r.url || ("/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/demo/" + r.filename);
+      audDemoFile = (r.url || "").split("/").pop() || r.filename || null;
+      const el = document.getElementById("aud-audio");
+      if (!el) return;
+      el.style.display = "block";
+      el.src = url;
+      el.volume = audVolume;
+      el.onvolumechange = function () { audVolume = el.volume; };
+      audAudio = el;
+      el.play();
+      st.textContent = "играет — " + (r.seconds ? r.seconds.toFixed(1) + " с" : "") +
+        " (полоса ниже — перемотка и громкость)";
+    } catch (e) { st.textContent = "не удалось: " + e; }
+  }
+
+  async function auditionVerdict(verdict, reason) {
+    if (!audSeam) return;
+    const st = document.getElementById("aud-status");
+    if (st) st.textContent = "записываю...";
+    if (audAudio) { try { audAudio.pause(); } catch (e) {} audAudio = null; }
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/audition/verdict", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({seam: audSeam, verdict: verdict, reason: reason,
+                              demo_file: audDemoFile}),
+      })).json();
+      if (r.detail) { if (st) st.textContent = r.detail; return; }
+      audDemoFile = null;
+      renderAudProgress(r.progress);
+      renderSeam(r.next || null);
+      // После замены компонента карточки сразу играем — диджей нажал
+      // «другая техника» именно чтобы услышать другую технику, а не
+      // чтобы потом ещё раз тянуться к кнопке.
+      if (r.next && verdict === "rejected") auditionPlay();
+    } catch (e) { if (st) st.textContent = "не удалось: " + e; }
+  }
+
+  async function auditionBuild() {
+    const el = document.getElementById("aud-built");
+    el.innerHTML = "собираю цепочку...";
+    try {
+      const chain = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/audition/build", {method: "POST"})).json();
+      if (chain.detail) { el.innerHTML = '<div class="empty">' + escapeHtml(chain.detail) + "</div>"; return; }
+      const names = (chain.tracks || []).map(t => t.name).filter(Boolean);
+      el.innerHTML = "цепочка на " + chain.covered + " треков — открываю в Стратегии...";
+      // Сет из отбора НЕ подгоняется под хронометраж: порядок и точки уже
+      // утверждены диджеем на слух, и сжатие сдвинуло бы их. Поэтому
+      // fit_mode "natural" и явный track_order.
+      // Приёмы и точки из одобренных швов едут в план ПРАВКАМИ. Без них
+      // стратегия подбирала приём заново — и половина одобренных швов
+      // превращалась в классику DNB-25, потому что подбор в стратегии
+      // строже, чем в отборе. Диджей слушал одно, а получал другое.
+      // Ключ правки — пара имён, а не номер: номер сдвинется, если
+      // планировщик выкинет трек.
+      const poolOverrides = chain.overrides || {};
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({track_names: names, track_order: names,
+                              fit_mode: "natural", only_mixable: false,
+                              overrides: poolOverrides}),
+      })).json();
+      if (r.detail) { el.innerHTML = '<div class="empty">' + escapeHtml(r.detail) + "</div>"; return; }
+      // Правки должны пережить и следующее перестроение плана (диджей
+      // подвинул трек, добавил ещё один) — держим их в planOverrides,
+      // которые buildStrategy шлёт на каждый пересчёт.
+      poolOverridesByPair = poolOverrides;
+      const kept = (r.transitions || []).filter(function (t) {
+        const k = t.from + "||" + t.to;
+        return poolOverrides[k] && poolOverrides[k].technique_id === t.technique_id;
+      }).length;
+      el.innerHTML = "готово: " + chain.covered + " треков, приёмов из отбора сохранено " +
+        kept + " из " + Object.keys(poolOverrides).length +
+        (chain.complete ? ", сет полный" : "");
+      // Переключаемся на вкладку Стратегии — там сет можно двигать,
+      // добавлять и удалять треки.
+      const navBtn = document.querySelector('#nav button[data-view="strategy"]');
+      if (navBtn) navBtn.click();
+      // renderStrategy рисует из currentStrategy — кладём план туда, а
+      // не пытаемся передать аргументом.
+      currentStrategy = r;
+      strategyFromPool = true;
+      manualOrder = names;      // перестроения сохранят порядок из отбора
+      excludedTracks.clear();
+      renderStrategy();
+    } catch (e) { el.innerHTML = "не удалось: " + e; }
+  }
 
   // ===================== Чат (WebSocket) =====================
 
@@ -621,13 +948,31 @@
   // ===================== Библиотека =====================
 
   let libraryCache = [];
-  const CAMELOT_LETTER_COLOR = { A: "#7fd858", B: "#7c9dff" };
+  // Цвет тональности — по НОМЕРУ на колесе, а не по букве. Двухцветная
+  // раскраска (зелёный минор / синий мажор) не несла никакой информации:
+  // диджей смотрит на ключ, чтобы увидеть соседей по кругу квинт, а
+  // соседи 8A и 9A получались одинаковыми. Здесь двенадцать оттенков по
+  // кругу — как в Rekordbox и Mixed In Key: соседние ключи соседние по
+  // цвету, а минор от мажора отличается яркостью.
+  function camelotColor(camelot) {
+    const m = /^(\d{1,2})([AB])$/i.exec(String(camelot || "").trim());
+    if (!m) return "#8a90a0";
+    const n = parseInt(m[1], 10), minor = m[2].toUpperCase() === "A";
+    const hue = ((n - 1) * 30 + 200) % 360;
+    return "hsl(" + hue + "," + (minor ? "48%" : "68%") + "," + (minor ? "42%" : "56%") + ")";
+  }
 
   function camelotBadge(camelot) {
     if (!camelot) return "";
-    const letter = camelot.slice(-1);
-    const color = CAMELOT_LETTER_COLOR[letter] || "#8a90a0";
-    return '<span class="badge camelot-badge" style="background:' + color + '">' + camelot + '</span>';
+    return '<span class="badge camelot-badge" title="колесо Камелота: соседний номер и та же буква сводятся" ' +
+      'style="background:' + camelotColor(camelot) + '">' + camelot + '</span>';
+  }
+
+  function stemsCell(tr) {
+    return tr.stems
+      ? '<span class="badge" title="слои посчитаны — доступны стемовые приёмы" ' +
+        'style="background:#1f7a4d">STEM</span>'
+      : '<span style="opacity:.3" title="слоёв нет — стемовые приёмы упадут на обычный кроссфейд">—</span>';
   }
 
   function energyBar(energy) {
@@ -636,16 +981,43 @@
     return '<span class="energy-bar"><span style="width:' + pct + '%;background:' + color + '"></span></span> ' + pct;
   }
 
+  let libraryLoading = null;
+
   async function loadLibrary() {
     if (!currentRoom) return;
+    if (libraryLoading) return libraryLoading;
+    libraryLoading = (async function () {
+      try {
+        const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library");
+        const data = await resp.json();
+        libraryCache = data.tracks || [];
+        renderLibrary();
+        onLibraryReady();
+      } catch (e) {
+        console.error("loadLibrary failed", e);
+      } finally {
+        libraryLoading = null;
+      }
+    })();
+    return libraryLoading;
+  }
+
+  // Всё, что рисуется ИЗ библиотеки, надо перерисовать, когда она
+  // приехала. Без этого «Библиотека ещё не загружена» оставалось на
+  // экране Техник навсегда: сообщение рисовалось до ответа сервера, а
+  // перерисовать панель было некому — и диджей видел его при полностью
+  // загруженной библиотеке.
+  function onLibraryReady() {
+    if (!libraryCache.length) return;
     try {
-      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library");
-      const data = await resp.json();
-      libraryCache = data.tracks || [];
-      renderLibrary();
-    } catch (e) {
-      console.error("loadLibrary failed", e);
-    }
+      if (selectedTechniqueIndex !== null && document.getElementById("technique-view")
+          && document.getElementById("technique-view").classList.contains("active")) {
+        selectTechnique(selectedTechniqueIndex);
+      }
+    } catch (e) { /* панель ещё не построена — перерисуем при открытии */ }
+    try {
+      if (typeof fillAddTrackSelect === "function") fillAddTrackSelect();
+    } catch (e) { /* нет вкладки стратегии — не беда */ }
   }
 
   function renderLibrary() {
@@ -663,6 +1035,7 @@
       const row = document.createElement("tr");
       row.innerHTML =
         "<td>" + (tr.name || "") + "</td>" +
+        "<td>" + stemsCell(tr) + "</td>" +
         "<td>" + genreCell(tr) + "</td>" +
         "<td>" + (tr.bpm !== undefined ? tr.bpm.toFixed(1) : "—") + "</td>" +
         "<td>" + camelotBadge(tr.camelot) + "</td>" +
@@ -797,7 +1170,15 @@
       // Mixxx держит библиотеку в памяти и перезапишет файл при выходе —
       // предупредить надо ДО записи, а не объяснять потом, почему метки
       // исчезли.
-      if (!confirm("Расставить метки для " + dry.tracks + " треков?\n" +
+      // Метки идут в ОБЕ записи трека: и в .mp3, и в .stem.mp4. Это
+      // разные записи медиатеки Mixxx с разными id, а на деку диджей
+      // заводит стемовый файл — метки, записанные только в .mp3, на
+      // стемовой деке не существуют.
+      const stemNote = (dry.stem_files
+        ? "Из них " + dry.stem_files + " — файлы .stem.mp4 (именно они идут на стемовую деку).\n"
+        : "⚠ Ни одного .stem.mp4 в медиатеке Mixxx: метки лягут только на .mp3, " +
+          "и на стемовой деке их не будет. Пересканируйте папку с музыкой в самом Mixxx.\n");
+      if (!confirm("Расставить метки для " + dry.tracks + " записей медиатеки?\n" + stemNote +
                    (dry.missing ? dry.missing + " треков нет в медиатеке Mixxx.\n" : "") +
                    "\nMIXXX ДОЛЖЕН БЫТЬ ЗАКРЫТ — иначе он перезапишет библиотеку " +
                    "из памяти при выходе и метки пропадут.\n\n" + sample)) {
@@ -807,7 +1188,38 @@
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({}),
       })).json();
-      st.textContent = "метки расставлены для " + r.tracks + " треков (копия библиотеки сохранена)";
+      st.textContent = "метки расставлены: " + r.tracks + " записей, из них " +
+        (r.stem_files || 0) + " стемовых (копия библиотеки сохранена)";
+    } catch (e) { st.textContent = "не удалось: " + e; }
+  });
+
+  // Перемер темпа руками. Обычно он кикается сам после сканирования, но
+  // после правки самого алгоритма перемера его надо уметь позвать, не
+  // пересканируя библиотеку заново: скан — это минуты на трек, перемер —
+  // секунды.
+  document.getElementById("bpm-btn").addEventListener("click", async function () {
+    const st = document.getElementById("scan-status");
+    st.textContent = "перемеряю темп...";
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library/refine-bpm", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({force: true}),
+      })).json();
+      if (r.detail) { st.textContent = r.detail; return; }
+      const poll = setInterval(async function () {
+        try {
+          const s2 = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+            "/library/refine-bpm")).json();
+          if (s2.running) {
+            st.textContent = "перемеряю темп: " + (s2.done || 0) + " из " + (s2.total || "?");
+          } else {
+            clearInterval(poll);
+            st.textContent = s2.skipped ? s2.skipped
+              : "темп перемерен, изменено " + (s2.changed || 0) + " треков";
+            loadLibrary();
+          }
+        } catch (e) { clearInterval(poll); }
+      }, 1500);
     } catch (e) { st.textContent = "не удалось: " + e; }
   });
 
@@ -815,7 +1227,7 @@
     const st = document.getElementById("scan-status");
     const path = document.getElementById("scan-path-input").value.trim();
     if (!path) { st.textContent = "впишите папку с музыкой слева"; return; }
-    st.textContent = "запускаю разделение на слои...";
+    st.textContent = "запускаю: вокал роформером + разделение оставшихся + .stem.mp4...";
     try {
       const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/stems/build", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -935,11 +1347,21 @@
   // переживают перестроение: поправил технику у 3-го перехода — она
   // останется, даже если сменить дугу или длительность.
   let planOverrides = {};
+  // Приёмы и точки, одобренные в «Отборе». Ключ — пара ИМЁН треков,
+  // поэтому они переживают и перетаскивание, и удаление трека: номер
+  // перехода при этом сдвигается, а пара — нет. Сбрасываются только
+  // кнопкой «Построить план», то есть когда диджей сам просит забыть
+  // отбор и собрать сет заново.
+  let poolOverridesByPair = {};
   let manualOrder = null;      // порядок, выставленный руками
   // Треки, которые диджей убрал из плана. Живут отдельно от порядка:
   // перестроение плана их не возвращает, пока не вернуть явно.
   const excludedTracks = new Set();
 
+  document.getElementById("build-strategy-btn").addEventListener("click", function () {
+    strategyFromPool = false;
+    poolOverridesByPair = {};   // «построить заново» — значит и без отбора
+  }, true);
   document.getElementById("build-strategy-btn").addEventListener("click", function () {
     manualOrder = null;          // «Построить план» — заново, включая порядок
     buildStrategy();
@@ -947,6 +1369,12 @@
   document.getElementById("only-mixable").addEventListener("change", function () { buildStrategy(); });
   document.getElementById("variant-select").addEventListener("change", function () { buildStrategy(); });
   document.getElementById("genre-filter").addEventListener("change", function () { buildStrategy(); });
+
+  // Сет, пришедший из «Отбора», хронометражем не управляется: порядок и
+  // точки утверждены диджеем на слух. Флаг переживает перестроения плана
+  // (перетаскивание, удаление, добавление) — иначе первое же движение
+  // вернуло бы автоподбор длины и сдвинуло все точки.
+  let strategyFromPool = false;
 
   async function buildStrategy(keepOverrides) {
     if (!currentRoom) return;
@@ -963,9 +1391,13 @@
           arc_shape: shape,
           target_minutes: isNaN(minutes) ? null : minutes,
           variant: variant,
-          overrides: planOverrides,
+          // Именные правки из отбора идут первыми, номерные правки
+          // настройщика — поверх: если диджей поправил карточку руками,
+          // его правка сильнее одобренного шва.
+          overrides: Object.assign({}, poolOverridesByPair, planOverrides),
           track_order: manualOrder,
-          only_mixable: document.getElementById("only-mixable").checked,
+          only_mixable: strategyFromPool ? false : document.getElementById("only-mixable").checked,
+          fit_mode: strategyFromPool ? "natural" : "compress",
           exclude: Array.from(excludedTracks),
           include_genres: genreFilterValue("g"),
           include_subgenres: genreFilterValue("s"),
@@ -999,6 +1431,7 @@
 
   function renderStrategy() {
     const s = currentStrategy;
+    setTimeout(fillAddTrackSelect, 0);
     const body = document.getElementById("strategy-body");
     let html = "";
     const L = s.layout || {};
@@ -1050,7 +1483,11 @@
           '<span class="badge">' + tr.technique_id + '</span>' +
           '<span class="names">' + tr.from + ' → ' + tr.to + '</span>' +
           '<span class="confidence">' + Math.round(tr.confidence * 100) + '%</span>' +
-          '<button class="play-btn" title="Выполнить этот переход сейчас (A→B)">▶</button>' +
+          '<button class="play-btn" title="Выполнить этот переход сейчас (A→B) на деках">▶</button>' +
+          // Большая кнопка справа — послушать переход, не открывая
+          // настройщик. Именно её жмут чаще всего: сначала слушают,
+          // и только если не нравится — лезут в настройки.
+          '<button class="demo-btn" title="Послушать этот переход (офлайн-рендер)">🎧 демо</button>' +
         '</div>' +
         '<div class="meta">' + tr.technique_name + ' · ' + tr.bpm_from.toFixed(1) + '→' + tr.bpm_to.toFixed(1) +
           ' BPM · ' + tr.key_from + '→' + tr.key_to + ' · EL' + tr.el_from + '→EL' + tr.el_to + ' · ' + tr.bars + ' тактов' +
@@ -1087,6 +1524,30 @@
     addMessage("Убрал из плана: " + btn.dataset.name +
                (excludedTracks.size > 1 ? " (всего убрано: " + excludedTracks.size + ")" : "") +
                ". Вернуть — «🗺 Построить план» после перезагрузки страницы.", "system");
+    buildStrategy(true);
+  });
+
+  // Добавить трек в план. Встаёт в конец, дальше его перетаскивают —
+  // угадывать место за диджея тут нечего.
+  function fillAddTrackSelect() {
+    const sel = document.getElementById("add-track-select");
+    if (!sel) return;
+    const inPlan = new Set(((currentStrategy || {}).tracks || []).map(t => t.name));
+    const all = (libraryCache || []).map(t => t.name).filter(n => n && !inPlan.has(n));
+    sel.innerHTML = '<option value="">+ добавить трек…</option>' +
+      all.sort().map(n => '<option value="' + n.replace(/"/g, "&quot;") + '">' +
+        escapeHtml(n) + "</option>").join("");
+  }
+
+  document.getElementById("add-track-select").addEventListener("change", function (e) {
+    const name = e.target.value;
+    if (!name) return;
+    e.target.value = "";
+    excludedTracks.delete(name);
+    const order = ((currentStrategy || {}).tracks || []).map(t => t.name);
+    order.push(name);
+    manualOrder = order;
+    addMessage("Добавил в план: " + name + " — перетащите на нужное место.", "system");
     buildStrategy(true);
   });
 
@@ -1161,7 +1622,10 @@
         const names = (currentStrategy.tracks || []).map(t => t.name);
         names.splice(to, 0, names.splice(dragFrom, 1)[0]);
         manualOrder = names;
-        planOverrides = {};        // порядок изменился — старые правки переходов больше не про эти пары
+        // Номерные правки после перестановки описывают уже другие пары —
+        // их сбрасываем. Именные (из отбора) остаются: они привязаны к
+        // трекам, а не к позициям.
+        planOverrides = {};
         buildStrategy(true);
       });
     });
@@ -1187,17 +1651,44 @@
   }
 
   function _opts(list, chosen) {
-    return (list || []).map(function (p) {
+    const opts = (list || []).slice();
+    // Выбранная точка может не входить в список кандидатов: так бывает у
+    // точек, одобренных в «Отборе», и у сдвинутых кнопкой «±такт».
+    // Без этой вставки селектор показывал ЧУЖУЮ точку как выбранную, и
+    // первое же «применить» тихо переносило переход в другое место.
+    if (chosen && !opts.some(p => Math.abs(p.time_seconds - chosen.time_seconds) < 0.01)) {
+      opts.unshift(chosen);
+    }
+    return opts.map(function (p) {
       const sel = chosen && Math.abs(p.time_seconds - chosen.time_seconds) < 0.01 ? " selected" : "";
-      return '<option value="' + p.time_seconds + '"' + sel + '>' + p.label + '</option>';
+      return '<option value="' + p.time_seconds + '"' + sel + '>' + (p.label || p.time_seconds) + '</option>';
     }).join("");
   }
 
+  const TECH_CATEGORY_RU = {stems: "по слоям (STEMS)", fx: "эффекты", eq: "эквалайзер",
+    turntable: "вертушка", classic: "классика", dnb: "драм-н-бейс", house: "хаус",
+    energy: "энергия", other: "прочее"};
+
   function _editorHtml(tr, i) {
-    const techOpts = (techniquesCache || []).map(function (t) {
-      return '<option value="' + t.id + '"' + (t.id === tr.technique_id ? " selected" : "") + '>' +
-             t.id + ' ' + t.name + '</option>';
-    }).join("");
+    // Группировка по категориям, а не сплошной список: приёмов больше
+    // шестидесяти, и найти в плоском списке «тот, что по слоям» нельзя.
+    const cats = {};
+    (techniquesCache || []).forEach(function (t) {
+      (cats[t.category || "other"] = cats[t.category || "other"] || []).push(t);
+    });
+    // Слоевые приёмы первыми: их спрашивают чаще всего.
+    const order = Object.keys(cats).sort(function (a, b) {
+      if (a === "stems") return -1;
+      if (b === "stems") return 1;
+      return a.localeCompare(b);
+    });
+    const techOpts = order.map(function (c) {
+      return '<optgroup label="' + escapeHtml(TECH_CATEGORY_RU[c] || c) + '">' +
+        cats[c].map(function (t) {
+          return '<option value="' + t.id + '"' + (t.id === tr.technique_id ? " selected" : "") + '>' +
+                 t.id + ' ' + escapeHtml(t.name) + (t.requires_stems ? " ⟨STEM⟩" : "") + '</option>';
+        }).join("") + '</optgroup>';
+    }).join("") || '<option value="' + tr.technique_id + '" selected>' + tr.technique_id + '</option>';
     return '<div class="tr-edit">' +
       '<div class="tr-edit-row">' +
         '<label>техника <select data-f="technique">' + techOpts + '</select></label>' +
@@ -1314,6 +1805,8 @@
       } catch (e) { slot.textContent = "Ошибка сети: " + e; }
     }
     pick("hear").addEventListener("click", function () { hear(); });
+    const big = card.querySelector(".demo-btn");
+    if (big) big.addEventListener("click", function () { hear(); });
     pick("hear-tech").addEventListener("click", function () { hear(null, "техника"); });
     pick("hear-from").addEventListener("click", function () { hear(null, "точка ухода"); });
     pick("hear-to").addEventListener("click", function () { hear(null, "точка входа"); });
@@ -1532,7 +2025,10 @@
     return { text: "BPM сильно отличается (" + a.toFixed(1) + " / " + b.toFixed(1) + ", разница " + diffPct.toFixed(1) + "%) — обычный бленд будет звучать плохо, посмотрите техники с конфликтом тональностей/резкой сменой (Echo Cut, Quick Cut).", warn: true };
   }
 
+  let selectedTechniqueIndex = null;
+
   function selectTechnique(i) {
+    selectedTechniqueIndex = i;
     document.querySelectorAll(".tech-item").forEach((el, idx) => el.classList.toggle("selected", idx === i));
     const t = techniquesCache[i];
     const detail = document.getElementById("tech-detail");
@@ -1724,6 +2220,16 @@
   }
 
   function customPairHtml() {
+    if (!libraryCache.length) {
+      if (libraryLoading) loadLibrary();   // подпишемся на текущую загрузку
+      else loadLibrary();
+      return '<h3 style="margin-top:4px">Своя пара — любые треки и любые точки</h3>' +
+        '<div class="empty-hint">' + (libraryLoading
+          ? 'Загружаю библиотеку…'
+          : 'Библиотека пуста. Откройте вкладку «Библ.» и отсканируйте папку с ' +
+            'музыкой — после этого здесь можно будет выбрать любые два трека.') +
+        '</div>';
+    }
     const opts = libraryCache.map(function (tr) {
       return '<option value="' + (tr.path || "").replace(/"/g, "&quot;") + '">' +
              (tr.name || "") + '</option>';

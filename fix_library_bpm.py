@@ -57,8 +57,28 @@ def _load_whole(path: str, sr: int = 11025):
 
 
 def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
-               allow_octave: bool = True, y=None, sr: int = 11025) -> dict:
-    """Возвращает {bpm, changed, ratio, contrast, note}."""
+               allow_octave: bool = True, y=None, sr: int = 11025,
+               tag_bpm: float | None = None,
+               confirmed: float | None = None) -> dict:
+    """Возвращает {bpm, changed, ratio, contrast, note}.
+
+    confirmed — значение, на котором тег файла и измерение СОШЛИСЬ
+    (`id3_tags.confirmed_bpm`). Если оно есть, оно и есть ответ: полоса
+    его не пересматривает, октавный перебор не запускается, и уточняется
+    только дробная часть.
+
+    Так пришлось сделать после поломки, которую этот код сам и устроил.
+    Сначала тег добавлялся всего лишь как ещё одна доля в список гипотез,
+    а выбирал между гипотезами по-прежнему признак «попал в полосу
+    библиотеки». В драм-н-бейсовой библиотеке полоса получается 142..209,
+    и честные 135 BPM гэриджа в неё НЕ попадают, а их полуторная копия
+    202.5 — попадает. В результате двенадцать верных треков были
+    испорчены: 135 -> 202.5, 136 -> 204, 138 -> 207. Полоса — довод
+    слабый, тег с подтверждением — сильный, и порядок между ними должен
+    быть именно такой.
+
+    tag_bpm — темп из тега, когда согласия нет: тогда он идёт одной
+    дополнительной гипотезой, а решает контраст сетки."""
     import numpy as np
 
     import beatgrid
@@ -74,7 +94,32 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
     probe = y[max(0, mid - half):mid + half]
     wide, _lows, frame_sec = beatgrid._onset_envelopes(probe, sr)
 
-    ratios = OCTAVE_CANDIDATES if allow_octave else (1.0,)
+    if confirmed and confirmed > 20:
+        # Тег и измерение сошлись — перебирать нечего. Уточняем только
+        # дробную часть: refine_tempo внутри той же октавы даёт 174.03
+        # вместо 174, и это важно (ошибка в 1% за 30 секунд сведения —
+        # почти целая доля).
+        res = beatgrid.refine_tempo(probe, sr, float(confirmed))
+        bpm = float(res["bpm"])
+        if abs(bpm - confirmed) > confirmed * 0.06:
+            bpm = float(confirmed)      # уточнение уехало — держимся тега
+        contrast = beatgrid._comb_best(wide, (60.0 / bpm) / frame_sec, n_phases=256)
+        changed = abs(bpm - bpm_hint) > 0.05
+        return {"bpm": round(bpm, 2), "changed": changed,
+                "ratio": bpm / bpm_hint if bpm_hint else 1.0,
+                "contrast": round(float(contrast), 2),
+                "confidence": float(res.get("confidence", 0.0)),
+                "note": "по тегу файла" if changed else ""}
+
+    ratios = list(OCTAVE_CANDIDATES if allow_octave else (1.0,))
+    if tag_bpm and bpm_hint > 0 and allow_octave:
+        # Согласия нет, но тег всё равно стоит проверить: добавляем ОДНУ
+        # долю — ту, что приводит найденный темп к теговому. Умножать её
+        # ещё и на 1.5/2 нельзя: именно так двенадцать треков и уехали в
+        # 202 BPM.
+        r_tag = float(tag_bpm) / float(bpm_hint)
+        if 0.2 <= r_tag <= 5.0 and all(abs(r_tag - x) > 1e-3 for x in ratios):
+            ratios.append(r_tag)
     best = None
     for r in ratios:
         cand_hint = bpm_hint * r
@@ -223,6 +268,10 @@ def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
     band = library_band([r["bpm"] for r in rows])
     log(f"\n=== {db_path} ===")
     log(f"треков: {len(rows)}, полоса исполнения библиотеки: {band[0]:.0f}..{band[1]:.0f} BPM")
+    log("полоса считается по текущим значениям и потому НЕ является "
+        "доказательством: если библиотека определилась в 2/3 темпа, "
+        "центр тоже в 2/3. Поэтому у каждого трека полоса берётся по "
+        "его жанровому тегу, а гипотезу подсказывает TBPM (id3_tags.py).")
 
     backup = None
     if not dry_run:
@@ -241,7 +290,24 @@ def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
             continue
         try:
             y, sr_l = _load_whole(path)
-            res = refine_one(path, old, band, allow_octave=allow_octave, y=y, sr=sr_l)
+            tag_bpm = None
+            confirmed = None
+            track_band = band
+            try:
+                import id3_tags
+
+                tags = id3_tags.read_tags(path)
+                tag_bpm = tags.get("bpm")
+                gb = id3_tags.band_for_genre(tags.get("genre"), os.path.basename(path))
+                if gb:
+                    track_band = gb
+                got = id3_tags.confirmed_bpm(old, tag_bpm, gb)
+                if got:
+                    confirmed = got["bpm"]
+            except Exception:
+                pass
+            res = refine_one(path, old, track_band, allow_octave=allow_octave,
+                             y=y, sr=sr_l, tag_bpm=tag_bpm, confirmed=confirmed)
             dmap = _drum_map_for(y, sr_l, res.get("bpm") or old)
             cmap = _chroma_map_for(y, sr_l, res.get("bpm") or old)
             emap = _energy_map_for(y, sr_l, res.get("bpm") or old)
@@ -249,6 +315,19 @@ def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
             log(f"  [!] {os.path.basename(path)[:46]:<46} {type(exc).__name__}: {exc}")
             continue
         new = res["bpm"]
+        # Предохранитель на выходе, а не на входе. Любая перестановка
+        # доли, поднимающая трек выше 200 BPM, должна быть подтверждена
+        # тегом файла — иначе не пишем. Двенадцать треков уехали в
+        # 202..207 именно потому, что такого запрета не было, а внутри
+        # алгоритма нашёлся довод в пользу полуторного темпа. Один
+        # внешний предел ловит целый класс подобных ошибок, какими бы
+        # доводами они ни были получены.
+        if new > 200.0 and tag_bpm:
+            if not any(abs(tag_bpm * m - new) <= 0.03 * new for m in (1.0, 2.0, 3.0)):
+                log(f"   отклонил {os.path.basename(path)[:44]}: {old:.1f} -> {new:.1f} "
+                    f"(тег говорит {tag_bpm:g})")
+                res = {"bpm": old, "changed": False}
+                new = old
         if res.get("changed"):
             changed += 1
             mark = "**" if abs(new - old) > 3 else "  "

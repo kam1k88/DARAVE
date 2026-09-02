@@ -240,7 +240,9 @@ def _has_late_breakdown(track: dict) -> bool:
 
 def technique_candidates(a: dict, b: dict, compat: float, mismatch: bool,
                          el_from: int, el_to: int,
-                         slot_seconds: float | None = None) -> list[tuple[float, str, str]]:
+                         slot_seconds: float | None = None,
+                         recent_levels: list[int] | None = None,
+                         recent_pairs: list[str] | None = None) -> list[tuple[float, str, str]]:
     """Чем свести эту пару. Почти всегда — основным ходом.
 
     Здесь была лестница на 24 техники, потом на 10, потом с долей резов
@@ -291,7 +293,85 @@ def technique_candidates(a: dict, b: dict, compat: float, mismatch: bool,
 
     add(1.00, "DNB-25", "основной ход: новый заходит интро под старый со снятым низом, "
                         "потом один обмен низом и старый уводится фильтром.")
-    return out
+
+    # Слои меняют не «разнообразие», а сам основной ход. Обмен низом
+    # эквалайзером — приём для house и techno, где переход длинный; в
+    # драм-н-бейсе низ и так режется фильтром, а вместе треки держатся
+    # на слоях и эффектах. Пока живых стемов не было, исключать их из
+    # автовыбора было правильно; теперь у пары со стемами основной ход
+    # берётся из стилевого профиля, а не один на все жанры.
+    try:
+        import style as _style
+
+        if _style.has_stems(a) and _style.has_stems(b):
+            prof = _style.profile_for(b)
+            vocal_ok = _style.has_vocals(a) and _style.has_vocals(b)
+            # Ответ на состояние дуги добавляется В КАНДИДАТЫ, а не
+            # только множителем: множитель не может поднять того, кого в
+            # списке нет. Первая версия именно на этом и молчала —
+            # «три жёстких подряд» не меняли выбор вообще.
+            need = _style.energy_need(recent_levels or [])
+            need_ids = _style.NEED_TECHNIQUES.get(need, ())
+            picks = [(prof.get("main"), 1.05), (prof.get("accent"), 0.80)]
+            # Вес выше основного хода СОЗНАТЕЛЬНО. Условие срабатывает
+            # редко — нужно три трека подряд в одну сторону, — но когда
+            # оно сработало, приём обязан победить: смысл передышки в
+            # том, чтобы её сделать, а не чтобы она проиграла обычному
+            # обмену басом. С весом 0.75 она проигрывала 1.2 против 1.42
+            # и не выбиралась ни разу.
+            picks += [(tid, 1.15) for tid in need_ids]
+            for tid, w in picks:
+                if not tid or tid not in TECHNIQUES:
+                    continue
+                t = TECHNIQUES[tid]
+                # Вокальный приём на пустом слое даёт тишину — отказ
+                # должен случаться ЗДЕСЬ, а не на рендере.
+                if t.needs_vocals and not vocal_ok:
+                    continue
+                if t.requires_decks > 2:
+                    continue
+                reason = f"{prof['note']}; слои посчитаны у обоих треков"
+                if tid in need_ids:
+                    reason = ("после нескольких жёстких треков подряд нужна передышка"
+                              if need == "cooldown"
+                              else "после долгой раскачки сет просит удара") + "; " + reason
+                out.append((w, tid, reason))
+
+            # Стыковка секций. Диджей смотрит не «какой приём взять», а
+            # ЧТО с чем стыкуется — дроп с дропом, брейкдаун с дропом,
+            # тело с телом, — и приём получается сам. Разнообразие сета
+            # берётся отсюда, а не из перебора техник: если весь сет
+            # стыкует одно и то же, любой алгоритм поставит один приём и
+            # будет прав. Замер на библиотеке: 519 пригодных секций на 66
+            # треков, у случайной пары в среднем 8.1 разных стыковки —
+            # выбирать есть из чего.
+            best = None
+            for opt in _style.pair_options(a, b):
+                div = _style.pair_diversity(opt["label"], recent_pairs or [])
+                interest = _style.PAIR_INTEREST.get(opt["label"], 1.0)
+                score = div * interest * (1.0 + min(opt["bars"], 32) / 64.0)
+                if best is None or score > best[0]:
+                    best = (score, opt, div * interest)
+            if best:
+                _, opt, div = best
+                for k, tid in enumerate(opt["techniques"]):
+                    if tid not in TECHNIQUES:
+                        continue
+                    t = TECHNIQUES[tid]
+                    if t.requires_decks > 2 or (t.needs_vocals and not vocal_ok):
+                        continue
+                    # Вес подобран так, чтобы ИНТЕРЕСНАЯ и неповторённая
+                    # стыковка (1.25 x 1.15 x 1.25 = 1.80) уверенно
+                    # обходила основной ход стиля (1.42), а скучная или
+                    # повторная (1.25 x 0.45 x 0.85 = 0.48) ему
+                    # проигрывала. Так события в сете появляются там, где
+                    # для них есть материал, а не «для разнообразия».
+                    out.append((1.25 * div - 0.08 * k, tid,
+                                f"стыкуются {opt['label']} ({opt['bars']} тактов) — "
+                                f"{prof['note']}"))
+    except Exception:
+        pass
+    return sorted(out, reverse=True)
 
 
 BLEND_BARS_MIN, BLEND_BARS_MAX = 4.0, 12.0
@@ -505,16 +585,20 @@ def _pick_technique(a: dict, b: dict, compat: float, mismatch: bool,
                     el_from: int, el_to: int, recent: list[str] | None = None,
                     slot_seconds: float | None = None,
                     cut_share: float | None = None,
-                    accent_share: float | None = None) -> tuple[str, str]:
+                    accent_share: float | None = None,
+                    recent_levels: list[int] | None = None,
+                    recent_pairs: list[str] | None = None) -> tuple[str, str, str | None]:
     """Возвращает (technique_id, объяснение).
 
     recent — техники последних переходов, свежие первыми. Повтор не
     запрещён (иногда он объективно лучший вариант), но штрафуется: два
     одинаковых сведения подряд слышны как «оно всегда делает одно и то же»,
     даже когда каждое по отдельности выбрано правильно."""
-    cands = technique_candidates(a, b, compat, mismatch, el_from, el_to, slot_seconds=slot_seconds)
+    cands = technique_candidates(a, b, compat, mismatch, el_from, el_to,
+                                 slot_seconds=slot_seconds, recent_levels=recent_levels,
+                                 recent_pairs=recent_pairs)
     if not cands:
-        return "DNB-00", "базовый случай — Long Blend."
+        return "DNB-00", "базовый случай — Long Blend.", None
     recent = recent or []
     scored = []
     for w, tid, why in cands:
@@ -533,10 +617,27 @@ def _pick_technique(a: dict, b: dict, compat: float, mismatch: bool,
             penalty *= 0.4
         if tid != DEFAULT_TECHNIQUE and recent and recent[0] != DEFAULT_TECHNIQUE:
             penalty *= 0.6
+        # Стиль и энергетическая дуга. Из ОДНОЙ пары не видно ни того,
+        # ни другого: длина перехода и набор приёмов идут от поджанра, а
+        # «пора отдышаться» или «пора ударить» — от того, что играло до.
+        try:
+            import style as _style
+
+            mult, extra = _style.bias(tid, a, b, _style.energy_need(recent_levels or []))
+            penalty *= mult
+            if extra:
+                why = f"{why} — {extra}"
+        except Exception:
+            pass
         scored.append((w * penalty, w, tid, why))
     scored.sort(reverse=True)
     _, w, tid, why = scored[0]
-    return tid, f"{why}"
+    # Метка стыковки — из объяснения победителя, чтобы план мог не
+    # повторять её в следующем переходе.
+    label = None
+    if "стыкуются " in why:
+        label = why.split("стыкуются ", 1)[1].split(" ", 1)[0]
+    return tid, f"{why}", label
 
 
 def _alternatives(chosen_id: str, mismatch: bool, compat: float,
@@ -1075,9 +1176,32 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
         ordered, dropped_tracks = drop_unmixable(ordered)
     if fit_mode == "select":
         ordered = select_for_duration(tracks, ordered, target_minutes)
+    if fit_mode == "natural":
+        # Сет, собранный из ОДОБРЕННЫХ швов, не подгоняется под
+        # хронометраж. Диджей уже решил, какие треки и какими приёмами
+        # стыкуются; сжимать их под «90 минут» значило бы сдвинуть все
+        # точки, которые он слушал и утверждал. Длительность здесь —
+        # следствие сета, а не входной параметр. Автоподбор времени
+        # остаётся у автоматической стратегии по всей библиотеке.
+        target_minutes = sum(float(t.get("duration_seconds") or 0)
+                             for t in ordered) / 60.0 or None
     layout = plan_layout(ordered, target_minutes)
     slot = layout.get("slot_seconds")
+    # Правки бывают с двумя видами ключей, и это не прихоть.
+    #
+    #   "3"          — номер перехода. Так их шлёт настройщик в UI: там
+    #                  диджей правит конкретную карточку и план при этом
+    #                  не пересобирается.
+    #   "A||B"       — пара ИМЁН треков. Так их шлёт «собрать сет из
+    #                  пула»: там план строится заново, и любой выкинутый
+    #                  трек сдвинул бы все номера — приём, одобренный для
+    #                  одной пары, уехал бы на другую.
+    #
+    # Именные ключи разворачиваются в номера ниже, когда порядок треков
+    # уже известен.
     overrides = {str(k): v for k, v in (overrides or {}).items()}
+    named_overrides = {k: v for k, v in overrides.items() if "||" in k}
+    overrides = {k: v for k, v in overrides.items() if "||" not in k}
 
     transitions = []
     total_confidence = 0.0
@@ -1091,6 +1215,15 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
 
     by_name = {tr["name"]: tr for tr in tracks}
 
+    # Именные правки -> номера. Делается здесь, потому что только сейчас
+    # известен окончательный порядок треков.
+    if named_overrides:
+        for i in range(len(ordered) - 1):
+            key = f"{ordered[i].get('name')}||{ordered[i + 1].get('name')}"
+            if key in named_overrides and str(i) not in overrides:
+                overrides[str(i)] = named_overrides[key]
+
+    pair_history: list[str | None] = []
     for i in range(len(ordered) - 1):
         a, b = ordered[i], ordered[i + 1]
         ov = overrides.get(str(i), {})
@@ -1098,18 +1231,31 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
         mismatch = bpm_type_mismatch(a["bpm"], b["bpm"])
         el_from, el_to = el_of(a), el_of(b)
 
-        cands = technique_candidates(a, b, compat, mismatch, el_from, el_to, slot_seconds=slot)
-        tid, rule = _pick_technique(a, b, compat, mismatch, el_from, el_to,
+        # Уровни энергии УЖЕ СЫГРАННЫХ треков, свежие первыми. Без этого
+        # энергетическая дуга не видна: «пора отдышаться» и «пора
+        # ударить» — свойства сета, а не пары.
+        recent_levels = [el_of(t) for t in reversed(ordered[:i + 1])][:4]
+        recent_pairs = [x for x in reversed(pair_history) if x][:4]
+        cands = technique_candidates(a, b, compat, mismatch, el_from, el_to,
+                                     slot_seconds=slot, recent_levels=recent_levels)
+        tid, rule, pair_label = _pick_technique(a, b, compat, mismatch, el_from, el_to,
                                     recent=[t["technique_id"] for t in reversed(transitions)][:3],
-                                    slot_seconds=slot,
+                                    slot_seconds=slot, recent_levels=recent_levels,
+                                    recent_pairs=recent_pairs,
                                     cut_share=(sum(1 for t in transitions if t["technique_id"] in CUT_TECHNIQUES)
                                                / len(transitions)) if transitions else 0.0,
                                     accent_share=(sum(1 for t in transitions
                                                       if t["technique_id"] != DEFAULT_TECHNIQUE)
                                                   / len(transitions)) if transitions else 0.0)
+        pair_history.append(pair_label)
         if ov.get("technique_id") in TECHNIQUES:
             tid = ov["technique_id"]
             rule = f"Выбрано вручную: {TECHNIQUES[tid].name}"
+        elif ov.get("technique_id"):
+            # Приём есть в правке, но его нет в справочнике — это не повод
+            # молча подставить классику: диджей должен видеть, что его
+            # выбор не доехал.
+            rule = f"{rule} (приём {ov['technique_id']} неизвестен — взят подбор)"
         technique = TECHNIQUES[tid]
 
         # Раньше здесь было «уверенность» = 0.55 + compat*0.3 + 0.1 + 0.05,
@@ -1258,8 +1404,8 @@ def _pick_point_pair(a: dict, b: dict, from_points: list[dict], to_points: list[
     """
     import beatgrid
 
-    fchosen = _chosen_point(from_points, want_from)
-    tchosen = _chosen_point(to_points, want_to)
+    fchosen = _chosen_point(from_points, want_from, a.get("bpm"))
+    tchosen = _chosen_point(to_points, want_to, b.get("bpm"))
     if want_from is not None or want_to is not None:
         return fchosen, tchosen, None            # диджей выбрал руками — не спорим
 
@@ -1298,15 +1444,46 @@ def _pick_point_pair(a: dict, b: dict, from_points: list[dict], to_points: list[
     return fp, tp, round(fit, 2)
 
 
-def _chosen_point(options: list[dict], wanted_seconds) -> dict | None:
-    """Точка, выбранная диджеем (ближайшая к заданной секунде), иначе
-    лучшая по оценке."""
-    if not options:
-        return None
+# Насколько близко должен лежать готовый кандидат, чтобы взять его
+# вместо названной диджеем секунды. Половина такта на 174 BPM — 0.69 с;
+# берём с запасом.
+POINT_SNAP_SECONDS = 1.0
+
+
+def _chosen_point(options: list[dict], wanted_seconds, bpm: float | None = None) -> dict | None:
+    """Точка, выбранная диджеем, иначе лучшая по оценке.
+
+    Раньше названная секунда искалась среди кандидатов «по ближайшей», и
+    это тихо ломало главное обещание отбора. Список кандидатов зависит от
+    того, где мы находимся по хронометражу сета: у одного и того же трека
+    он разный для разных мест плана. Одобренная на слух точка 90.3 с в
+    новом списке отсутствовала — и «ближайшей» оказывалась 302.8 с.
+    Замерено на реальном пуле: у всех 12 переходов точки уезжали, у
+    половины — больше чем на две минуты. Диджей слушал один переход, а в
+    плане получал другой.
+
+    Теперь названная секунда — это ответ. Готовый кандидат берётся
+    только если он практически совпадает (в пределах POINT_SNAP_SECONDS):
+    у него есть человеческая подпись и номер такта, и терять их без нужды
+    незачем."""
     if wanted_seconds is None:
-        return options[0]
+        return options[0] if options else None
     want = float(wanted_seconds)
-    return min(options, key=lambda p: abs(p["time_seconds"] - want))
+    if options:
+        best = min(options, key=lambda p: abs(p["time_seconds"] - want))
+        if abs(best["time_seconds"] - want) <= POINT_SNAP_SECONDS:
+            return best
+    bar_seconds = (4 * 60.0 / bpm) if bpm else None
+    m, sec = divmod(int(round(want)), 60)
+    return {
+        "kind": "manual",
+        "time_seconds": round(want, 2),
+        "bar_index": round(want / bar_seconds) if bar_seconds else None,
+        "name": "точка диджея",
+        "label": f"точка диджея · {m}:{sec:02d}",
+        "hint": "секунда задана вручную — подбор её не менял",
+        "score": 1.0,
+    }
 
 
 def build_transition_plan(strategy: dict, transition_index: int, source_deck: str, target_deck: str,

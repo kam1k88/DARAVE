@@ -188,56 +188,92 @@ def main() -> int:
         WHERE library.beats_version = 'BeatGrid-2.0' AND library.bpm > 0
     """).fetchall()
 
-    plan, skipped, three_halves = [], [], []
+    plan, skipped, already_ok = [], [], []
     for r in rows:
         loc = norm_path(r["location"] or "")
         # Сначала по полному пути; если папка в Mixxx и в сканере записана
         # по-разному (буква диска, симлинк, другая точка монтирования) —
         # по имени файла.
         ours = darave.get(loc) or darave_by_name.get(loc.rsplit("/", 1)[-1])
+        if ours is None and loc.endswith(".stem.mp4"):
+            # Стемовый файл в анализе DARAVE не значится — анализ идёт по
+            # исходному .mp3, а .stem.mp4 собирается из него. Для Mixxx
+            # это ДВЕ разные записи, и без этой строчки стемовая дека
+            # оставалась с темпом, найденным самим Mixxx, — то есть
+            # ровно с той ошибкой, которую мы здесь и чиним. Ищем анализ
+            # по исходному имени.
+            base = loc[:-len(".stem.mp4")]
+            for ext in (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg"):
+                ours = darave.get(base + ext) or darave_by_name.get(
+                    (base + ext).rsplit("/", 1)[-1])
+                if ours is not None:
+                    break
         if ours is None:
             skipped.append((r["location"], "нет в анализе DARAVE")); continue
         if r["bpm_lock"]:
             skipped.append((r["location"], "BPM залочен в Mixxx")); continue
-        ratio = ours / r["bpm"] if r["bpm"] else 0
-        agree_double = RATIO_LOW <= ratio <= RATIO_HIGH
+
+        # Пишем ИМЕННО значение из анализа DARAVE, а не «удвоенное
+        # значение Mixxx».
+        #
+        # Раньше здесь умели ровно одну поправку — удвоение, — а самую
+        # частую ошибку этой библиотеки (116 вместо 174, полтора раза)
+        # печатали в список «поправьте руками» и не трогали. Поэтому темп
+        # в Mixxx «слетал обратно» после каждого прохода: сорок треков он
+        # просто не чинил. Теперь источник истины один — БД сканера, где
+        # темп уже сверен с тегом файла и уточнён по сетке
+        # (см. id3_tags.py).
+        #
+        # Предохранитель остаётся: чужое значение можно записать, только
+        # если оно связано с найденным Mixxx простым отношением. Сетка
+        # битов держится на позиции первой доли, и темп, не кратный
+        # измеренному, сдвинул бы её целиком.
+        target = float(ours)
+        ratio = target / r["bpm"] if r["bpm"] else 0.0
+        SAFE_RATIOS = (1.0, 1.5, 2.0, 3.0, 4.0 / 3.0, 0.5, 2.0 / 3.0, 0.75)
+        near = min((abs(ratio - x) / x for x in SAFE_RATIOS), default=9.0)
         dnb_halftime = args.assume_dnb and DNB_HALF_LOW <= r["bpm"] <= DNB_HALF_HIGH
-        if not (agree_double or dnb_halftime):
-            # Отдельно отметим классическую ошибку «в полтора раза» (116 вместо
-            # 174): удвоение тут дало бы 232, поэтому автоматом не трогаем.
-            if (ours and 1.4 <= ratio <= 1.6
-                    and PLAUSIBLE_LOW <= r["bpm"] * 1.5 <= PLAUSIBLE_HIGH):
-                three_halves.append((r["location"], r["bpm"], r["bpm"] * 1.5))
+        if near > 0.03 and not dnb_halftime:
+            skipped.append((r["location"],
+                            f"анализ даёт {target:.2f}, Mixxx {r['bpm']:.2f} — "
+                            f"это не простое отношение, не трогаю"))
             continue
-        if not (PLAUSIBLE_LOW <= r["bpm"] * 2.0 <= PLAUSIBLE_HIGH):
-            skipped.append((r["location"], f"удвоение дало бы {r['bpm']*2:.0f} — вне разумного диапазона"))
+        if dnb_halftime and near > 0.03:
+            target = r["bpm"] * 2.0
+        if abs(target - r["bpm"]) < 0.05:
+            # Значение уже верное — но замок всё равно поставим. Иначе
+            # Mixxx при следующем анализе пересчитает его своим
+            # детектором и сломает то, что менять было не нужно.
+            already_ok.append(r["id"])
+            continue
+        if not (PLAUSIBLE_LOW <= target <= PLAUSIBLE_HIGH):
+            skipped.append((r["location"], f"{target:.0f} — вне разумного диапазона"))
             continue
         try:
             grid_bpm, first = parse_beatgrid(r["beats"]) if r["beats"] else (None, None)
         except Exception as exc:
             skipped.append((r["location"], f"не разобрал бит-сетку: {exc}")); continue
-        plan.append((r["id"], r["location"], r["bpm"], r["bpm"] * 2.0, grid_bpm, first,
-                     "оба анализа согласны" if agree_double else "DnB-полутемп"))
+        why = ("из анализа DARAVE" if near <= 0.03 else "DnB-полутемп")
+        plan.append((r["id"], r["location"], r["bpm"], target, grid_bpm, first, why))
 
-    print(f"\nК удвоению: {len(plan)} треков (из {len(rows)} в библиотеке Mixxx)")
+    print(f"\nК исправлению: {len(plan)} записей (из {len(rows)} в библиотеке Mixxx)")
     for _, loc, old, new, _, _, why in plan[:60]:
         print(f"  {old:6.1f} -> {new:6.1f}  [{why:18}] {Path(loc).name[:48]}")
     if len(plan) > 60:
         print(f"  ... и ещё {len(plan) - 60}")
-    if three_halves:
-        print(f"\nОтдельно: {len(three_halves)} треков похожи на ошибку «в полтора раза» "
-              f"(116 вместо 174 — типично для DnB с триольным ощущением).")
-        print("Автоматом не трогаю: удвоение дало бы вдвое больше нужного. "
-              "Поправьте вручную в Mixxx (бит-сетка -> подогнать), если они вам нужны:")
-        for loc, old, want in three_halves[:10]:
-            print(f"  {old:6.1f} -> ~{want:5.1f}?  {Path(loc).name[:50]}")
     if skipped:
         print(f"\nПропущено {len(skipped)}:")
         for loc, why in skipped[:10]:
             print(f"  {Path(loc).name[:52]:54} {why}")
 
-    if not plan:
+    if not plan and not already_ok:
         print("\nНечего менять.")
+        return 0
+    if already_ok:
+        print(f"\nЕщё {len(already_ok)} записей уже с верным темпом — им поставим "
+              f"только замок, чтобы Mixxx их не пересчитал.")
+    if not plan and already_ok and not args.apply:
+        print("\nЭто предпросмотр. Запустите с --apply.")
         return 0
     if not args.apply:
         print("\nЭто предпросмотр. Запустите с --apply, чтобы применить (Mixxx должен быть ЗАКРЫТ).")
@@ -258,10 +294,18 @@ def main() -> int:
 
     conn.execute("BEGIN EXCLUSIVE")
     for track_id, _, _, new_bpm, _, first, _ in plan:
-        conn.execute("UPDATE library SET bpm = ?, beats = ? WHERE id = ?",
+        # bpm_lock=1 — иначе Mixxx при следующем анализе трека посчитает
+        # темп заново своим детектором и вернёт ту же ошибку. Именно так
+        # исправленный темп «слетал обратно»: мы писали значение, а Mixxx
+        # считал его своим предположением и переписывал. Замок означает
+        # «темп задан человеком, не трогать» — и Mixxx его уважает.
+        conn.execute("UPDATE library SET bpm = ?, beats = ?, bpm_lock = 1 WHERE id = ?",
                      (new_bpm, build_beatgrid(new_bpm, first), track_id))
+    for track_id in already_ok:
+        conn.execute("UPDATE library SET bpm_lock = 1 WHERE id = ?", (track_id,))
     conn.commit()
-    print(f"Готово: обновлено {len(plan)} треков. Запускайте Mixxx.")
+    print(f"Готово: обновлено {len(plan)} записей, темп закреплён (bpm_lock). "
+          f"Запускайте Mixxx.")
     print("Если что-то пошло не так — верните резервную копию поверх mixxxdb.sqlite.")
     return 0
 

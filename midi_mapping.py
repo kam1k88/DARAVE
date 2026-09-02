@@ -208,9 +208,21 @@ def stem_mute_message(deck: str, stem: str, on: bool) -> list[int]:
     return sysex_set(stem_group(deck, stem), "mute", 1.0 if on else 0.0)
 
 
+# Действия, которых у Mixxx нет и не будет: они существуют только в
+# офлайн-рендере, где деку можно собрать из слоёв и обработать каждый
+# слой отдельно (см. demo_render.py). На живом пульте стем-канал — это
+# один фейдер: ни своего эквалайзера, ни своей фазы, ни своего посыла у
+# него нет. Такие события живой путь ПРОПУСКАЕТ, а не падает на них:
+# приём отыграется без этой детали, и это честнее, чем отказаться
+# исполнять его целиком.
+RENDER_ONLY_ACTIONS = ("stem_eq", "stem_phase", "stem_pitch", "stem_fx", "sidechain")
+
+
 def resolve_ramp_tick(action: str, deck: str, value_0_1: float,
                       params: dict | None = None) -> list[int]:
     action = RAMP_ALIASES.get(action, action)
+    if action in RENDER_ONLY_ACTIONS:
+        return []
     if action == "stem_gain":
         stem = (params or {}).get("stem")
         if not stem:
@@ -323,3 +335,75 @@ def decode_sysex(message: list[int]) -> str:
     if not message or message[0] != SYSEX_START or message[-1] != SYSEX_END:
         raise ValueError("это не SysEx-сообщение")
     return bytes(message[1:-1]).decode("ascii")
+
+
+# ------------------------------------------- подготовка и очистка деки
+
+# Все значения ниже — СЫРЫЕ (engine.setValue), а не нормализованные:
+# SysEx-ветка «S|» в darave-controller-scripts.js зовёт setValue напрямую.
+# Для ручек EQ и gain это диапазон Mixxx 0..4 со штатным 1.0, для
+# QuickEffect (фильтра) — 0..1 с серединой 0.5.
+DECK_NEUTRAL_RAW = {"eq": 1.0, "gain": 1.0, "filter": 0.5, "volume": 1.0, "rate": 0.0}
+
+
+def deck_startup_messages(decks: int = 4, quantize: bool = True,
+                          slip: bool = True) -> list[list[int]]:
+    """Квантование и slip на всех деках.
+
+    Оба нужны не «для удобства»: без quantize сведение и метки встают не
+    на долю, а туда, где нажали, и sync разъезжается на слух даже при
+    точной бит-сетке. Ставим при старте companion'а, а не надеемся, что
+    диджей не забудет нажать."""
+    out: list[list[int]] = []
+    for n in range(1, decks + 1):
+        g = f"[Channel{n}]"
+        if quantize:
+            out.append(sysex_set(g, "quantize", 1))
+        if slip:
+            out.append(sysex_set(g, "slip_enabled", 1))
+    return out
+
+
+def neutral_deck_messages(deck_number: int, stems: int = 4,
+                          fx_units: int = 4) -> list[list[int]]:
+    """Вернуть деку в стандартное положение: EQ и фильтр по центру, киллы
+    отжаты, слои подняты, посылы на эффекты сняты, питч в ноль.
+
+    Нужно перед загрузкой нового трека: иначе он приезжает в чужие
+    настройки — с обрезанным низом от прошлого сведения или с открытым
+    посылом на эхо."""
+    n = int(deck_number)
+    ch, eq = f"[Channel{n}]", f"[EqualizerRack1_[Channel{n}]_Effect1]"
+    out = [
+        sysex_set(eq, "parameter1", DECK_NEUTRAL_RAW["eq"]),
+        sysex_set(eq, "parameter2", DECK_NEUTRAL_RAW["eq"]),
+        sysex_set(eq, "parameter3", DECK_NEUTRAL_RAW["eq"]),
+        sysex_set(eq, "button_parameter1", 0),
+        sysex_set(eq, "button_parameter2", 0),
+        sysex_set(eq, "button_parameter3", 0),
+        sysex_set(f"[QuickEffectRack1_[Channel{n}]]", "super1", DECK_NEUTRAL_RAW["filter"]),
+        sysex_set(ch, "volume", DECK_NEUTRAL_RAW["volume"]),
+        sysex_set(ch, "pregain", DECK_NEUTRAL_RAW["gain"]),
+        sysex_set(ch, "mute", 0),
+        sysex_set(ch, "rate", DECK_NEUTRAL_RAW["rate"]),
+    ]
+    for m in range(1, stems + 1):
+        # На обычном (не стемовом) треке этих контролов нет — SysEx просто
+        # ничего не найдёт и промолчит, ошибки не будет.
+        out.append(sysex_set(f"[Channel{n}_Stem{m}]", "volume", 1.0))
+        out.append(sysex_set(f"[Channel{n}_Stem{m}]", "mute", 0))
+    for u in range(1, fx_units + 1):
+        out.append(sysex_set(f"[EffectRack1_EffectUnit{u}]", f"group_[Channel{n}]_enable", 0))
+    return out
+
+
+def clear_deck_messages(deck_number: int) -> list[list[int]]:
+    """Остановить, снять трек и вернуть деку в нейтраль.
+
+    Порядок важен: сначала стоп, потом eject, и только потом нейтраль —
+    иначе выгрузка снимет часть настроек уже после того, как мы их
+    выставили, и дека останется, например, с закрытым фильтром."""
+    n = int(deck_number)
+    ch = f"[Channel{n}]"
+    return ([sysex_set(ch, "play", 0), sysex_press(ch, "eject")]
+            + neutral_deck_messages(n))

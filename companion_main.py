@@ -115,6 +115,27 @@ async def main() -> None:
         await live_control.apply(midi_out.send, cmd)
 
     async def execute_command(action: str) -> None:
+        # Составные команды по деке: «освободить деку» — это стоп, снятие
+        # трека и возврат всех ручек в стандартное положение. Одной
+        # кнопкой, потому что вручную это семь движений и одно из них
+        # всегда забывается — чаще всего открытый посыл на эхо.
+        import midi_mapping as _mm
+
+        for prefix, builder in (("clear_deck_", _mm.clear_deck_messages),
+                                ("neutral_deck_", _mm.neutral_deck_messages)):
+            if action.startswith(prefix):
+                name = action[len(prefix):].strip().upper()
+                num = _mm.DECK_NUMBER.get(name)
+                if num is None:
+                    print(f"[companion] неизвестная дека в команде '{action}'")
+                    return
+                for msg in builder(num):
+                    midi_out.send(msg)
+                print(f"[companion] дека {name}: "
+                      + ("снят трек, всё в нейтраль" if prefix.startswith("clear")
+                         else "ручки в нейтраль"))
+                return
+
         try:
             message = resolve_master_discrete(action)
         except ValueError as exc:
@@ -149,6 +170,34 @@ async def main() -> None:
             was_recording = is_recording
             await asyncio.sleep(1.0)
 
+    async def skin_command_watcher() -> None:
+        """Кнопки DARAVE, нажатые прямо в скине Mixxx.
+
+        Скин не может запустить программу, а скрипт контроллера — тем
+        более: всё, что он умеет, — сообщить наружу «нажали». Поэтому
+        решение принимается здесь, где уже есть и HTTP до backend'а, и
+        MIDI до Mixxx."""
+        import httpx
+
+        while True:
+            for cmd in store.pop_commands():
+                if cmd == "stems":
+                    url = f"{http_url.rstrip('/')}/api/rooms/{args.companion_id}/stems/build"
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            r = await client.post(url, json={})
+                        detail = ""
+                        try:
+                            detail = (r.json() or {}).get("detail") or (r.json() or {}).get("detail", "")
+                        except Exception:
+                            detail = r.text[:200]
+                        print(f"[companion] кнопка «Стемы» в Mixxx: {r.status_code} {detail}")
+                    except Exception as exc:
+                        print(f"[companion] кнопка «Стемы»: backend не ответил — {exc}")
+                else:
+                    print(f"[companion] неизвестная кнопка скина: '{cmd}'")
+            await asyncio.sleep(0.2)
+
     ws_client = CompanionWSClient(
         args.ws_url, args.companion_id, store, execute_plan,
         execute_command=execute_command,
@@ -157,9 +206,23 @@ async def main() -> None:
     print(f"[companion] код комнаты: '{args.companion_id}' — этот же код диджей "
           f"вводит в браузерном чате на backend'е")
 
+    # Квантование и slip — не «настройка по вкусу»: без quantize нажатия
+    # и метки встают не на долю, и sync разъезжается на слух даже при
+    # точной бит-сетке. Ставим сами при старте, а не надеемся, что диджей
+    # не забудет включить их на каждой деке.
+    try:
+        import midi_mapping as _mm
+
+        for msg in _mm.deck_startup_messages():
+            midi_out.send(msg)
+        print("[companion] на всех деках включены квантование и slip")
+    except Exception as exc:  # MIDI-порта может не быть в mock-режиме
+        print(f"[companion] не смог выставить quantize/slip: {exc}")
+
     tasks = [
         asyncio.create_task(ws_client.run()),
         asyncio.create_task(recording_upload_watcher()),
+        asyncio.create_task(skin_command_watcher()),
     ]
     if mock_stream is not None:
         tasks.append(asyncio.create_task(fake_telemetry_pump()))

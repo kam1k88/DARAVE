@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -130,6 +131,17 @@ def analyze_track(path: str) -> dict:
     # уезжает почти на целую долю, и свести такты нельзя в принципе.
     # Уточняем гребёнчатым поиском по длинному окну (beatgrid.refine_tempo).
     bpm = refine_bpm(y, sr, bpm)
+    # Последнее слово — за тегом файла, если он согласуется с измерением.
+    # Без этого драм-н-бейс сканировался в 2/3 темпа (174 -> 116) и
+    # оставался таким навсегда: см. id3_tags.py, там разбор с цифрами.
+    try:
+        import id3_tags
+
+        got = id3_tags.bpm_for_file(path, bpm)
+        if got and abs(got["bpm"] - bpm) > 0.05:
+            bpm = float(got["bpm"])
+    except Exception:
+        pass
     structure = detect_structure(y, sr, bpm)
     # Где реально играют барабаны. Без этого точки входа выбирались по
     # дропам, которые детектор находит с уверенностью 0.14-0.23, и трек
@@ -458,7 +470,88 @@ def init_db(db_path: str) -> sqlite3.Connection:
         )"""
     )
     conn.commit()
+    # Чистим накопленные дубли по регистру ДО прохода: иначе новый скан
+    # добавит правильные строки рядом со старыми, а не вместо них.
+    try:
+        conn.close()
+        r = dedupe_library_db(db_path)
+        if r["merged"]:
+            print(f"[скан] схлопнуто дублей по регистру пути: {r['merged']} "
+                  f"({r['before']} -> {r['after']})")
+        conn = sqlite3.connect(db_path, timeout=60.0)
+        conn.execute("PRAGMA busy_timeout=60000")
+    except sqlite3.Error:
+        pass
     return conn
+
+
+def canon_track_path(path) -> str:
+    """Канонический путь к треку — один файл, одна строка в базе.
+
+    Ключом в таблице `tracks` стоит САМА строка пути, а Windows на
+    регистр не смотрит: `C:\\Users\\...\\music\\x.mp3` и
+    `...\\Music\\x.mp3` — один и тот же файл, но два разных ключа.
+    Именно так библиотека из 65 треков превратилась в 115: часть строк
+    осталась от прохода, запущенного с другим написанием папки, и в
+    интерфейсе они выглядели дублями с пустым жанром.
+
+    `Path.resolve()` на Windows возвращает НАСТОЯЩИЙ регистр с диска,
+    поэтому это одновременно и нормализация, и красивое отображение."""
+    try:
+        return str(Path(path).resolve())
+    except OSError:
+        return str(path)
+
+
+def _dedupe_key(path: str) -> str:
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+def dedupe_library_db(db_path: str, drop_missing: bool = False) -> dict:
+    """Схлопнуть строки, различающиеся только регистром пути.
+
+    Из группы остаётся САМАЯ СВЕЖАЯ запись (у неё есть жанр и прочее, что
+    добавили позже), а путь переписывается в канонический вид."""
+    if not os.path.exists(db_path):
+        return {"before": 0, "after": 0, "merged": 0, "missing": 0}
+    conn = sqlite3.connect(db_path, timeout=60.0)
+    conn.execute("PRAGMA busy_timeout=60000")
+    try:
+        rows = conn.execute("SELECT path, scanned_at FROM tracks").fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return {"before": 0, "after": 0, "merged": 0, "missing": 0}
+    before = len(rows)
+    best: dict[str, tuple[str, float]] = {}
+    for path, ts in rows:
+        k = _dedupe_key(path)
+        cur = best.get(k)
+        if cur is None or (ts or 0) > (cur[1] or 0):
+            best[k] = (path, ts)
+    keep = {v[0] for v in best.values()}
+    merged = missing = 0
+    for path, _ts in rows:
+        if path not in keep:
+            conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
+            merged += 1
+    if drop_missing:
+        for path in list(keep):
+            if not os.path.exists(path):
+                conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
+                keep.discard(path)
+                missing += 1
+    for path in list(keep):
+        canon = canon_track_path(path)
+        if canon != path:
+            try:
+                conn.execute("UPDATE tracks SET path = ? WHERE path = ?", (canon, path))
+            except sqlite3.IntegrityError:
+                conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
+                merged += 1
+    conn.commit()
+    after = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+    conn.close()
+    return {"before": before, "after": after, "merged": merged, "missing": missing}
 
 
 def load_library_from_db(db_path: str, since_ts: float | None = None) -> list[dict]:
@@ -550,7 +643,7 @@ def _upsert_track(conn: sqlite3.Connection, path: Path, info: dict, tags: dict |
                        structure_json=excluded.structure_json, tags_json=excluded.tags_json,
                        scanned_at=excluded.scanned_at""",
                 (
-                    str(path), info["bpm"], info["key"], info["camelot"], info["energy"],
+                    canon_track_path(path), info["bpm"], info["key"], info["camelot"], info["energy"],
                     info["brightness"], info["danceability"], info["duration_seconds"],
                     json.dumps(info["structure"]), json.dumps(tags) if tags else None, time.time(),
                 ),

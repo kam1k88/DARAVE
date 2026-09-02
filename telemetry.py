@@ -34,7 +34,14 @@ class RecordingStatus:
     status: int
 
 
-ParsedTelemetry = Union[DeckState, RecordingStatus, None]
+@dataclass
+class SkinCommand:
+    """Нажатие кнопки DARAVE, встроенной в скин Mixxx: "X,<команда>"."""
+
+    command: str
+
+
+ParsedTelemetry = Union[DeckState, RecordingStatus, SkinCommand, None]
 
 
 def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
@@ -46,6 +53,8 @@ def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
         parts = payload.split(",")
         if parts[0] == "R":
             return RecordingStatus(status=int(parts[1]))
+        if parts[0] == "X":
+            return SkinCommand(command=parts[1].strip())
         # Шестое поле (stem_count) появилось вместе с живыми стемами.
         # Разбираем и старый формат: скрипт контроллера обновляется в
         # Mixxx руками, и рассинхрон на один запуск — норма, а не сбой.
@@ -90,6 +99,8 @@ class MockTelemetryListener(TelemetryListener):
 def _route_parsed(store: StateStore, parsed: ParsedTelemetry) -> None:
     if isinstance(parsed, RecordingStatus):
         store.update_recording_status(parsed.status)
+    elif isinstance(parsed, SkinCommand):
+        store.push_command(parsed.command)
     elif isinstance(parsed, DeckState):
         store.update(parsed)
 

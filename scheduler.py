@@ -56,6 +56,8 @@ class PlanScheduler:
         for ev in plan.events:
             start_time = anchor_time + ev.beat_offset * beat_seconds
             if ev.kind == EventKind.DISCRETE:
+                if ev.action in ("stem_phase",):
+                    continue      # только для офлайн-рендера
                 msg = resolve_discrete(ev.action, ev.deck, ev.params)
                 timed.append(TimedMidiEvent(start_time, msg, f"{ev.action}@{ev.deck}"))
             elif ev.kind == EventKind.HOLD:
@@ -94,6 +96,8 @@ class PlanScheduler:
             frac = self._apply_curve(progress, ev.curve, cycles)
             value = ev.value_from + (ev.value_to - ev.value_from) * frac
             msg = resolve_ramp_tick(ev.action, ev.deck, value, ev.params)
+            if not msg:
+                continue          # действие только для офлайн-рендера
             t = start_time + i * (duration / n_ticks)
             out.append(TimedMidiEvent(t, msg, f"{ev.action}@{ev.deck} tick{i}"))
         return out

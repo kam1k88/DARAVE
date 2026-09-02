@@ -438,6 +438,36 @@ async def track_cues(session_id: str, path: str = "", name: str = "") -> JSONRes
     return JSONResponse(data)
 
 
+@app.get("/api/rooms/{session_id}/sections")
+async def track_sections(session_id: str, path: str = "", name: str = "") -> JSONResponse:
+    """Непрерывное разбиение трека на секции: интро, билд, дроп,
+    брейкдаун, грув, аутро.
+
+    Отличие от /cues принципиальное. Точка отвечает «где это место»;
+    секция отвечает «что звучит сейчас и сколько это продлится». Для
+    сведения нужно второе: завести трек в брейкдаун на 8 тактов и в
+    брейкдаун на 32 такта — разные приёмы, и точка об этом молчит."""
+    import cue_points
+
+    room = sessions.get_or_create(session_id)
+    track = None
+    for t in room.library_tracks:
+        if (path and t.get("path") == path) or (name and t.get("name") == name):
+            track = t
+            break
+    if track is None:
+        raise HTTPException(status_code=404, detail="Трек не найден в библиотеке комнаты")
+    data = cue_points.sections_for_track(track)
+    data["track"] = {"name": track.get("name"), "path": track.get("path"),
+                     "bpm": track.get("bpm"),
+                     "duration_seconds": track.get("duration_seconds"),
+                     "genre": track.get("genre"), "subgenre": track.get("subgenre")}
+    if not data.get("anchored"):
+        data["warning"] = ("карты барабанов у трека нет — границы секций условны. "
+                           "Отсканируйте библиотеку заново.")
+    return JSONResponse(data)
+
+
 @app.post("/api/rooms/{session_id}/cues/export")
 async def export_cues_to_mixxx(session_id: str, body: dict | None = None) -> JSONResponse:
     """Выгружает точки всей библиотеки в горячие метки Mixxx.
@@ -518,7 +548,10 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
         except Exception:
             source_at = target_at = None
 
-    out_name = f"{session_id}_{technique_id}_{secrets.token_hex(6)}.wav"
+    # mp3, а не wav: демо слушают десятками за вечер, и 25 секунд стерео
+    # это 600 КБ против 4-5 МБ. На слух для «послушать и решить» разницы
+    # нет, на диске — восьмикратная.
+    out_name = f"{session_id}_{technique_id}_{secrets.token_hex(6)}.mp3"
     out_path = DEMOS_DIR / out_name
 
     try:
@@ -550,7 +583,10 @@ async def get_technique_demo(session_id: str, filename: str) -> FileResponse:
     path = DEMOS_DIR / filename
     if ".." in filename or "/" in filename or not path.is_file():
         raise HTTPException(status_code=404, detail="Демо-файл не найден")
-    return FileResponse(path, media_type="audio/wav")
+    # Демо теперь mp3; отдаём тип по расширению, чтобы старые wav из
+    # прошлых прогонов продолжали открываться.
+    return FileResponse(path, media_type="audio/mpeg" if path.suffix.lower() == ".mp3"
+                        else "audio/wav")
 
 
 @app.get("/api/controls")
@@ -698,7 +734,7 @@ async def demo_transition(session_id: str, index: int, body: dict | None = None)
         raise HTTPException(status_code=400, detail="Не найдены файлы треков этого перехода")
 
     body = body or {}
-    out_name = f"{session_id}_tr{index}_{secrets.token_hex(5)}.wav"
+    out_name = f"{session_id}_tr{index}_{secrets.token_hex(5)}.mp3"
     out_path = DEMOS_DIR / out_name
 
     def _pt(p):
@@ -1012,8 +1048,31 @@ async def upload_library(session_id: str, body: dict) -> JSONResponse:
 
 @app.get("/api/rooms/{session_id}/library")
 async def get_library(session_id: str) -> JSONResponse:
+    """Библиотека комнаты + два поля, которых в базе сканера нет.
+
+    `stems` — готовы ли слои у трека. Без этого признака диджей не мог
+    понять, почему один и тот же приём на одном треке звучит как задумано,
+    а на другом — как обычный кроссфейд: половина техник опирается на
+    стемы и молча падает на запасной путь, когда их нет.
+
+    `genre`/`subgenre` — то же самое, что лежит в tags["genre"], но
+    разложенное по полям: во вложенном виде их не видел ни интерфейс, ни
+    подбор пары."""
+    import style as _style
+
     room = sessions.get_or_create(session_id)
-    return JSONResponse({"tracks": room.library_tracks})
+    out = []
+    for t in room.library_tracks:
+        item = dict(t)
+        g, sub = _style.track_genre(t)
+        item["genre"] = item.get("genre") or g or None
+        item["subgenre"] = item.get("subgenre") or sub or None
+        try:
+            item["stems"] = bool(_style.has_stems(t))
+        except Exception:
+            item["stems"] = False
+        out.append(item)
+    return JSONResponse({"tracks": out})
 
 
 @app.post("/api/rooms/{session_id}/library/scan")
@@ -1166,7 +1225,22 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
 
     path = (body.get("dir") or "").strip()
     if not path:
-        raise HTTPException(status_code=400, detail="Укажите папку с музыкой")
+        # Кнопка в скине Mixxx папку передать не может — у неё нет полей
+        # ввода. Берём общего родителя путей уже отсканированной
+        # библиотеки: это ровно та папка, с которой диджей и работает.
+        room_ = sessions.get_or_create(session_id)
+        known = [t.get("path") for t in room_.library_tracks if t.get("path")]
+        if known:
+            try:
+                path = str(Path(os.path.commonpath(known)))
+            except ValueError:
+                path = ""
+    if not path:
+        raise HTTPException(
+            status_code=400,
+            detail="Не знаю, какую папку считать: библиотека ещё не сканирована. "
+                   "Отсканируйте её во вкладке «Библиотека» — дальше кнопка "
+                   "в Mixxx будет брать эту же папку сама.")
     if not Path(path).exists():
         raise HTTPException(status_code=400, detail=f"Папка не найдена: {path}")
 
@@ -1182,10 +1256,16 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
             detail="Для .stem.mp4 нужен ffmpeg, а его нет в PATH. "
                    "Поставьте: winget install Gyan.FFmpeg — и перезапустите DARAVE.")
 
+    # По умолчанию — полный конвейер одной кнопкой: сперва доложить
+    # роформерный вокал к трекам, у которых слои уже посчитаны (обычный
+    # проход считает их готовыми и молча пропустил бы), потом досчитать
+    # остальные; .stem.mp4 собирается сам в обоих этапах.
     cmd = [sys.executable, str(Path(__file__).parent / "stems.py"),
            "--dir", path, "--backend", backend]
     if body.get("only_live"):
         cmd.append("--only-live")
+    elif body.get("mode", "all") == "all":
+        cmd.append("--all")
 
     import subprocess as _sp
 
@@ -1225,8 +1305,9 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
 
     asyncio.create_task(_watch())
     hint = ("собираю .stem.mp4 из готовых слоёв" if body.get("only_live")
-            else ("считаю на видеокарте " + str(info.get("name")) if info.get("cuda")
-                  else "считаю на процессоре — это долго, поставьте torch с CUDA"))
+            else ("сперва вокал роформером к готовым слоям, потом остальные треки — "
+                  + ("видеокарта " + str(info.get("name")) if info.get("cuda")
+                     else "ПРОЦЕССОР, это долго: поставьте torch с CUDA")))
     return JSONResponse({"ok": True, "started": True, "detail": "Разделение запущено: " + hint})
 
 
@@ -1240,6 +1321,135 @@ async def stems_status(session_id: str) -> JSONResponse:
     if paths:
         st["coverage"] = _stems.library_coverage(paths)
     return JSONResponse(st)
+
+
+# --- судейский цикл: предложили шов -> послушали -> вердикт ------------
+#
+# Алгоритм умеет оценить темп, тональность, энергию и стыковку секций.
+# Он не умеет оценить, ЛЯЖЕТ ли этот переход в этом сете — это вкус.
+# Поэтому его роль здесь не решать, а сужать перебор: предложить шов,
+# который стоит послушать, а решение оставить диджею.
+
+def _room_tracks(session_id: str) -> list[dict]:
+    room = sessions.get_or_create(session_id)
+    if not room.library_tracks:
+        raise HTTPException(status_code=400,
+                            detail="Библиотека пуста — сначала отсканируйте папку с музыкой")
+    return room.library_tracks
+
+
+@app.get("/api/rooms/{session_id}/audition/next")
+async def audition_next(session_id: str, a_path: str = "", b_path: str = "",
+                        avoid_a_genre: str = "", avoid_b_genre: str = "",
+                        limit: int = 1) -> JSONResponse:
+    """Следующий шов на прослушивание.
+
+    Без параметров продолжает уже одобренную цепочку с её конца — диджей
+    слушает переходы подряд. a_path/b_path сужают перебор: так работают
+    причины отказа («не та техника» оставляет обоих, «не тот второй
+    трек» — только первого)."""
+    import audition
+
+    tracks = _room_tracks(session_id)
+    items = audition.candidates(session_id, tracks, a_path=a_path or None,
+                                b_path=b_path or None,
+                                avoid_a_genre=avoid_a_genre or None,
+                                avoid_b_genre=avoid_b_genre or None,
+                                limit=max(1, min(limit, 12)))
+    return JSONResponse({"candidates": items,
+                         "progress": audition.progress(session_id, tracks)})
+
+
+@app.post("/api/rooms/{session_id}/audition/verdict")
+async def audition_verdict(session_id: str, body: dict) -> JSONResponse:
+    """Приговор шву: {seam, verdict: approved|rejected, reason, note}.
+
+    reason обязателен при отказе и определяет, что предложат дальше:
+    technique | junction | second | pair."""
+    import audition
+
+    seam = body.get("seam") or {}
+    if not seam.get("a_path") or not seam.get("b_path") or not seam.get("technique_id"):
+        raise HTTPException(status_code=400, detail="в шве нужны a_path, b_path и technique_id")
+    try:
+        audition.record(session_id, seam, body.get("verdict", "approved"),
+                        reason=body.get("reason"), note=body.get("note"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Отклонённое демо на диске не остаётся. Отбор — это перебор десятков
+    # вариантов, и каждый оставлял бы после себя wav на несколько
+    # мегабайт; за вечер это гигабайты мусора, которого диджей не просил.
+    # Одобренное демо сохраняем: его ещё будут переслушивать.
+    demo_file = str(body.get("demo_file") or "").strip()
+    if demo_file and body.get("verdict") == "rejected":
+        try:
+            f = DEMOS_DIR / Path(demo_file).name
+            if f.exists() and f.is_file():
+                f.unlink()
+        except OSError as exc:
+            logger.info(f"[отбор] не смог убрать демо {demo_file}: {exc}")
+    tracks = _room_tracks(session_id)
+    # Сразу отдаём следующий шов: иначе интерфейсу пришлось бы делать
+    # второй запрос ради каждого нажатия.
+    nxt = None
+    reason = body.get("reason")
+    kw = {}
+    if body.get("verdict") == "approved":
+        # Продолжаем ровно ту последовательность, которую диджей только
+        # что одобрил: уходящим в следующем шве становится трек, который
+        # был входящим в этом. Опираться на «самую длинную цепочку» тут
+        # нельзя — если одобренных ветвей несколько, предложение уехало бы
+        # не туда, куда он смотрит.
+        kw = {"a_path": seam["b_path"]}
+    elif reason in ("technique", "junction"):
+        kw = {"a_path": seam["a_path"], "b_path": seam["b_path"]}
+    elif reason == "second":
+        kw = {"a_path": seam["a_path"]}
+    elif reason == "first":
+        kw = {"b_path": seam["b_path"]}
+    elif reason in ("genre_a", "genre_b"):
+        # «Другой жанр» — это не «другой трек»: второй трек диджей
+        # оставляет, а первому меняем не сам трек, а его поджанр. Без
+        # этого кнопка вела себя как «другая пара» и меняла оба.
+        import style as _style
+
+        by_path = {t.get("path"): t for t in tracks}
+        which = "a" if reason == "genre_a" else "b"
+        held = seam["b_path"] if which == "a" else seam["a_path"]
+        subject = by_path.get(seam["a_path" if which == "a" else "b_path"]) or {}
+        g, sub = _style.track_genre(subject)
+        kw = {("b_path" if which == "a" else "a_path"): held,
+              ("avoid_a_genre" if which == "a" else "avoid_b_genre"): (sub or g or None)}
+    items = audition.candidates(session_id, tracks, limit=1, **kw)
+    if items:
+        nxt = items[0]
+    return JSONResponse({"ok": True, "next": nxt,
+                         "progress": audition.progress(session_id, tracks)})
+
+
+@app.get("/api/rooms/{session_id}/audition/pool")
+async def audition_pool(session_id: str) -> JSONResponse:
+    import audition
+
+    tracks = _room_tracks(session_id)
+    return JSONResponse({"pool": audition.pool(session_id),
+                         "rejected": audition.rejections(session_id),
+                         "taste": audition.taste(session_id),
+                         "progress": audition.progress(session_id, tracks)})
+
+
+@app.post("/api/rooms/{session_id}/audition/build")
+async def audition_build(session_id: str) -> JSONResponse:
+    """Сет из одобренных швов — самая длинная цепочка, какая складывается."""
+    import audition
+
+    tracks = _room_tracks(session_id)
+    out = audition.build_set(session_id, tracks)
+    if not out.get("ok"):
+        raise HTTPException(status_code=400, detail=out.get("error", "не собрать"))
+    out["progress"] = audition.progress(session_id, tracks)
+    return JSONResponse(out)
 
 
 @app.post("/api/rooms/{session_id}/strategy")
@@ -1277,6 +1487,10 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
         # По умолчанию — сет, а не вся библиотека: пустое поле раньше
         # означало «взять все 48 треков», то есть 4.5 часа, чего никто
         # никогда не имеет в виду под «собрать микс».
+        # fit_mode "natural" приходит из вкладки «Отбор»: там сет уже
+        # собран из одобренных швов, и подгонять его под хронометраж
+        # нельзя — сдвинутся точки, которые диджей слушал и утверждал.
+        fit_mode=body.get("fit_mode") or "compress",
         target_minutes=body.get("target_minutes") or DEFAULT_SET_MINUTES,
         variant=int(body.get("variant") or 0),
         overrides=body.get("overrides"),

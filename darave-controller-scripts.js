@@ -70,6 +70,30 @@ DaraveController.sendTelemetry = function () {
         DaraveController.sendDeckTelemetry(DaraveController.decks[i]);
     }
     DaraveController.sendRecordingStatus();
+    DaraveController.pollSkinButtons();
+};
+
+// Кнопки DARAVE, встроенные прямо в скин Mixxx. Скин создаёт контрол
+// [Skin],<key> сам — ровно так же, как штатные show_library_coverart и
+// show_maximized_library, — а мы его опрашиваем.
+//
+// Почему опрос, а не engine.makeConnection: контроллер поднимается
+// РАНЬШЕ скина, и связь с ещё не существующим контролом молча не
+// создаётся — кнопка тогда не работала бы до перезагрузки маппинга.
+// Тик и так идёт каждые 100 мс, лишних расходов нет.
+DaraveController.skinButtons = [
+    {key: "darave_stems", command: "stems"},
+];
+
+DaraveController.pollSkinButtons = function () {
+    for (let i = 0; i < DaraveController.skinButtons.length; i++) {
+        const b = DaraveController.skinButtons[i];
+        if (engine.getValue("[Skin]", b.key)) {
+            // Отжимаем сразу, иначе на следующем тике команда уйдёт снова.
+            engine.setValue("[Skin]", b.key, 0);
+            DaraveController.sendSysex("X," + b.command);
+        }
+    }
 };
 
 DaraveController.sendRecordingStatus = function () {

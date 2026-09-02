@@ -76,8 +76,29 @@ def norm_path(p: str) -> str:
     return (p or "").replace("\\", "/").lower()
 
 
-def _samples(seconds: float, samplerate: int, channels: int) -> int:
-    return int(round(float(seconds) * int(samplerate or 44100) * int(channels or 2)))
+# Во сколько «сэмплов» Mixxx переводит секунду. Множитель ВСЕГДА два, а
+# не число каналов файла, и это измерено, а не предположено.
+#
+# Собственная метка Mixxx (тип 8, «слышимый диапазон») на стемовом файле
+# Nelver — Red Light длиной 367.4 с имеет length = 32 259 020:
+#
+#     32259020 / (44100 * 2) = 365.75 с   <- сходится с длиной трека
+#     32259020 / (44100 * 8) = 91.44 с    <- не сходится ни с чем
+#
+# То есть движок Mixxx считает позиции в стереокадрах независимо от того,
+# сколько каналов в файле; поле `channels` описывает ФАЙЛ, а не единицу
+# измерения меток. На .mp3 обе формулы совпадают (каналов и так два),
+# поэтому ошибка там не проявлялась — а на .stem.mp4 с восемью каналами
+# позиции получались вчетверо больше нужного, и все метки уезжали в конец
+# трека или за него. Ровно это диджей и увидел.
+CUE_CHANNELS = 2
+
+
+def _samples(seconds: float, samplerate: int, channels: int = CUE_CHANNELS) -> int:
+    """Секунды -> позиция метки в единицах Mixxx. channels игнорируется
+    сознательно: параметр оставлен, чтобы вызовы не пришлось править, но
+    множитель всегда CUE_CHANNELS (см. замер выше)."""
+    return int(round(float(seconds) * int(samplerate or 44100) * CUE_CHANNELS))
 
 
 def mixxx_tracks(conn: sqlite3.Connection) -> dict[str, dict]:
@@ -130,6 +151,17 @@ def write_cues_for_track(conn: sqlite3.Connection, track: dict, cues: list[dict]
             skipped.append((cue.get("name"), "свободных кнопок не осталось"))
             continue
         slot = free.pop(0)
+        # Проверка на здравый смысл ПЕРЕД записью: метка не может стоять
+        # позже конца трека. Дёшево и ловит целый класс ошибок — именно
+        # так и проявилась неверная единица измерения на стемовых файлах
+        # (метки уезжали за конец, а в базе это выглядело как обычные
+        # большие числа). Инвариант проверяем, а не надеемся на него.
+        dur = float(track.get("duration") or 0.0)
+        if dur > 1.0 and float(cue["time_seconds"]) > dur * 1.02:
+            skipped.append((cue.get("name"),
+                            f"{cue['time_seconds']:.1f}с — позже конца трека ({dur:.1f}с)"))
+            free.insert(0, slot)
+            continue
         pos = _samples(cue["time_seconds"], sr, ch)
         is_loop = cue.get("kind") == "loop" and cue.get("best_loop_bars")
         length = 0
@@ -189,12 +221,46 @@ def export_library(tracks: list[dict], mixxxdb: Path | None = None,
 
     plan = []
     missing = 0
+    stem_hits = 0
     for tr in tracks:
-        key = norm_path(tr.get("path") or "")
-        entry = library.get(key) or library.get(key.rsplit("/", 1)[-1])
-        if entry is None:
+        # Метки нужны ОБОИМ файлам трека, а не только исходному.
+        #
+        # Анализ DARAVE идёт по .mp3, а на деку диджей заводит .stem.mp4 —
+        # ради стемов он их и собирал. В библиотеке Mixxx это ДВЕ разные
+        # записи с разными id, и метки, записанные на .mp3, для стемового
+        # файла не существуют: диджей открывал стемовую деку и видел её
+        # пустой. Пишем в обе записи, какие нашлись.
+        #
+        # Пересчитывать позиции не нужно: измерено кросс-корреляцией на
+        # четырёх треках — мастер .stem.mp4 совпадает с .mp3 сэмпл в
+        # сэмпл (сдвиг 0), потому что слои собираются из того же
+        # декодированного звука. Число сэмплов при этом считается по
+        # samplerate/channels КАЖДОЙ записи отдельно (см.
+        # write_cues_for_track), так что разная частота дискретизации
+        # ничего не сломает.
+        src = tr.get("path") or ""
+        candidates = [src]
+        try:
+            import stem_mp4 as _sm
+
+            sp = _sm.stem_mp4_path(src)
+            if str(sp) != src:
+                candidates.append(str(sp))
+        except Exception:
+            pass
+
+        entries = []
+        for cand in candidates:
+            key = norm_path(cand)
+            e = library.get(key) or library.get(key.rsplit("/", 1)[-1])
+            if e is not None and all(e["id"] != x["id"] for x in entries):
+                entries.append(e)
+        if not entries:
             missing += 1
             continue
+        if len(entries) > 1 or entries[0]["location"].lower().endswith(".stem.mp4"):
+            stem_hits += 1
+
         data = cue_points.cues_for_track(tr)
         hot = cue_points.hotcues_for_track(tr, slots=slots)
         for h in hot:
@@ -203,12 +269,19 @@ def export_library(tracks: list[dict], mixxxdb: Path | None = None,
                       if c["kind"] == "first_beat"), None)
         outro = next((c["time_seconds"] for c in data["cues"]
                       if c["kind"] == "outro"), None)
-        plan.append((entry, hot, intro, outro, tr.get("name")))
+        for e in entries:
+            plan.append((e, hot, intro, outro, tr.get("name")))
 
-    log(f"метки: нашлось в Mixxx {len(plan)} треков, не нашлось {missing}")
+    log(f"метки: записей в Mixxx {len(plan)}, из них стемовых файлов {stem_hits}; "
+        f"не нашлось {missing} треков")
+    if stem_hits == 0:
+        log("  ВНИМАНИЕ: ни одного .stem.mp4 в библиотеке Mixxx. Метки лягут "
+            "только на .mp3 — на стемовой деке их не будет. Добавьте папку с "
+            "музыкой в Mixxx заново, чтобы он подхватил .stem.mp4.")
     if dry_run:
         conn.close()
         return {"ok": True, "dry_run": True, "tracks": len(plan), "missing": missing,
+                "stem_files": stem_hits,
                 "preview": [{"track": name, "cues": [h["name"] for h in hot]}
                             for _e, hot, _i, _o, name in plan[:5]]}
 
@@ -226,7 +299,7 @@ def export_library(tracks: list[dict], mixxxdb: Path | None = None,
     conn.commit()
     conn.close()
     return {"ok": True, "tracks": written, "missing": missing,
-            "backup": str(backup),
+            "stem_files": stem_hits, "backup": str(backup),
             "note": "Mixxx должен быть закрыт во время выгрузки — иначе он "
                     "перезапишет библиотеку из памяти при выходе."}
 

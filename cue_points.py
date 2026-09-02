@@ -326,6 +326,188 @@ def cues_for_track(track: dict, bpm: float | None = None,
     }
 
 
+# ------------------------------------------------------- секции трека
+
+# Порядок важен: при наложении побеждает более «сильная» роль. Дроп
+# сильнее билда, билд сильнее грува, и так далее — иначе билд, попавший
+# внутрь дропа, разрезал бы дроп надвое.
+# Интро и аутро стоят ВЫШЕ брейкдауна не по вкусу, а по определению:
+# это места, где барабанов ещё (или уже) нет вовсе, и карта барабанов
+# знает их точно. Карта энергии видит там же «низкую энергию» и называет
+# это брейкдауном — формально не соврав, но для сведения разница
+# принципиальная: в интро заводят трек, а брейкдаун посреди трека это
+# совсем другой манёвр. С прежним порядком интро находилось лишь у 48
+# треков из 115, остальные показывали брейкдаун от нулевой секунды.
+SECTION_PRIORITY = ("drop", "build", "intro", "outro", "breakdown", "groove")
+
+SECTION_NAMES = {
+    "intro": "интро",
+    "build": "билд",
+    "drop": "дроп",
+    "breakdown": "брейкдаун",
+    "groove": "грув",
+    "outro": "аутро",
+}
+
+# Что с секцией можно делать при сведении. Это не украшение: именно по
+# этим признакам стратег выбирает, куда заводить трек и откуда уводить.
+SECTION_ROLE = {
+    # заводить можно туда, где нет ни плотного низа, ни главной мелодии
+    "intro":     {"enter": True,  "exit": False, "energy": "низкая"},
+    "groove":    {"enter": True,  "exit": True,  "energy": "средняя"},
+    "breakdown": {"enter": True,  "exit": True,  "energy": "низкая"},
+    "build":     {"enter": False, "exit": True,  "energy": "растущая"},
+    "drop":      {"enter": False, "exit": True,  "energy": "высокая"},
+    "outro":     {"enter": False, "exit": True,  "energy": "спадающая"},
+}
+
+
+def sections_for_track(track: dict, bpm: float | None = None) -> dict:
+    """Непрерывное разбиение трека на секции: интро, билд, дроп,
+    брейкдаун, грув, аутро.
+
+    Почему интервалы, а не точки. `cues_for_track` отвечает на вопрос
+    «где ЭТО место», и для меток в Mixxx этого достаточно. Но сведение
+    задаёт другой вопрос: «что сейчас звучит и сколько это продлится».
+    Заводить трек в брейкдаун длиной 8 тактов и в брейкдаун длиной 32 —
+    разные приёмы, а точка «брейкдаун» об этом не говорит ничего.
+
+    Разбиение считается растеризацией по тактам: каждая роль кладётся на
+    сетку тактов со своим приоритетом, потом одинаковые соседние такты
+    сливаются. Так гарантируются два свойства, без которых секциями
+    нельзя пользоваться: границы стоят РОВНО на тактах, и в разбиении
+    НЕТ дыр — любая секунда трека принадлежит ровно одной секции."""
+    structure = track.get("structure") or {}
+    emap = structure.get("energy_map") or {}
+    dmap = structure.get("drum_map") or {}
+    grid = _grid(track, bpm)
+    duration = float(track.get("duration_seconds") or 0.0)
+    if duration <= 0 or grid.bar <= 0:
+        return {"sections": [], "anchored": bool(dmap), "bar_seconds": grid.bar}
+
+    # Сетка тактов покрывает ВЕСЬ файл, включая то, что ДО якоря.
+    # Якорь — первая доля с барабанами, а интро живёт до неё, поэтому
+    # индексы тактов здесь могут быть отрицательными. В первой версии
+    # этого не было, и интро пропадало у 114 треков из 115: разбиение
+    # начиналось ровно там, где интро заканчивается.
+    import math
+
+    bar0 = int(math.floor((0.0 - grid.anchor) / grid.bar))
+    bar1 = int(math.ceil((duration - grid.anchor) / grid.bar))
+    n_bars = max(1, bar1 - bar0)
+
+    def bar_of(t: float) -> int:
+        return int(round((float(t) - grid.anchor) / grid.bar))
+
+    def idx(t: float) -> int:
+        return max(0, min(n_bars, bar_of(t) - bar0))
+
+    lanes: list[str] = ["groove"] * n_bars
+
+    def paint(kind: str, a: float, b: float) -> None:
+        i, j = idx(a), idx(b)
+        if j <= i:
+            j = min(n_bars, i + 1)
+        rank = SECTION_PRIORITY.index(kind)
+        for k in range(i, j):
+            if rank <= SECTION_PRIORITY.index(lanes[k]):
+                lanes[k] = kind
+
+    drums_start = float(dmap.get("drums_start") or 0.0)
+    drums_end = float(dmap.get("drums_end") or 0.0)
+    drops = sorted(float(x) for x in (emap.get("drops") or []))
+    breaks = [(float(a), float(b)) for a, b in (emap.get("breakdowns") or [])]
+
+    # 1. Интро — всё до первой доли с барабанами.
+    if drums_start > 0:
+        paint("intro", 0.0, drums_start)
+
+    # 2. Аутро — после того, как барабаны кончились.
+    if drums_end and drums_end < duration - grid.bar:
+        paint("outro", drums_end, duration)
+
+    # 3. Брейкдауны — как их видит карта энергии.
+    for a, b in breaks:
+        paint("breakdown", a, b)
+
+    # 4. Дропы. Длину карта не даёт: берём от дропа до следующего события
+    #    (брейкдаун, следующий дроп, конец барабанов), но не больше 32
+    #    тактов — дальше это уже не дроп, а грув.
+    events = sorted([b for b, _ in breaks] + drops[1:]
+                    + ([drums_end] if drums_end else []) + [duration])
+    for d in drops:
+        nxt = next((e for e in events if e > d + grid.bar), duration)
+        paint("drop", d, min(nxt, d + 32 * grid.bar))
+
+    # 5. Билд — последняя фраза ПЕРЕД дропом, отсчитанная от самого дропа.
+    for d in drops:
+        paint("build", d - grid.phrase, d)
+
+    # Склейка соседних тактов с одной ролью.
+    out: list[dict] = []
+    levels, level_bar = _levels(track)
+    # Первый такт сетки начинается ДО нуля файла (якорь стоит на первой
+    # доле барабанов). Его обрезка дала бы вторую секцию с началом 0:00 —
+    # поэтому неполный такт просто отдаём следующей секции.
+    start = 1 if (n_bars > 1 and grid.anchor + bar0 * grid.bar < -1e-6
+                  and lanes[0] != lanes[1]) else 0
+    if start:
+        lanes[0] = lanes[1]
+        start = 0
+    for k in range(1, n_bars + 1):
+        if k == n_bars or lanes[k] != lanes[start]:
+            kind = lanes[start]
+            t0 = max(0.0, grid.anchor + (start + bar0) * grid.bar)
+            t1 = grid.anchor + (k + bar0) * grid.bar
+            if k == n_bars:
+                t1 = duration          # хвост дотягиваем ровно до конца
+            bars = k - start
+            lvl = None
+            # Карта энергии считается ОТ НАЧАЛА ФАЙЛА, а не от якоря —
+            # поэтому индекс берётся по абсолютному времени. С якорной
+            # арифметикой уровни разъезжались и дроп получал 0.08.
+            if levels and level_bar > 0:
+                i0 = max(0, int(t0 / level_bar))
+                i1 = min(len(levels), max(i0 + 1, int(t1 / level_bar)))
+                seg = levels[i0:i1]
+                if seg:
+                    lvl = round(sum(seg) / len(seg), 3)
+            role = SECTION_ROLE.get(kind, {})
+            out.append({
+                "kind": kind,
+                "name": SECTION_NAMES.get(kind, kind),
+                "start_seconds": round(t0, 2),
+                "end_seconds": round(min(duration, t1), 2),
+                "bars": bars,
+                "phrases": round(bars / PHRASE_BARS, 2),
+                "bar_from": start + bar0,
+                "level": lvl,
+                "can_enter": bool(role.get("enter")),
+                "can_exit": bool(role.get("exit")),
+                "label": f"{SECTION_NAMES.get(kind, kind)} · "
+                         f"{bars} {_bars_word(bars)} · {_fmt(t0)}",
+            })
+            start = k
+
+    return {
+        "sections": out,
+        "anchored": bool(dmap),
+        "bar_seconds": round(grid.bar, 4),
+        "phrase_seconds": round(grid.phrase, 3),
+        "bpm": round(grid.bpm, 2),
+        "drops": len(drops),
+        "breakdowns": len(breaks),
+    }
+
+
+def section_at(track: dict, seconds: float, bpm: float | None = None) -> dict | None:
+    """Какая секция звучит в этот момент — то, что нужно техникам."""
+    for sec in sections_for_track(track, bpm).get("sections", []):
+        if sec["start_seconds"] <= seconds < sec["end_seconds"]:
+            return sec
+    return None
+
+
 def hotcues_for_track(track: dict, bpm: float | None = None,
                       slots: int = 8) -> list[dict]:
     """Что выгрузить в горячие метки Mixxx: не всё подряд, а по одной

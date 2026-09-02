@@ -123,18 +123,40 @@ def session_cleanup(dry_run: bool = False, log=None) -> dict:
              for name, (keep_last, keep_hours) in SWEEP_RULES.items()]
     parts.append(sweep_stem_cache(dry_run=dry_run))
 
+    # Дубли в библиотеке по регистру пути. Windows не различает
+    # `...\\music\\` и `...\\Music\\`, а SQLite ключом держит саму строку —
+    # и один и тот же трек оказывается в базе дважды. У диджея так
+    # набралось 115 записей вместо 65, причём у старых копий не было
+    # жанра, и в интерфейсе это выглядело как «дубли с другим жанром».
+    dedup = {"merged": 0, "before": 0, "after": 0}
+    if not dry_run:
+        try:
+            import track_analysis
+
+            for db in sorted((HERE / "scan_dbs").glob("*.db")):
+                r = track_analysis.dedupe_library_db(str(db))
+                dedup["merged"] += r["merged"]
+                dedup["before"] += r["before"]
+                dedup["after"] += r["after"]
+        except Exception as exc:  # уборка не должна падать из-за одной базы
+            dedup["error"] = str(exc)
+
     freed = sum(p["freed_bytes"] for p in parts)
     count = sum(len(p["removed"]) for p in parts)
     report = {"dry_run": dry_run, "removed_count": count,
-              "freed_mb": round(freed / 1e6, 1), "by_folder": parts}
+              "freed_mb": round(freed / 1e6, 1), "by_folder": parts,
+              "library_dedupe": dedup}
     if log:
         if count:
             detail = ", ".join(f"{p['folder']}: {len(p['removed'])}"
                                for p in parts if p["removed"])
             log(f"[уборка] удалено {count} ({report['freed_mb']} МБ) — {detail}"
                 + (" [проверка, ничего не тронуто]" if dry_run else ""))
-        else:
+        elif not dedup.get("merged"):
             log("[уборка] чистить нечего")
+    if log and dedup.get("merged"):
+        log(f"[уборка] библиотека: схлопнуто дублей по регистру пути "
+            f"{dedup['merged']} ({dedup['before']} -> {dedup['after']})")
     return report
 
 

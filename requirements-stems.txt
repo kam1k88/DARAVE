@@ -15,7 +15,25 @@
 # ничего, включая demucs. Ровно это и произошло.
 #
 #   pip install -r requirements-stems.txt
-#   pip install audio-separator            # необязательно, для роформера
+#   # роформер на вокал — необязательно, но ставится НЕ обычной командой:
+#   pip install audio-separator --no-deps
+#   pip install "beartype==0.18.5" einops julius librosa ml_collections numpy \
+#       onnx onnx2torch-py313 pydub pyyaml requests resampy samplerate scipy \
+#       six soundfile tqdm rotary-embedding-torch audioop-lts
+#   pip install onnxruntime-gpu
+#
+# ПОЧЕМУ --no-deps. `pip install audio-separator` тянет diffq-fixed, а она
+# собирается из исходников и на Python 3.13+ падает: её setup.py зовёт
+# Cython на bitpack.pyx, которого в архиве нет («'bitpack.pyx' doesn't
+# match any files»), колёс под новые Python тоже нет. Проверено по PyPI:
+# из всех зависимостей audio-separator ТОЛЬКО у diffq-fixed нет колеса под
+# 3.14/Windows — остальные либо чистый python, либо с колёсами.
+#
+# И главное: роформеру diffq не нужен. В audio-separator он импортируется
+# только внутри вложенного кода demucs (uvr_lib_v5/demucs/states.py),
+# а архитектуры выбираются лениво по имени класса — роформер идёт веткой
+# MDXC и этот модуль не загружает вовсе. Своя demucs у нас стоит отдельно
+# и от вложенной копии не зависит.
 #
 # demucs даёт четыре слоя моделью htdemucs_ft (дообученная htdemucs:
 # заметно лучше базовой, считает вчетверо дольше).

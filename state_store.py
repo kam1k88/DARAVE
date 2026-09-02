@@ -32,6 +32,7 @@ class StateStore:
         # (см. telemetry.py::parse_sysex_payload). Mixxx [Recording] status:
         # 0=не пишет, 1=пишет, 2=не удалось начать (диск/путь).
         self._recording_status: int | None = None
+        self._commands: list[str] = []
 
     def update(self, state: DeckState) -> None:
         with self._lock:
@@ -40,6 +41,21 @@ class StateStore:
     def update_recording_status(self, status: int) -> None:
         with self._lock:
             self._recording_status = status
+
+    def push_command(self, command: str) -> None:
+        """Команда, нажатая кнопкой прямо в скине Mixxx.
+
+        Скин не умеет запускать программы, а скрипт контроллера — тем
+        более; всё, что он может, — сказать наружу «нажали». Поэтому
+        кнопка в скине лишь дёргает контрол, скрипт видит это в своём
+        тике и шлёт сюда SysEx, а разбирается уже companion."""
+        with self._lock:
+            self._commands.append(command)
+
+    def pop_commands(self) -> list[str]:
+        with self._lock:
+            out, self._commands = list(self._commands), []
+        return out
 
     def get(self, deck: str) -> DeckState | None:
         with self._lock:

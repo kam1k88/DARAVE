@@ -213,6 +213,65 @@ def stem_mp4_path(track_path: str | Path) -> Path:
     return p.with_suffix("").with_name(p.stem + ".stem.mp4")
 
 
+def playable_path(track_path: str | Path) -> str:
+    """Какой файл этого трека надо ЗАВОДИТЬ НА ДЕКУ.
+
+    Анализ, планирование и офлайн-рендер работают с исходным .mp3 — там
+    лежат теги, и слои читаются из кэша DARAVE отдельными файлами. Но на
+    деку заводить нужно .stem.mp4, иначе стемовых фейдеров у деки нет и
+    половина приёмов вырождается в обычный кроссфейд.
+
+    Проверено кросс-корреляцией на четырёх треках: мастер .stem.mp4
+    совпадает с .mp3 сэмпл в сэмпл, поэтому все точки и метки переносятся
+    один в один и пересчитывать ничего не нужно."""
+    if not track_path:
+        return ""
+    try:
+        sp = stem_mp4_path(track_path)
+        if sp.exists():
+            return str(sp)
+    except OSError:
+        pass
+    return str(track_path)
+
+
+def _replace_with_retry(tmp: Path, out: Path, attempts: int = 10,
+                        delay: float = 0.4) -> None:
+    """tmp.replace(out), но с повтором.
+
+    Ровно та же болезнь Windows, что была с переносом слоёв demucs:
+    только что дописанный файл на 40 МБ ещё секунду-другую держит
+    антивирус (реалтайм-скан свежих медиафайлов), а иногда не до конца
+    отпустил ffmpeg. Первая же попытка переименования падала с
+    PermissionError [WinError 32], и .stem.mp4 не появлялся — при том
+    что сам файл был уже собран и проверен. Ждём и повторяем: до 10 раз
+    с растущей паузой, суммарно около 20 секунд."""
+    import time
+
+    last: OSError | None = None
+    for i in range(attempts):
+        try:
+            tmp.replace(out)
+            return
+        except PermissionError as exc:
+            last = exc
+            time.sleep(delay * (i + 1))
+        except OSError as exc:
+            last = exc
+            break
+    # Не вышло переименовать — пробуем скопировать содержимое: цель
+    # может быть занята чужим процессом (например, открыта в Mixxx), и
+    # тогда запись поверх работает там, где переименование нет.
+    try:
+        shutil.copyfile(str(tmp), str(out))
+        tmp.unlink(missing_ok=True)
+        return
+    except OSError:
+        pass
+    tmp.unlink(missing_ok=True)
+    raise last if last else OSError("не смог положить .stem.mp4 на место")
+
+
 def build_stem_mp4(master_path: str | Path,
                    parts: dict[str, str | Path],
                    out_path: str | Path,
@@ -240,7 +299,15 @@ def build_stem_mp4(master_path: str | Path,
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkstemp(suffix=".mp4", dir=str(out.parent))[1])
+    # mkstemp возвращает ОТКРЫТЫЙ дескриптор, и раньше отсюда брали
+    # только путь — файл так и оставался открыт нашим же процессом. На
+    # Linux переименование поверх открытого файла работает, поэтому в
+    # тестах это не всплывало; Windows так не умеет, и .stem.mp4 падал с
+    # PermissionError [WinError 32] на самом последнем шаге, когда файл
+    # был уже собран и проверен. Дескриптор надо закрыть.
+    _fd, _tmp_name = tempfile.mkstemp(suffix=".mp4", dir=str(out.parent))
+    os.close(_fd)
+    tmp = Path(_tmp_name)
 
     cmd = [ff, "-y", "-loglevel", "error", "-i", str(master_path)]
     for part in STEM_ORDER:
@@ -288,7 +355,7 @@ def build_stem_mp4(master_path: str | Path,
         raise StemMp4Error(problem)
 
     out.unlink(missing_ok=True)
-    tmp.replace(out)
+    _replace_with_retry(tmp, out)
     return {"ok": True, "path": str(out), "bytes": out.stat().st_size,
             "streams": 5, "channels": 10, "manifest": manifest}
 

@@ -37,20 +37,31 @@ def export_m3u(strategy: dict, out_path: str, title: str = "DARAVE set") -> dict
     missing = [t["name"] for t in tracks if not t.get("path")]
     lines = ["#EXTM3U", f"#PLAYLIST:{title}"]
     written = 0
+    # В плейлист идёт .stem.mp4, если он собран: именно его надо
+    # заводить на деку, иначе у деки нет стемовых фейдеров и приёмы по
+    # слоям выродятся в обычный кроссфейд. Позиции при этом те же —
+    # мастер стемового файла совпадает с .mp3 сэмпл в сэмпл (измерено).
+    import stem_mp4 as _sm
+
+    stems_used = 0
     for t in tracks:
         path = t.get("path")
         if not path:
             continue
+        play = _sm.playable_path(path)
+        if play != path:
+            stems_used += 1
         dur = int(t.get("duration_seconds") or 0)
         lines.append(f"#EXTINF:{dur},{t['name']}")
-        lines.append(path)
+        lines.append(play)
         written += 1
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8", newline="\r\n") as fh:
         fh.write("\n".join(lines) + "\n")
 
-    return {"path": out_path, "tracks": written, "skipped": missing}
+    return {"path": out_path, "tracks": written, "skipped": missing,
+            "stem_files": stems_used}
 
 
 def cue_sheet(strategy: dict) -> str:

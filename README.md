@@ -1,6 +1,7 @@
 
 
-darave is DJ practice environment for beatmatching training, technique research, and mix experimentation. My project based on GitHub - Humpeldibumpel/mixxx at custom-build/downbeats-2.7 · GitHub
+Darave is a DJ environment for learning techniques and experimenting with mixes. Reduce the number of unsolvable tasks by using various DJ techniques, changing phrases and tracks with one button for pre-listening and adding your favorite demo versions for mixing.  Create a ready-made mix based on this, or transfer the playlist with instructions directly to mixxx and manage everything with your own hands. my project is based on GitHub - Humpeldibumpel/mixxx in custom build/downbeats-2.7 · GitHub
+It is planned to implement on for all paid DAWs, as well as for Linux.
 
 Here’s what I did:
 

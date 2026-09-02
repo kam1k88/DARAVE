@@ -1,6 +1,6 @@
 
 
-Darave is a DJ environment for learning techniques and experimenting with mixes. Reduce the number of unsolvable tasks by using various DJ techniques, changing techniques/phrases/tracks with one button for pre-listening and adding your favorite demo versions for mixing.  Create a ready-made mix based on this, or transfer the playlist with realtime instructions directly to mixxx for full-auto/semimanual decks control  everything with your own hands. my project is based on GitHub - Humpeldibumpel/mixxx in custom build/downbeats-2.7 · GitHub
+Darave is a DJ environment for learning techniques and experimenting with mixes. Reduce the number of unsolvable tasks by using various DJ techniques, changing techniques/phrases/tracks with one button for pre-listening and adding your favorite demo versions for mixing.  Create a ready-made mix based on this, or transfer the playlist with realtime instructions directly to mixxx for full-auto/semimanual everything control. my project is based on GitHub - Humpeldibumpel/mixxx in custom build/downbeats-2.7 · GitHub
 It is planned to implement on for all DAWs, as well as for Linux.
 
 Here’s what I did:

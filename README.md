@@ -5,7 +5,7 @@ It is planned to implement on for all DAWs, as well as for Linux/MacOS
 
 Here’s what I did:
 
-:bullseye: Auto-CUE (Smart Cue Points)
+🎯 Auto-CUE (Smart Cue Points)
 
 Automatically places CUE points on a track: intro, drop, break, outro. No manual setup — just load your track and go.
 

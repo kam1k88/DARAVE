@@ -9,39 +9,39 @@ Here’s what I did:
 
 Automatically places CUE points on a track: intro, drop, break, outro. No manual setup — just load your track and go.
 
-:musical_note: Auto Key Mapping
+🎵 Auto Key Mapping
 
 Detects the track’s key using the Camelot system. Helps select tracks that harmonically match for seamless mixing.
 
-:high_voltage: BPM Analysis (BeatGREAT)
+⚡ BPM Analysis (BeatGREAT)
 
 A custom algorithm for precise BPM detection. No errors, no drift.
 
-:puzzle_piece: Stem Separation (Demucs ft)
+🧩 Stem Separation (Demucs ft)
 
 Splits a track into separate layers: vocals, drums, bass, and other. Extract acapellas or instrumentals in seconds.
 
-:level_slider: MIDI Controller
+🎚️ MIDI Controller
 
 Control through MIDI emulation. Connects to the web service and lets you control the mix as if using a physical controller.
 
-:globe_with_meridians: Web-Based Control
+🌐 Web-Based Control
 
 Full mix control directly from your browser. Just open the website — from any device.
 
-:cloud: Real-Time Cloud Sync
+💭 Real-Time Cloud Sync
 
 All your tracks, CUE points, BPM, settings, and stems are automatically synced across devices. Prepare a set on your laptop — perform from your tablet.
 
-:brain: Smart Genre & BPM Detection by Track Name
+💡 Smart Genre & BPM Detection by Track Name
 
 BPM is determined from the track name, artist, and genre (via a database). Works even when standard audio analysis fails.
 
-:wrench: Beatgrid Fix
+🥁 Beatgrid Fix
 
 The beatgrid is automatically corrected to prevent tracks from ever losing sync. Say goodbye to grid problems forever.
 
-:microphone: Acapella Stand
+🎤 Acapella Stand
 
 A dedicated tool for working with acapellas. If a track contains vocals, the system carefully extracts them for standalone use. This is not a separate model — it’s part of the stem separation feature, designed for cases where you specifically need the acapella.
 https://www.youtube.com/watch?v=MqEeh-P4wbQ&

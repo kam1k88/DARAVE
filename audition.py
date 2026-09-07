@@ -36,6 +36,12 @@ import persistence
 REASONS = {
     "technique": "не та техника — оставить треки и стык, взять другой приём",
     "junction": "не тот стык — оставить треки и приём, взять другие секции",
+    # Стык — это ДВЕ точки, и не нравится обычно одна из них. Общая
+    # кнопка «другой стык» меняла обе сразу, и подобрать нужное место
+    # было нельзя: диджей жал её, чтобы сдвинуть уход, а вместе с ним
+    # уезжал и вход, который его устраивал.
+    "junction_a": "не та точка ухода — оставить треки, приём и вход, взять другую секцию у A",
+    "junction_b": "не та точка входа — оставить треки, приём и уход, взять другую секцию у B",
     "first": "не тот первый трек — оставить второй, искать другой первый",
     "second": "не тот второй трек — оставить первый, искать другой второй",
     "pair": "не та пара — искать другую пару целиком",
@@ -227,18 +233,22 @@ PAIR_WIDE = ("pair", "first", "second", "genre_a", "genre_b")
 def _scopes(session_id: str) -> tuple[set, set, set]:
     """Что уже отвергнуто и НАСКОЛЬКО широко.
 
-    Возвращает (мёртвые пары, мёртвые стыки пары, мёртвые комбинации):
+    Возвращает (мёртвые пары, мёртвые стыки пары, мёртвые комбинации,
+    мёртвые приёмы, мёртвые точки ухода, мёртвые точки входа):
       * отказ про треки хоронит ПАРУ целиком;
       * «другой стык» хоронит этот вид стыковки у этой пары;
+      * «другой стык A/B» хоронит одну КОНКРЕТНУЮ точку, а не вид;
       * «другая техника» хоронит только эту комбинацию.
     """
     with _db() as conn:
         rows = conn.execute(
-            """SELECT a_path, b_path, technique_id, pair_label, verdict, reason
+            """SELECT a_path, b_path, technique_id, pair_label, verdict, reason,
+                      exit_seconds, entry_seconds
                FROM seams WHERE session_id = ?""", (session_id,)).fetchall()
     dead_pairs, dead_junctions, dead_combos = set(), set(), set()
     dead_techniques = set()
-    for a, b, tid, lab, verdict, reason in rows:
+    dead_exits, dead_entries = set(), set()
+    for a, b, tid, lab, verdict, reason, ex, en in rows:
         dead_combos.add((a, b, tid, lab))
         if verdict != "rejected":
             continue
@@ -246,19 +256,27 @@ def _scopes(session_id: str) -> tuple[set, set, set]:
             dead_pairs.add((a, b))
         elif reason == "junction":
             dead_junctions.add((a, b, lab))
+        elif reason == "junction_a" and ex is not None:
+            dead_exits.add((a, b, round(float(ex), 1)))
+        elif reason == "junction_b" and en is not None:
+            dead_entries.add((a, b, round(float(en), 1)))
         elif reason == "technique":
             # «Другая техника» — значит другая техника, а не тот же приём
             # на соседнем стыке. Раньше хоронилась комбинация «приём +
             # стык», и ST-08 возвращался трижды подряд, меняя только
             # подпись стыка: с точки зрения диджея кнопка не работала.
             dead_techniques.add((a, b, tid))
-    return dead_pairs, dead_junctions, dead_combos, dead_techniques
+    return (dead_pairs, dead_junctions, dead_combos, dead_techniques,
+            dead_exits, dead_entries)
 
 
 def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                b_path: str | None = None, limit: int = 6,
                avoid_a_genre: str | None = None,
-               avoid_b_genre: str | None = None) -> list[dict]:
+               avoid_b_genre: str | None = None,
+               hold_exit: float | None = None,
+               hold_entry: float | None = None,
+               hold_technique: str | None = None) -> list[dict]:
     """Швы, которые стоит послушать. Уже судимые не предлагаются повторно.
 
     a_path/b_path сужают перебор: так работают причины отказа. «Не та
@@ -272,7 +290,8 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
         return sub or g
 
     by_path = {t.get("path"): t for t in tracks if t.get("path")}
-    dead_pairs, dead_junctions, dead_combos, dead_techniques = _scopes(session_id)
+    (dead_pairs, dead_junctions, dead_combos, dead_techniques,
+     dead_exits, dead_entries) = _scopes(session_id)
     tm = taste(session_id)
     approved_b = {s["b_path"] for s in pool(session_id)}
 
@@ -327,7 +346,22 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
             vocal_ok = style.has_vocals(a) and style.has_vocals(b)
             if (a["path"], b["path"], opt["label"]) in dead_junctions:
                 continue
+            # Точки, которые диджей уже отверг по отдельности («другой
+            # стык A» / «другой стык B»), и точки, которые он наоборот
+            # просил оставить.
+            ex_at = round(float(opt["exit"]["at"]), 1)
+            en_at = round(float(opt["entry"]["at"]), 1)
+            if (a["path"], b["path"], ex_at) in dead_exits:
+                continue
+            if (a["path"], b["path"], en_at) in dead_entries:
+                continue
+            if hold_exit is not None and abs(opt["exit"]["at"] - hold_exit) > 0.5:
+                continue
+            if hold_entry is not None and abs(opt["entry"]["at"] - hold_entry) > 0.5:
+                continue
             for k, tid in enumerate(opt["techniques"]):
+                if hold_technique and tid != hold_technique:
+                    continue
                 t = TECHNIQUES.get(tid)
                 if t is None or t.requires_decks > 2:
                     continue
@@ -346,9 +380,15 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 # Шум детерминированный — один и тот же список при
                 # перезагрузке страницы, но разный для разных пар.
                 jitter = (hash((a["path"], b["path"], tid, opt["label"])) % 1000) / 12000.0
+                # Длинный переход лучше короткого — по прямой просьбе
+                # диджея. Множитель мягкий: 64 такта дают +50% к весу,
+                # 8 тактов — ничего, но стык «дроп в дроп» на 8 тактах
+                # всё равно обгонит «тело в тело» на 32.
+                long_bonus = 1.0 + min(float(opt["bars"]), 64.0) / 128.0
                 w = (style.PAIR_INTEREST.get(opt["label"], 1.0)
                      * taste_weight(tm, tid, opt["label"])
                      * key_weight(a, b)
+                     * long_bonus
                      * (1.0 - 0.08 * k) + jitter)
                 ga, sa = style.track_genre(a)
                 gb, sb = style.track_genre(b)
@@ -376,6 +416,88 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 })
     out.sort(key=lambda x: -x["score"])
     return out[:limit]
+
+
+# ------------------------------------------------- ручной выбор приёма
+
+def _best_for(technique_id: str) -> list[str]:
+    """На каких стыках этот приём вообще рекомендован.
+
+    Считается из той же таблицы PAIR_TECHNIQUES, по которой работает
+    подбор, — а не пишется руками рядом с каждой техникой. Иначе список
+    «где приём хорош» разъедется с тем, где его реально предлагают, и
+    подсказка станет враньём."""
+    import style
+
+    return [lab for lab, ids in style.PAIR_TECHNIQUES.items()
+            if technique_id in ids]
+
+
+def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
+    """Все приёмы, которые можно поставить на этот шов, — для ручного
+    выбора.
+
+    Диджей просил менять ТОЛЬКО приём, не трогая треки и точки, и
+    выбирать его руками. Значит нужен полный список, а не «следующий по
+    внутреннему рейтингу»: с пометкой, что рекомендовано именно на этом
+    стыке, что применимо вообще, а что не поедет — и почему."""
+    import style
+    from techniques import TECHNIQUES
+
+    recommended = list(style.PAIR_TECHNIQUES.get(label or "", ()))
+    stems_ok = style.has_stems(a) and style.has_stems(b)
+    vocals_ok = style.has_vocals(a) and style.has_vocals(b)
+    out: list[dict] = []
+    for tid, t in TECHNIQUES.items():
+        problem = ""
+        if t.requires_decks > 2:
+            problem = f"нужно {t.requires_decks} деки"
+        elif t.requires_stems and not stems_ok:
+            problem = "нужны стемы у обоих треков"
+        elif t.needs_vocals and not vocals_ok:
+            problem = "нужен вокальный слой у обоих треков"
+        rank = recommended.index(tid) if tid in recommended else 99
+        out.append({
+            "id": tid, "name": t.name, "category": t.category,
+            "difficulty": t.difficulty, "description": t.description,
+            "recommended": tid in recommended,
+            "rank": rank,
+            "best_for": _best_for(tid),
+            "requires_stems": t.requires_stems,
+            "needs_vocals": t.needs_vocals,
+            "ok": not problem, "problem": problem,
+        })
+    out.sort(key=lambda x: (not x["ok"], x["rank"], not x["recommended"],
+                            x["difficulty"], x["name"]))
+    return out
+
+
+def swap_technique(seam: dict, a: dict, b: dict,
+                   technique_id: str | None = None) -> dict:
+    """Тот же шов с другим приёмом. Треки и точки не трогаем.
+
+    Без явного technique_id берём СЛЕДУЮЩИЙ подходящий по кругу — это и
+    есть кнопка «другой приём». Прежняя кнопка «другая техника» была
+    отказом: она записывала вердикт и пересобирала шов целиком, поэтому
+    вместе с приёмом менялись и точки, а иногда и трек."""
+    from techniques import TECHNIQUES
+
+    items = [x for x in techniques_for(a, b, seam.get("pair_label")) if x["ok"]]
+    if not items:
+        return dict(seam)
+    ids = [x["id"] for x in items]
+    if technique_id and technique_id in TECHNIQUES:
+        pick = technique_id
+    else:
+        cur = seam.get("technique_id")
+        pick = ids[(ids.index(cur) + 1) % len(ids)] if cur in ids else ids[0]
+    t = TECHNIQUES[pick]
+    out = dict(seam)
+    out["technique_id"] = pick
+    out["technique"] = t.name
+    out["why"] = (f"стыкуются {seam.get('pair_label')}, {seam.get('bars')} тактов; "
+                  f"{t.name}")
+    return out
 
 
 def next_seam(session_id: str, tracks: list[dict], **kw) -> dict | None:

@@ -125,7 +125,8 @@ def candidates_for_outgoing(track: dict, bpm: float, needed_seconds: float,
         out.append(_point("tail", max(earliest, 0.0), bar_seconds, duration or 1.0, 0.0,
                           "по хронометражу (структуру найти не удалось)"))
 
-    _snap_all_to_phrase(out, bar_seconds, duration)
+    _snap_all_to_phrase(out, bar_seconds, duration,
+                        anchor=float(_drum_map(track).get("drums_start") or 0.0))
 
     if want_seconds is not None:
         # Сначала ОКНО, потом качество. Иначе получается качели: либо
@@ -167,7 +168,7 @@ SEARCH_BARS = 16.0
 
 
 def _phrase_snap(t: float, bar_seconds: float, phrase_bars: float = PHRASE_BARS,
-                 mode: str = "nearest") -> float:
+                 mode: str = "nearest", anchor: float = 0.0) -> float:
     """Двигает точку на границу ФРАЗЫ, а не такта.
 
     Это оказалось причиной того, что технически правильно сведённые треки
@@ -180,35 +181,41 @@ def _phrase_snap(t: float, bar_seconds: float, phrase_bars: float = PHRASE_BARS,
     восьмитактовые разгоны и дропы двух треков приходят в разные места и
     спорят друг с другом. Диджей никогда так не сводит — он заводит трек
     ровно с начала фразы.
+
+    `anchor` — первая доля трека (drum_map.drums_start). Раньше сетка
+    фраз считалась от НУЛЯ ФАЙЛА, и в самом коде стояло замечание, что
+    это уводит точку на пол-фразы: у релиза перед первой долей есть
+    пауза, шум винила, вдох — и «такт 8 от нуля файла» приходится на
+    середину музыкальной фразы. Теперь карты знают настоящую первую
+    долю, и считать от неё можно честно.
     """
     span = bar_seconds * phrase_bars
     if span <= 0:
         return t
-    k = t / span
+    k = (t - anchor) / span
     if mode == "next":
         k = _math.ceil(k - 1e-6)
     elif mode == "prev":
         k = _math.floor(k + 1e-6)
     else:
         k = round(k)
-    return max(0.0, k * span)
+    return max(0.0, anchor + k * span)
 
 
 def _snap_all_to_phrase(points: list[dict], bar_seconds: float, duration: float,
-                        mode: str = "nearest") -> None:
+                        mode: str = "nearest", anchor: float = 0.0) -> None:
     """Ставит все кандидаты на сетку фраз и убирает получившиеся дубли."""
     for p in points:
         if p.get("exact"):
             # Точка уже привязана к событию самого трека (например,
-            # отсчитана от дропа целым числом тактов). Сетка фраз здесь
-            # считается от НУЛЯ файла и увела бы её на пол-фразы — ровно
-            # то расхождение, которое мы и чиним.
+            # отсчитана от дропа целым числом тактов) — двигать нечего.
             continue
-        t = _phrase_snap(float(p["time_seconds"]), bar_seconds, mode=mode)
+        t = _phrase_snap(float(p["time_seconds"]), bar_seconds, mode=mode,
+                         anchor=anchor)
         if duration > 0:
             t = min(t, max(0.0, duration - bar_seconds))
         p["time_seconds"] = round(t, 2)
-        p["bar_index"] = round(t / bar_seconds) if bar_seconds else 0
+        p["bar_index"] = round((t - anchor) / bar_seconds) if bar_seconds else 0
         # Подпись содержит время, а мы его только что сдвинули: без
         # пересборки в списке стояло бы «брейкдаун · 3:12» на секунде
         # 3:07, и диджей выбирал бы одно, а получал другое.
@@ -423,10 +430,11 @@ def candidates_for_incoming(track: dict, bpm: float, limit: int = 6,
             for p in out:
                 p.setdefault("_dropped", dropped)
 
-    # Все точки входа — строго на границе фразы входящего трека. Уходящий
-    # мы и так уводим с границы фразы, поэтому после этого обе фразы идут
-    # в ногу и продолжают идти всю длину сведения.
-    _snap_all_to_phrase(out, bar_seconds, duration)
+    # Все точки входа — строго на границе фразы входящего трека, и фразы
+    # отсчитываются от его первой доли, а не от нуля файла. Уходящий мы
+    # и так уводим с границы фразы, поэтому после этого обе фразы идут в
+    # ногу и продолжают идти всю длину сведения.
+    _snap_all_to_phrase(out, bar_seconds, duration, anchor=drums_from)
 
     for p in out:
         if first_drop is not None:

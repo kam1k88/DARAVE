@@ -65,9 +65,19 @@ class RtMidiBackend(MidiBackend):
         del self._midiout
 
 
-def make_backend(mode: str, port_name: str = "DARAVE Virtual Controller") -> MidiBackend:
+def make_backend(mode: str, port_name: str = "DARAVE Virtual Controller",
+                 osc_host: str = "127.0.0.1", osc_port: int = 9000) -> MidiBackend:
     if mode == "mock":
         return MockMidiBackend()
     if mode == "rtmidi":
         return RtMidiBackend(port_name)
+    if mode == "osc":
+        # Local import: osc_backend pulls in mixxx_controls/midi_mapping, and
+        # midi_bridge must stay importable in the bare mock case.
+        # NOTE: OSC cannot carry everything MIDI can — engine functions
+        # (brake/spinback/softStart), SysEx toggles, beatjump and the deck
+        # QuickEffect are refused and counted, not silently mangled. See the
+        # module docstring. Run rtmidi alongside if you need those live.
+        from osc_backend import OscBackend
+        return OscBackend(host=osc_host, port=osc_port)
     raise ValueError(f"Unknown backend mode: {mode}")

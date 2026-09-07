@@ -128,7 +128,7 @@ def has_stems(track: dict) -> bool:
     try:
         import stems as _stems
 
-        return bool(track.get("path") and _stems.stem_paths(track["path"]))
+        return bool(track.get("path") and _stems.has_stems(track["path"]))
     except Exception:
         return False
 
@@ -143,11 +143,15 @@ def has_vocals(track: dict) -> bool:
     try:
         import stems as _stems
 
-        if track.get("path") and _stems.stem_paths(track["path"]):
-            meta = _stems.stem_meta(track["path"])
-            db = meta.get("vocals_db")
+        if track.get("path") and _stems.has_stems(track["path"]):
+            # vocals_db знает оба источника: величину из meta.json, если
+            # кэш есть, и измерение по .stem.mp4, если его нет. Порог
+            # живёт в stems - он выведен из замеров по библиотеке, а не
+            # выбран на глаз: пустой слой даёт -57..-58 dBFS, настоящий
+            # -15..-28, и прежние -60 не отделяли ничего.
+            db = _stems.vocals_db(track["path"])
             if db is not None:
-                return float(db) > -60.0
+                return float(db) > _stems.VOCALS_DB_FLOOR
             return bool(_stems.has_vocals(track["path"]))
     except Exception:
         pass
@@ -277,6 +281,23 @@ PAIR_INTEREST: dict[str, float] = {
 }
 
 
+# Длина перехода — только целая фраза, и это не эстетика, а арифметика.
+# Фраза в танцевальной музыке — 8 тактов; 17 тактов означает, что одна
+# из дек встанет на середине фразы и её сбивка придёт туда, где у другой
+# деки ровное место. Поэтому длина берётся из лесенки 8/16/32/64, и
+# всегда САМАЯ ДЛИННАЯ, которая помещается: диджей просил длинные
+# переходы, а короткий всегда можно получить, оборвав длинный.
+PHRASE_LENGTHS = (8, 16, 32, 64)
+
+
+def phrase_bars(bars: float, longest: bool = True) -> float:
+    """Ближайшая снизу длина из 8/16/32/64 тактов."""
+    fits = [n for n in PHRASE_LENGTHS if n <= float(bars) + 1e-6]
+    if not fits:
+        return float(PHRASE_LENGTHS[0])
+    return float(fits[-1] if longest else fits[0])
+
+
 def pair_label(exit_kind: str, entry_kind: str) -> str:
     return f"{exit_kind}→{entry_kind}"
 
@@ -301,8 +322,12 @@ def pair_options(a: dict, b: dict, min_bars: int = 8) -> list[dict]:
                 "exit": {"kind": x["kind"], "at": x["start_seconds"], "bars": x["bars"]},
                 "entry": {"kind": y["kind"], "at": y["start_seconds"], "bars": y["bars"]},
                 "techniques": tech,
-                # Длина стыковки ограничена более коротким из двух кусков.
-                "bars": min(x["bars"], y["bars"]),
+                # Длина стыковки ограничена более коротким из двух
+                # кусков — и округляется вниз до целой фразы.
+                "bars": phrase_bars(min(x["bars"], y["bars"])),
+                # Сырые длины секций оставляем: по ним видно, сколько
+                # запаса есть сверх выбранной фразы.
+                "room_bars": int(min(x["bars"], y["bars"])),
             })
     return out
 

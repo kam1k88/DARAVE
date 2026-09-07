@@ -153,19 +153,21 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
             "contrast": round(contrast, 2), "confidence": conf, "note": note}
 
 
-def _drum_map_for(y, sr: int, bpm: float) -> dict | None:
+def _drum_map_for(y, sr: int, bpm: float, offset: float = 0.0,
+                  drums=None) -> dict | None:
     """Карта «где играют барабаны». Без неё точки входа выбирались по
     ненадёжным дропам structure-анализа, и половина переходов заводила
     новый трек в его эмбиентное интро."""
     import beatgrid
 
     try:
-        return beatgrid.drum_map(y, sr, bpm)
+        return beatgrid.drum_map(y, sr, bpm, offset=offset, drums=drums)
     except Exception:
         return None
 
 
-def _energy_map_for(y, sr: int, bpm: float) -> dict | None:
+def _energy_map_for(y, sr: int, bpm: float, offset: float = 0.0,
+                    drums=None) -> dict | None:
     """Карта энергии низа по тактам: брейкдауны, ямы, дропы.
 
     Считается здесь же, в том же фоновом проходе, что и сетка битов, —
@@ -176,7 +178,7 @@ def _energy_map_for(y, sr: int, bpm: float) -> dict | None:
     try:
         import beatgrid
 
-        return beatgrid.energy_map(y, sr, bpm)
+        return beatgrid.energy_map(y, sr, bpm, offset=offset, drums=drums)
     except Exception:
         return None
 
@@ -308,9 +310,19 @@ def fix_db(db_path: str, dry_run: bool = False, allow_octave: bool = True,
                 pass
             res = refine_one(path, old, track_band, allow_octave=allow_octave,
                              y=y, sr=sr_l, tag_bpm=tag_bpm, confirmed=confirmed)
-            dmap = _drum_map_for(y, sr_l, res.get("bpm") or old)
-            cmap = _chroma_map_for(y, sr_l, res.get("bpm") or old)
-            emap = _energy_map_for(y, sr_l, res.get("bpm") or old)
+            bpm_l = res.get("bpm") or old
+            # Сетка тактов якорится на музыку, события структуры — по
+            # слою ударных, если он есть. См. beatgrid.drums_signal.
+            try:
+                import beatgrid as _bg
+
+                offset_l = _bg.bar_offset_for(y, sr_l, bpm_l)
+                drums_l = _bg.drums_signal(path, sr_l)
+            except Exception:
+                offset_l, drums_l = 0.0, None
+            dmap = _drum_map_for(y, sr_l, bpm_l, offset_l, drums_l)
+            cmap = _chroma_map_for(y, sr_l, bpm_l)
+            emap = _energy_map_for(y, sr_l, bpm_l, offset_l, drums_l)
         except Exception as exc:  # один битый файл не должен ронять проход
             log(f"  [!] {os.path.basename(path)[:46]:<46} {type(exc).__name__}: {exc}")
             continue

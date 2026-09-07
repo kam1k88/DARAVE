@@ -549,6 +549,89 @@ def _parts_on_disk(d: Path) -> dict | None:
 _meta_cache: dict[str, tuple[float, dict]] = {}
 
 
+# ------------------------------------------------ слои из .stem.mp4
+#
+# Раньше «есть ли у трека стемы» означало ровно одно: лежит ли кэш в
+# stems/<ключ>/ с меткой meta.json. Диджей этот кэш удалил - те же
+# секунды лежали на диске дважды, отдельными файлами для рендера и
+# внутри .stem.mp4 для Mixxx, - и вся библиотека мгновенно стала «без
+# стемов»: стем-техники отключились везде, кнопка сборки предлагала
+# считать заново то, что уже посчитано.
+#
+# Теперь источников два, и .stem.mp4 равноправен: он рядом с треком, в
+# нём те же четыре слоя, и читать их оттуда умеет stem_mp4.decode_layer.
+
+# Ниже этого уровня вокальный слой считается пустым. Не догадка: измерено
+# на библиотеке. С вокалом - Sili feat. Sofia -15.2, MAILKY feat. Kooka
+# -20.6, SOLR -28.2 dBFS; без вокала - Chronophage -57.0, Akiruno -58.3.
+# Разрыв в 29 dB, порог поставлен посередине. Прежнее значение -60 не
+# отделяло ничего: пустой слой на -57 проходил как настоящий, и
+# «Акапелла поверх» выдавала тишину, выглядящую как поломка рендера.
+VOCALS_DB_FLOOR = -40.0
+
+_mp4_cache: dict[str, tuple[float, object]] = {}
+_vocdb_cache: dict[tuple[str, float], float] = {}
+
+
+def stem_mp4_for(track_path: str) -> Path | None:
+    """Путь .stem.mp4 этого трека, если он собран.
+
+    Манифест здесь НЕ читается сознательно: read_manifest() поднимает
+    файл целиком, а этот вызов идёт на каждый трек при отрисовке
+    библиотеки - на 64 файлах это два гигабайта чтения ради галочки.
+    Проверяем существование и осмысленный размер; манифест проверяется
+    там, где слой реально читают.
+    """
+    if not track_path:
+        return None
+    try:
+        import stem_mp4 as _sm
+
+        sp = _sm.stem_mp4_path(track_path)
+        st = sp.stat()
+    except (OSError, ValueError):
+        return None
+    return sp if st.st_size > 1_000_000 else None
+
+
+def has_stems(track_path: str) -> bool:
+    """Есть ли у трека четыре слоя - в кэше ИЛИ в .stem.mp4."""
+    if not track_path:
+        return False
+    return bool(stem_paths(track_path)) or stem_mp4_for(track_path) is not None
+
+
+def vocals_db(track_path: str) -> float | None:
+    """Громкость вокального слоя в dBFS, или None если слоёв нет вовсе.
+
+    Кэш знает её из meta.json (там она записана при разделении). Если
+    кэша нет, а .stem.mp4 есть - измеряем по файлу и запоминаем в памяти
+    на время процесса: второго кэша на диске диджей не хочет, а класть
+    величину в сам mp4 значило бы трогать манифест, который читает Mixxx.
+    """
+    m = stem_meta(track_path) or {}
+    if m.get("complete") and m.get("vocals_db") is not None:
+        try:
+            return float(m["vocals_db"])
+        except (TypeError, ValueError):
+            pass
+    sp = stem_mp4_for(track_path)
+    if sp is None:
+        return None
+    try:
+        key = (str(sp), sp.stat().st_mtime)
+    except OSError:
+        return None
+    if key not in _vocdb_cache:
+        try:
+            import stem_mp4 as _sm
+
+            _vocdb_cache[key] = float(_sm.layer_db(sp, "vocals"))
+        except Exception:
+            return None
+    return _vocdb_cache[key]
+
+
 def stem_meta(track_path: str) -> dict:
     """Чем именно посчитаны стемы этого трека — чтобы «качественные» не
     оказались вчерашним HPSS-черновиком.
@@ -585,7 +668,13 @@ def has_vocals(track_path: str) -> bool:
     поверх» на таких стемах выдаёт тишину и выглядит как поломка рендера,
     а не как отсутствие данных. Поэтому спрашивать надо здесь и заранее."""
     m = stem_meta(track_path)
-    return bool(m.get("complete")) and m.get("backend") not in (None, "", "hpss")
+    if m.get("complete"):
+        return m.get("backend") not in (None, "", "hpss")
+    # Кэша нет - судим по .stem.mp4. Одного его наличия мало: HPSS тоже
+    # собирает стемовый файл, а вокального слоя у HPSS не существует, он
+    # пишется пустым сознательно. Поэтому меряем громкость слоя.
+    db = vocals_db(track_path)
+    return db is not None and db > VOCALS_DB_FLOOR
 
 
 def _write_meta(dest: Path, **kw) -> None:
@@ -626,13 +715,16 @@ def _write_part(dest: Path, part: str, buf, sr: int, fmt: str) -> None:
             return
         except Exception:
             pass
+    if fmt == "flac":
+        sf.write(str(dest / f"{part}.flac"), data.astype("float32"), sr, subtype="PCM_24")
+        return
     sf.write(str(dest / f"{part}.wav"), data.astype("float32"), sr, subtype="PCM_16")
 
 
 # ------------------------------------------------------- разделение: hpss
 
 def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0,
-                  fmt: str = "mp3") -> dict:
+                  fmt: str = "flac") -> dict:
     """Быстрое разделение без модели: гармоника против ударных.
 
     Даёт три слоя из четырёх и честно кладёт пустой вокал: HPSS вокал не
@@ -747,8 +839,16 @@ def _demucs_four(track_path: str, dest: Path, model: str, fmt: str,
 
     py = demucs_python() or sys.executable
     cmd = [py, "-m", "demucs", "-n", model, "-o", str(tmp)]
+    # Layers must NOT be lossy. Writing them as mp3 is what put a 50 ms
+    # offset into every .stem.mp4: lameenc emits a bare frame stream with
+    # no Xing/LAME header, so nothing downstream can strip LAME's encoder
+    # delay, and it ends up baked into the audio (2 x 1105 = 2210 samples,
+    # measured). It also spent a whole extra lossy generation between the
+    # source and the AAC in the container. See claude/stem-mp4-shift.md.
     if fmt == "mp3":
         cmd += ["--mp3", "--mp3-bitrate", "320"]
+    elif fmt == "flac":
+        cmd += ["--flac"]
     if device:
         cmd += ["-d", device]
     # Перекрытие окон. По умолчанию demucs берёт 0.25 — это вчетверо
@@ -1031,10 +1131,13 @@ def _write_layer(dest: Path, part: str, buf, sr: int, fmt: str) -> None:
             return
         except Exception:
             pass
+    if fmt == "flac":
+        sf.write(str(dest / f"{part}.flac"), buf, sr, subtype="PCM_24")
+        return
     sf.write(str(dest / f"{part}.wav"), buf, sr, subtype="PCM_16")
 
 
-def recompute_other(dest: Path, track_path: str, voc_new=None, fmt: str = "mp3",
+def recompute_other(dest: Path, track_path: str, voc_new=None, fmt: str = "flac",
                     sr: int = 44100) -> dict:
     """Пересчитать гармонию так, чтобы сумма слоёв ДАВАЛА исходный трек.
 
@@ -1272,7 +1375,7 @@ def redo_vocals(track_path: str, timeout: float = 3600.0, live: bool = True) -> 
     dest = stem_dir_for(track_path)
     meta = dict(stem_meta(track_path))
     t0 = time.time()
-    used, err = _roformer_pass(track_path, dest, meta.get("format", "mp3"), timeout)
+    used, err = _roformer_pass(track_path, dest, meta.get("format") or "flac", timeout)
     if not used:
         return {"ok": False, "error": err or "роформер не отработал"}
     meta.pop("vocals_error", None)
@@ -1289,7 +1392,7 @@ def redo_vocals(track_path: str, timeout: float = 3600.0, live: bool = True) -> 
 
 # ------------------------------------------------------------ точка входа
 
-def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
+def separate_track(track_path: str, fmt: str = "flac", model: str | None = None,
                    device: str | None = None, timeout: float = 3600.0,
                    backend: str = "auto", live: bool = True,
                    overlap: float | None = None, rebuild: bool = False) -> dict:
@@ -1300,6 +1403,31 @@ def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
     выступлении."""
     if not os.path.exists(track_path):
         return {"ok": False, "error": "файл не найден"}
+
+    # «Уже посчитано?» спрашиваем ДО выбора движка. Раньше ветка hpss
+    # стояла выше и до этой проверки не доходила: на машине без demucs
+    # resolve_backend отдаёт "hpss", и полностью готовый трек считался
+    # заново с нуля. Готовность от движка не зависит - это свойство
+    # файлов на диске, а не того, чем мы собрались считать.
+    if not rebuild:
+        have = stem_paths(track_path)
+        if have:
+            out = {"ok": True, "paths": have, "seconds": 0.0, "cached": True,
+                   "source": "cache", "backend": stem_meta(track_path).get("backend")}
+            if live:
+                out["live"] = build_live_stems(track_path)
+            return out
+
+        # Кэша нет, но .stem.mp4 собран - значит слои посчитаны, просто
+        # лежат внутри него. Гонять из-за этого модель заново значит
+        # потратить часы GPU на то, что уже есть: ровно так кнопка
+        # «Стемы» и повела себя, когда диджей удалил кэш.
+        ready = stem_mp4_for(track_path)
+        if ready is not None:
+            return {"ok": True, "paths": None, "seconds": 0.0, "cached": True,
+                    "source": "stem_mp4", "stem_mp4": str(ready),
+                    "backend": stem_meta(track_path).get("backend")}
+
     backend = resolve_backend(backend)
     device = pick_device(device)
     if backend == "hpss":
@@ -1307,14 +1435,6 @@ def separate_track(track_path: str, fmt: str = "mp3", model: str | None = None,
         if r.get("ok") and live:
             r["live"] = build_live_stems(track_path)
         return r
-
-    have = stem_paths(track_path)
-    if have:
-        out = {"ok": True, "paths": have, "seconds": 0.0, "cached": True,
-               "backend": stem_meta(track_path).get("backend")}
-        if live:
-            out["live"] = build_live_stems(track_path)
-        return out
 
     model = model or (FAST_MODEL if backend == "fast" else MODEL)
     dest = stem_dir_for(track_path)
@@ -1374,7 +1494,7 @@ def fix_other_library(track_paths: list[str], log=print, live: bool = True) -> d
     for i, p in enumerate(todo):
         dest = stem_dir_for(p)
         meta = dict(stem_meta(p))
-        r = recompute_other(dest, p, fmt=meta.get("format", "mp3"))
+        r = recompute_other(dest, p, fmt=meta.get("format") or "flac")
         name = os.path.basename(p)[:44]
         if not r.get("ok"):
             failed += 1
@@ -1435,7 +1555,7 @@ def redo_vocals_library(track_paths: list[str], log=print, live: bool = True,
     return {"todo": len(todo), "done": done, "failed": failed}
 
 
-def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None = None,
+def separate_library(track_paths: list[str], fmt: str = "flac", model: str | None = None,
                      device: str | None = None, progress=None, log=print,
                      stop_after: float | None = None, backend: str = "auto",
                      live: bool = True, overlap: float | None = None,
@@ -1453,7 +1573,9 @@ def separate_library(track_paths: list[str], fmt: str = "mp3", model: str | None
                 "failed": [], "seconds": 0.0, "backend": backend,
                 "error": problem, "device": device_info()}
     device = pick_device(device)
-    todo = list(track_paths) if rebuild else [p for p in track_paths if not stem_paths(p)]
+    # has_stems, а не stem_paths: трек со собранным .stem.mp4 уже посчитан,
+    # даже если кэша слоёв рядом нет.
+    todo = list(track_paths) if rebuild else [p for p in track_paths if not has_stems(p)]
     log(f"стемы: {len(track_paths) - len(todo)} уже есть, считать {len(todo)}")
     info = device_info()
     if live and stem_mp4 is None:
@@ -1542,7 +1664,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="DARAVE — разделение треков на четыре слоя")
     ap.add_argument("--track", help="один файл")
     ap.add_argument("--dir", help="папка с музыкой")
-    ap.add_argument("--format", default="mp3", choices=["mp3", "wav"])
+    # flac по умолчанию: mp3-слои несли задержку кодировщика LAME, из-за
+    # которой все слои в .stem.mp4 отставали на 50 мс, и тратили лишнее
+    # поколение сжатия. См. claude/stem-mp4-shift.md. mp3 оставлен только
+    # для чтения старых кэшей.
+    ap.add_argument("--format", default="flac", choices=["flac", "wav", "mp3"])
     ap.add_argument("--device", default=None, help="cuda | cpu (по умолчанию — что найдёт demucs)")
     ap.add_argument("--backend", default="auto",
                     choices=["auto", "roformer", "demucs", "fast", "hpss"],

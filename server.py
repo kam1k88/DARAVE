@@ -538,6 +538,22 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     # разъедутся при первой же правке.
     source_at = body.get("source_at")
     target_at = body.get("target_at")
+    # Длина перехода со шва, профиль ввода и луп вокала уходящего.
+    # До этого демо всегда шло 38 секунд по кроссфейду, что бы ни было
+    # написано на карточке, — диджей слушал не то, что одобрял.
+    seam_bars = body.get("bars")
+    mix_profile = body.get("mix_profile") or None
+    vocal_loop = body.get("vocal_loop")
+    # «Если на уходящем вокал — обязательно лупать». Решение принимаем
+    # здесь, а не в интерфейсе: он не знает, посчитаны ли стемы.
+    if vocal_loop is None:
+        try:
+            import style as _style_v
+
+            if _style_v.has_vocals(track_a) and _style_v.has_stems(track_a):
+                vocal_loop = 8.0
+        except Exception:
+            vocal_loop = None
     if source_at is None or target_at is None:
         try:
             cue = mix_strategist.technique_cue_hints(technique, track_a, track_b)
@@ -561,6 +577,9 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
             param_overrides=overrides,
             source_at=(float(source_at) if source_at else None),
             target_at=(float(target_at) if target_at else None),
+            bars=(float(seam_bars) if seam_bars else None),
+            mix_profile=mix_profile,
+            vocal_loop=(float(vocal_loop) if vocal_loop else None),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=f"Файл трека не найден на диске backend'а: {exc}") from exc
@@ -770,9 +789,16 @@ async def demo_transition(session_id: str, index: int, body: dict | None = None)
             technique_id, a["path"], b["path"], a["bpm"], b["bpm"], str(out_path),
             # Длину сведения задаёт план (4-12 тактов по контексту) — либо
             # её присылают из UI, когда диджей перебирает варианты на слух.
-            set_export._blend_override({"blend_bars": body.get("blend_bars") or tr.get("blend_bars"),
-                                        "bars": tr.get("bars"),
-                                        "mid_duck": body.get("mid_duck", tr.get("mid_duck"))}),
+            # Ползунки приёма из панели настройки перехода идут поверх
+            # того, что подставил план: демо обязано звучать теми же
+            # значениями, которые диджей видит на экране, иначе он
+            # слушает одно, а в сет попадает другое.
+            {**set_export._blend_override(
+                 {"blend_bars": body.get("blend_bars") or tr.get("blend_bars"),
+                  "bars": tr.get("bars"),
+                  "mid_duck": body.get("mid_duck", tr.get("mid_duck"))}),
+             **{k: v for k, v in (tr.get("params") or {}).items()},
+             **{k: v for k, v in (body.get("param_overrides") or {}).items()}},
             float(body.get("max_seconds") or 45.0), 44100,
             from_at, to_at, master,
         )
@@ -1404,6 +1430,15 @@ async def audition_verdict(session_id: str, body: dict) -> JSONResponse:
         kw = {"a_path": seam["b_path"]}
     elif reason in ("technique", "junction"):
         kw = {"a_path": seam["a_path"], "b_path": seam["b_path"]}
+    elif reason == "junction_a":
+        # Меняем ТОЛЬКО точку ухода: вход и приём диджея устраивают.
+        kw = {"a_path": seam["a_path"], "b_path": seam["b_path"],
+              "hold_entry": seam.get("entry_seconds"),
+              "hold_technique": seam.get("technique_id")}
+    elif reason == "junction_b":
+        kw = {"a_path": seam["a_path"], "b_path": seam["b_path"],
+              "hold_exit": seam.get("exit_seconds"),
+              "hold_technique": seam.get("technique_id")}
     elif reason == "second":
         kw = {"a_path": seam["a_path"]}
     elif reason == "first":
@@ -1422,10 +1457,90 @@ async def audition_verdict(session_id: str, body: dict) -> JSONResponse:
         kw = {("b_path" if which == "a" else "a_path"): held,
               ("avoid_a_genre" if which == "a" else "avoid_b_genre"): (sub or g or None)}
     items = audition.candidates(session_id, tracks, limit=1, **kw)
+    # Сужение может не оставить ни одного варианта: у пары просто нет
+    # второй точки ухода с тем же приёмом. Тогда отпускаем ограничения
+    # по одному, от самого узкого, — молча вернуть «швов больше нет»
+    # там, где они есть, хуже, чем предложить чуть более широкий выбор.
+    for drop in ("hold_technique", "hold_entry", "hold_exit"):
+        if items or drop not in kw:
+            continue
+        kw = {k: v for k, v in kw.items() if k != drop}
+        items = audition.candidates(session_id, tracks, limit=1, **kw)
     if items:
         nxt = items[0]
     return JSONResponse({"ok": True, "next": nxt,
                          "progress": audition.progress(session_id, tracks)})
+
+
+@app.post("/api/rooms/{session_id}/audition/technique")
+async def audition_technique(session_id: str, body: dict) -> JSONResponse:
+    """Другой приём на ТОМ ЖЕ шве: {seam, technique_id?}.
+
+    Это не отказ и не вердикт. Прежняя кнопка «другая техника» писала в
+    базу отказ и пересобирала шов целиком — вместе с приёмом уезжали
+    точки, а иногда и трек. Здесь треки и точки остаются, меняется
+    только приём: без technique_id берётся следующий подходящий по
+    кругу, с ним — ровно указанный (ручной выбор)."""
+    import audition
+
+    seam = body.get("seam") or {}
+    if not seam.get("a_path") or not seam.get("b_path"):
+        raise HTTPException(status_code=400, detail="в шве нужны a_path и b_path")
+    by_path = {t.get("path"): t for t in _room_tracks(session_id)}
+    a = by_path.get(seam["a_path"])
+    b = by_path.get(seam["b_path"])
+    if a is None or b is None:
+        raise HTTPException(status_code=400, detail="трек шва не найден в библиотеке комнаты")
+    out = audition.swap_technique(seam, a, b, body.get("technique_id") or None)
+    return JSONResponse({"ok": True, "seam": out,
+                         "techniques": audition.techniques_for(a, b, seam.get("pair_label"))})
+
+
+@app.get("/api/rooms/{session_id}/audition/techniques")
+async def audition_techniques(session_id: str, a_path: str, b_path: str,
+                              pair_label: str = "") -> JSONResponse:
+    """Список приёмов для ручного выбора на этом шве — с пометкой, где
+    какой приём хорош и почему какой-то нельзя поставить."""
+    import audition
+
+    by_path = {t.get("path"): t for t in _room_tracks(session_id)}
+    a, b = by_path.get(a_path), by_path.get(b_path)
+    if a is None or b is None:
+        raise HTTPException(status_code=400, detail="трек не найден в библиотеке комнаты")
+    return JSONResponse({"techniques": audition.techniques_for(a, b, pair_label or None)})
+
+
+@app.get("/api/rooms/{session_id}/technique-presets")
+async def list_technique_presets(session_id: str, technique_id: str = "") -> JSONResponse:
+    """Сохранённые настройки приёмов этой комнаты."""
+    import presets
+
+    return JSONResponse({"presets": presets.listing(session_id, technique_id or None)})
+
+
+@app.post("/api/rooms/{session_id}/technique-presets")
+async def save_technique_preset(session_id: str, body: dict) -> JSONResponse:
+    """{technique_id, name, params, note} — сохранить настройку приёма.
+
+    Повторное сохранение под тем же именем обновляет её, а не заводит
+    вторую: «мягкий» у приёма ровно один."""
+    import presets
+
+    tid = str(body.get("technique_id") or "")
+    if tid not in TECHNIQUES:
+        raise HTTPException(status_code=404, detail=f"Неизвестная техника: {tid}")
+    try:
+        return JSONResponse(presets.save(session_id, tid, body.get("name") or "",
+                                         body.get("params") or {}, body.get("note")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/rooms/{session_id}/technique-presets")
+async def delete_technique_preset(session_id: str, technique_id: str, name: str) -> JSONResponse:
+    import presets
+
+    return JSONResponse(presets.delete(session_id, technique_id, name))
 
 
 @app.get("/api/rooms/{session_id}/audition/pool")
@@ -1608,9 +1723,13 @@ async def execute_strategy_transition(session_id: str, body: dict) -> JSONRespon
     index = body.get("transition_index")
     source = body.get("source_deck", "A")
     target = body.get("target_deck", "B")
-    overrides = body.get("param_overrides")
     if index is None or not (0 <= index < len(room.last_strategy["transitions"])):
         raise HTTPException(status_code=400, detail="Некорректный transition_index")
+    # Ползунки, настроенные у ЭТОГО перехода в плане, — часть перехода, а
+    # не украшение интерфейса: живое исполнение обязано звучать так же,
+    # как демо, которое диджей слушал.
+    overrides = {**(room.last_strategy["transitions"][index].get("params") or {}),
+                 **(body.get("param_overrides") or {})} or None
 
     plan = mix_strategist.build_transition_plan(
         room.last_strategy, index, source, target, f"strategy_{session_id}_{index}", overrides,

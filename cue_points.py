@@ -142,19 +142,41 @@ class PhraseGrid:
         return max(0.0, out)
 
 
+def _drums_from(dmap: dict, drops: list[float]) -> float:
+    """Где начинается бит. Не позже первого дропа — по определению.
+
+    Две карты считают разное («плотная партия держится 4 такта» против
+    «ступенька вверх, которая держится 8»), и на паре треков из
+    библиотеки первая давала 2:02 там, где вторая уже видела дроп на
+    1:29. Первый бит позже первого дропа — противоречие в разборе, а не
+    особенность трека."""
+    start = float((dmap or {}).get("drums_start") or 0.0)
+    if drops and (start <= 0.0 or drops[0] < start):
+        return float(drops[0])
+    return start
+
+
 def _grid(track: dict, bpm: float | None = None) -> PhraseGrid:
     structure = track.get("structure") or {}
+    emap = structure.get("energy_map") or {}
     dmap = structure.get("drum_map") or {}
     bpm = float(bpm or track.get("bpm") or 172.0)
     # Якорь — первая доля с барабанами. Если карты барабанов нет,
     # честно падаем на ноль файла и помечаем это (см. cues_for_track).
-    anchor = float(dmap.get("drums_start") or 0.0)
+    drops = sorted(float(x) for x in (emap.get("drops") or []))
+    anchor = _drums_from(dmap, drops)
     return PhraseGrid(bpm, anchor, float(track.get("duration_seconds") or 0.0))
 
 
-def _levels(track: dict) -> tuple[list[float], float]:
+def _levels(track: dict) -> tuple[list[float], float, float]:
+    """Уровни по тактам, длина такта и ЯКОРЬ сетки.
+
+    Якорь (bar_offset) появился вместе с привязкой карт к музыке:
+    без него индекс такта считался от нуля файла и уезжал на полтакта."""
     emap = (track.get("structure") or {}).get("energy_map") or {}
-    return [float(x) for x in (emap.get("level") or [])], float(emap.get("bar_seconds") or 0.0)
+    return ([float(x) for x in (emap.get("level") or [])],
+            float(emap.get("bar_seconds") or 0.0),
+            float(emap.get("bar_offset") or 0.0))
 
 
 def _loop_is_clean(track: dict, grid: PhraseGrid, start: float, bars: int) -> bool:
@@ -168,10 +190,10 @@ def _loop_is_clean(track: dict, grid: PhraseGrid, start: float, bars: int) -> bo
                 return False
         except Exception:
             pass
-    level, bar_sec = _levels(track)
+    level, bar_sec, bar_off = _levels(track)
     if not level or bar_sec <= 0:
         return True
-    i0 = int(round(start / bar_sec))
+    i0 = int(round((start - bar_off) / bar_sec))
     window = level[i0:i0 + bars]
     if len(window) < bars:
         return False
@@ -197,7 +219,7 @@ def cues_for_track(track: dict, bpm: float | None = None,
     drops = sorted(float(x) for x in (emap.get("drops") or []))
     breaks = [(float(a), float(b)) for a, b in (emap.get("breakdowns") or [])]
     pits = sorted(float(x) for x in (emap.get("pits") or []))
-    drums_from = float(dmap.get("drums_start") or 0.0)
+    drums_from = _drums_from(dmap, drops)
 
     cues: list[dict] = []
 
@@ -223,12 +245,18 @@ def cues_for_track(track: dict, bpm: float | None = None,
         })
 
     # --- первый бит -----------------------------------------------------
+    # У большинства танцевальных треков первый бит и первый дроп — одно и
+    # то же место. Отдельной меткой «первый дроп» это не показываем (две
+    # метки в одной точке), но в подписи говорим прямо: иначе в списке
+    # оставался «второй дроп» без первого, и было непонятно, о чём речь.
+    same_as_drop = bool(drops) and abs(drops[0] - drums_from) < grid.phrase * 0.5
+    tail = " — он же первый дроп" if same_as_drop else ""
     if drums_from > 0.5:
         add("first_beat", drums_from,
-            f"первый бит (интро {_fmt(drums_from)})", exact=True)
+            f"первый бит{tail} (интро {_fmt(drums_from)})", exact=True)
         add("intro_end", drums_from, "конец интро", exact=True)
     elif drums_from >= 0:
-        add("first_beat", drums_from, "первый бит", exact=True)
+        add("first_beat", drums_from, f"первый бит{tail}", exact=True)
 
     # --- дропы ----------------------------------------------------------
     # Дроп на первой же доле трека — это не дроп, а тот же «первый бит»:
@@ -253,9 +281,12 @@ def cues_for_track(track: dict, bpm: float | None = None,
                 exact=True)
 
     # --- брейкдауны -----------------------------------------------------
+    drums_to = float(dmap.get("drums_end") or 0.0)
     for a, b in breaks:
         if a < 1.0:
             continue  # стартовое интро — это не брейкдаун
+        if drums_to and a >= drums_to - grid.bar * 2:
+            continue  # хвост после последнего бита — это аутро, не брейкдаун
         after = sum(1 for d in drops if d < a)
         name = "брейкдаун"
         if after:
@@ -265,22 +296,28 @@ def cues_for_track(track: dict, bpm: float | None = None,
 
     # --- ямы ------------------------------------------------------------
     for t in pits:
-        add("pit", t, "яма перед дропом")
+        nxt = next((d for d in drops if 0 < d - t <= grid.phrase), None)
+        add("pit", t, "яма перед дропом" if nxt else "просадка низа")
 
     # --- аутро ----------------------------------------------------------
     if duration > grid.phrase * 3:
         # Конец «тела»: последний такт с барабанами, а если карты нет —
         # четыре фразы от конца.
-        tail = None
-        bars = dmap.get("bars")
+        # Ключ назывался "bars", а карта барабанов всегда отдавала "on":
+        # условие не срабатывало никогда, и аутро у ВСЕХ треков ставилось
+        # «четыре фразы от конца» — то есть не по музыке. Теперь берём
+        # готовый drums_end, а строку разбираем только для старых карт.
+        tail = float(dmap.get("drums_end") or 0.0) or None
+        bars = dmap.get("on")
         bar_sec = float(dmap.get("bar_seconds") or grid.bar)
-        if isinstance(bars, str) and bars:
+        bar_off = float(dmap.get("bar_offset") or 0.0)
+        if tail is None and isinstance(bars, str) and bars:
             last = bars.rfind("1")
             if last >= 0:
-                tail = (last + 1) * bar_sec
-        if tail is None:
+                tail = bar_off + (last + 1) * bar_sec
+        if tail is None or tail <= 0 or (duration and tail >= duration):
             tail = duration - grid.phrase * 4
-        add("outro", tail, "аутро — барабаны кончились", snap="prev")
+        add("outro", tail, "аутро — барабаны кончились", exact=True)
 
     # --- лупы -----------------------------------------------------------
     # Не «все места, где можно зациклить» — их сотни, — а те, что реально
@@ -340,14 +377,32 @@ def cues_for_track(track: dict, bpm: float | None = None,
 # треков из 115, остальные показывали брейкдаун от нулевой секунды.
 SECTION_PRIORITY = ("drop", "build", "intro", "outro", "breakdown", "groove")
 
+# Названия — по общепринятой схеме танцевальной аранжировки
+# (Intro - Verse - Build Up - Drop - Breakdown - Verse 2 - Build Up 2 -
+# Drop 2 - Outro). Ключ `groove` остался прежним: на него завязаны
+# таблицы переходов в style.py, а вот подпись честнее назвать куплетом —
+# «грув» ничего не говорит о месте в аранжировке.
 SECTION_NAMES = {
     "intro": "интро",
     "build": "билд",
     "drop": "дроп",
     "breakdown": "брейкдаун",
-    "groove": "грув",
+    "groove": "куплет",
     "outro": "аутро",
 }
+
+# Типичная длина секции в тактах — для подсказки и проверки разбора.
+SECTION_BARS = {
+    "intro": (8, 16),
+    "groove": (16, 32),
+    "build": (8, 8),
+    "drop": (16, 32),
+    "breakdown": (8, 16),
+    "outro": (8, 16),
+}
+
+# Секции, которые в треке одни: их не нумеруем.
+SECTION_UNIQUE = ("intro", "outro")
 
 # Что с секцией можно делать при сведении. Это не украшение: именно по
 # этим признакам стратег выбирает, куда заводить трек и откуда уводить.
@@ -413,9 +468,9 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
             if rank <= SECTION_PRIORITY.index(lanes[k]):
                 lanes[k] = kind
 
-    drums_start = float(dmap.get("drums_start") or 0.0)
-    drums_end = float(dmap.get("drums_end") or 0.0)
     drops = sorted(float(x) for x in (emap.get("drops") or []))
+    drums_start = _drums_from(dmap, drops)
+    drums_end = float(dmap.get("drums_end") or 0.0)
     breaks = [(float(a), float(b)) for a, b in (emap.get("breakdowns") or [])]
 
     # 1. Интро — всё до первой доли с барабанами.
@@ -445,7 +500,7 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
 
     # Склейка соседних тактов с одной ролью.
     out: list[dict] = []
-    levels, level_bar = _levels(track)
+    levels, level_bar, level_off = _levels(track)
     # Первый такт сетки начинается ДО нуля файла (якорь стоит на первой
     # доле барабанов). Его обрезка дала бы вторую секцию с началом 0:00 —
     # поэтому неполный такт просто отдаём следующей секции.
@@ -463,12 +518,12 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
                 t1 = duration          # хвост дотягиваем ровно до конца
             bars = k - start
             lvl = None
-            # Карта энергии считается ОТ НАЧАЛА ФАЙЛА, а не от якоря —
-            # поэтому индекс берётся по абсолютному времени. С якорной
-            # арифметикой уровни разъезжались и дроп получал 0.08.
+            # Индекс в карте энергии берётся по её собственной сетке
+            # (bar_offset), а не по якорю фраз: это две разные сетки —
+            # у карты шаг от первой доли трека, у фраз от первого бита.
             if levels and level_bar > 0:
-                i0 = max(0, int(t0 / level_bar))
-                i1 = min(len(levels), max(i0 + 1, int(t1 / level_bar)))
+                i0 = max(0, int((t0 - level_off) / level_bar))
+                i1 = min(len(levels), max(i0 + 1, int((t1 - level_off) / level_bar)))
                 seg = levels[i0:i1]
                 if seg:
                     lvl = round(sum(seg) / len(seg), 3)
@@ -488,6 +543,45 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
                          f"{bars} {_bars_word(bars)} · {_fmt(t0)}",
             })
             start = k
+
+    # Секция короче двух тактов — это не секция, а край растеризации:
+    # такт, на котором две роли поделили границу. Отдаём его соседу,
+    # иначе в разборе появляется «брейкдаун 1 такт», которого никто не
+    # слышал, и он ломает нумерацию остальных.
+    merged: list[dict] = []
+    for sec in out:
+        if merged and sec["bars"] < 2:
+            merged[-1]["end_seconds"] = sec["end_seconds"]
+            merged[-1]["bars"] += sec["bars"]
+            merged[-1]["phrases"] = round(merged[-1]["bars"] / PHRASE_BARS, 2)
+            continue
+        if merged and merged[-1]["bars"] < 2:
+            sec["start_seconds"] = merged[-1]["start_seconds"]
+            sec["bar_from"] = merged[-1]["bar_from"]
+            sec["bars"] += merged[-1]["bars"]
+            sec["phrases"] = round(sec["bars"] / PHRASE_BARS, 2)
+            merged[-1] = sec
+            continue
+        merged.append(sec)
+    out = merged
+
+    # Нумерация повторяющихся секций: «дроп 2», «куплет 2», «билд 2».
+    # Без неё список выглядел как «дроп, брейкдаун, дроп» и по нему
+    # нельзя было понять, о каком именно дропе речь.
+    seen: dict[str, int] = {}
+    total: dict[str, int] = {}
+    for sec in out:
+        total[sec["kind"]] = total.get(sec["kind"], 0) + 1
+    for sec in out:
+        kind = sec["kind"]
+        seen[kind] = seen.get(kind, 0) + 1
+        name = SECTION_NAMES.get(kind, kind)
+        if total[kind] > 1 and kind not in SECTION_UNIQUE:
+            name = f"{name} {seen[kind]}"
+            sec["index"] = seen[kind]
+        sec["name"] = name
+        sec["label"] = (f"{name} · {sec['bars']} {_bars_word(sec['bars'])} · "
+                        f"{_fmt(sec['start_seconds'])}")
 
     return {
         "sections": out,

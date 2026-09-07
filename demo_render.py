@@ -40,7 +40,7 @@ from scipy.signal import butter, sosfilt, sosfiltfilt
 
 from mixxx_controls import BY_ID as _CONTROLS
 import transport as _transport
-from techniques import TECHNIQUES, build_plan
+from techniques import TECHNIQUES, build_plan, _ramp as _mk_ramp
 
 SR = 44100
 MAX_SECONDS = 38.0
@@ -62,10 +62,26 @@ BASS_SPLIT_HZ = 180.0
 # громче, чем сам трек был до него.
 FX_RETURN_LEVEL = 0.8
 EDGE_FADE_SEC = 0.010
-# Во сколько раз можно ужать технику по времени, если она не влезает в
-# отведённое окно. Только степени двойки — 32 такта -> 16 -> 8 остаются
-# кратными такту, а 32 -> 19 разъехалось бы с музыкой.
-TIME_SCALES = (1.0, 0.5, 0.25, 0.125)
+# Во сколько раз техника растягивается или ужимается по времени, чтобы
+# занять отведённое окно. Только степени двойки — 32 такта -> 16 -> 8
+# остаются кратными такту, а 32 -> 19 разъехалось бы с музыкой.
+#
+# Раньше лесенка шла только вниз, и это была вторая причина коротких
+# переходов: сколько бы тактов ни стояло на карточке шва, техника
+# играла свою «родную» длину, а остаток окна просто доигрывал вошедший
+# трек. Теперь при большом окне приём РАСТЯГИВАЕТСЯ — ровно этого и
+# просил диджей, когда сказал «максимально более долгие переходы».
+TIME_SCALES = (4.0, 2.0, 1.0, 0.5, 0.25, 0.125)
+
+# Профиль ввода «наложение». Диджей описал его дословно: новый трек
+# заходит с урезанным низом, доходит до 85% громкости, только потом
+# меняется бас (или слои), и лишь в самом конце уходящий уводится
+# фейдером. Кроссфейдер при этом почти всё время стоит на месте — то
+# есть это НЕ кроссфейд, а наложение, и звучит оно принципиально иначе:
+# оба трека какое-то время играют вместе полноценно.
+OVERLAY_RISE = 0.55     # доля перехода, за которую входящий выходит на пик
+OVERLAY_PEAK = 0.85     # до какой громкости он поднимается ДО обмена низом
+OVERLAY_SWAP = 0.75     # где меняется бас и начинается увод уходящего
 
 
 # Рендер был моно от начала и до конца: librosa.load(mono=True), все
@@ -131,12 +147,35 @@ def _curve_value(progress: float, curve: str, cycles: float = 1.0) -> float:
 def _piecewise_ramp(events: list[dict], spb: float, default: float = 0.0):
     """events — ramp-события ОДНОГО (action, deck). До первого окна держим
     его value_from, между окнами держим предыдущий value_to (гейт), после
-    последнего — его value_to. Возвращает fn(t) -> float."""
+    последнего — его value_to. Возвращает fn(t) -> float.
+
+    value_from может отсутствовать или быть None. Это не ошибка данных, а
+    осмысленный случай: «поехали оттуда, где сейчас стоим». Раньше здесь
+    стояло ev["value_from"], и такое событие роняло весь рендер с
+    KeyError: 'value_from' — 500 на "послушать этот переход" и на демо
+    ST-06. Теперь недостающее начало берётся из value_to предыдущего окна
+    (а для первого окна — из default), то есть ровно из того значения, на
+    котором ручка и стоит к этому моменту.
+
+    Событие без value_to пропускается: ramp, которому некуда ехать, — это
+    уже не «продолжи с текущего», а сломанные данные, и молча подставлять
+    туда число значит спрятать поломку.
+    """
     windows = []
+    prev_to = None
     for ev in sorted(events, key=lambda e: e["beat_offset"]):
+        vt = ev.get("value_to")
+        if vt is None:
+            print(f"[demo_render] ramp без value_to пропущен: "
+                  f"{ev.get('action')}@{ev.get('deck')} beat={ev.get('beat_offset')}")
+            continue
+        vf = ev.get("value_from")
+        if vf is None:
+            vf = prev_to if prev_to is not None else default
         start, end = _event_window(ev, spb)
-        windows.append((start, end, ev["value_from"], ev["value_to"], ev.get("curve", "linear"),
+        windows.append((start, end, float(vf), float(vt), ev.get("curve", "linear"),
                          (ev.get("params") or {}).get("cycles", 1.0)))
+        prev_to = float(vt)
     if not windows:
         return lambda t: default
 
@@ -825,6 +864,101 @@ def _scale_events(events: list[dict], scale: float) -> list[dict]:
     return out
 
 
+def _apply_entry_profile(events: list[dict], profile: dict | None) -> list[dict]:
+    """Переписывает форму ввода: наложение вместо кроссфейда.
+
+    Что было не так. Почти все приёмы устроены как кроссфейд: один
+    фейдер едет из нуля в единицу, и в середине обе деки звучат
+    вполовину. Диджей ведёт иначе — и сказал это прямым текстом: новый
+    трек заходит с урезанным низом, поднимается до 85% громкости РЯДОМ
+    с ещё полностью играющим старым, потом меняется бас, и только в
+    самом конце старый уводится фейдером. Разница слышна сразу: при
+    кроссфейде середина перехода — это два полутрека, при наложении —
+    два полных.
+
+    Профиль:
+      * `entry` — "overlay" включает наложение, всё остальное оставляет
+        технику как есть;
+      * `rise`  — доля перехода, за которую входящий выходит на пик;
+      * `peak`  — до какой громкости он поднимается ДО обмена низом;
+      * `swap`  — где меняется бас и начинается увод уходящего.
+
+    «Плавность» — это и есть `rise`: чем он больше, тем дольше входящий
+    подкрадывается. Пороги трогаем только у КРОССФЕЙДА и громкости;
+    всё, что техника делает своими руками (слои, эффекты, лупы),
+    остаётся нетронутым — иначе профиль превратил бы все приёмы в один.
+    """
+    profile = profile or {}
+    if str(profile.get("entry") or "") != "overlay":
+        return events
+    rise = _clamp(float(profile.get("rise", OVERLAY_RISE)), 0.15, 0.9)
+    peak = _clamp(float(profile.get("peak", OVERLAY_PEAK)), 0.4, 1.0)
+    swap = _clamp(float(profile.get("swap", OVERLAY_SWAP)), rise + 0.05, 0.95)
+
+    others = [e for e in events if e["action"] not in ("crossfade", "volume_ramp")]
+    if not events:
+        return events
+    t0 = min(e["beat_offset"] for e in events)
+    t1 = max(e["beat_offset"] + float(e.get("duration_beats") or 0.0) for e in events)
+    span = max(4.0, t1 - t0)
+
+    def at(frac: float) -> float:
+        return t0 + span * frac
+
+    # Кроссфейдер стоит на нуле, пока входящий поднимается сам, и едет
+    # до конца только в последней четверти. Именно он тянет за собой
+    # передачу низа и «одну ударную установку за раз» — поэтому бас
+    # меняется ровно там, где сказал диджей, без отдельных ручек.
+    out = list(others)
+    out.append(_mk_ramp(t0, "crossfade", "master", max(1.0, span * swap), 0.0, 0.0))
+    out.append(_mk_ramp(at(swap), "crossfade", "master", max(1.0, span * (1.0 - swap)),
+                     0.0, 1.0, curve="smooth"))
+    # Громкость входящего: до пика за `rise`, там держится, и только
+    # вместе с обменом низом доходит до единицы.
+    out.append(_mk_ramp(t0, "volume_ramp", "target", max(1.0, span * rise), 0.0, peak,
+                     curve="smooth"))
+    out.append(_mk_ramp(at(rise), "volume_ramp", "target", max(0.5, span * (swap - rise)),
+                     peak, peak))
+    out.append(_mk_ramp(at(swap), "volume_ramp", "target", max(1.0, span * (1.0 - swap)),
+                     peak, 1.0, curve="smooth"))
+    out.sort(key=lambda e: e["beat_offset"])
+    return out
+
+
+def _loop_layer(buf: "np.ndarray | None", start_sample: int, loop_n: int,
+                until_sample: int) -> "np.ndarray | None":
+    """Зациклить кусок слоя, начиная с start_sample, до until_sample.
+
+    Нужно для вокала уходящего трека. При длинном наложении фраза
+    старого трека обрывается на полуслове — на пульте это лечат лупом:
+    голос допевает свою фразу столько, сколько нужно, и уходит на
+    границе, а не посреди строки."""
+    if buf is None or loop_n <= 0:
+        return buf
+    n = len(buf)
+    s = max(0, min(int(start_sample), n))
+    e = max(s, min(int(until_sample), n))
+    if e - s <= loop_n or s + loop_n > n:
+        return buf
+    src = buf[s:s + loop_n]
+    out = buf.copy()
+    # Короткий кросс на стыке повтора: луп на границе такта почти
+    # никогда не бесшовен по фазе, и без склейки слышен щелчок.
+    fade = max(1, min(loop_n // 16, int(0.008 * 44100)))
+    ramp_in = np.linspace(0.0, 1.0, fade)
+    pos = s + loop_n
+    while pos < e:
+        take = min(loop_n, e - pos)
+        chunk = src[:take].copy()
+        if take > fade:
+            chunk[:fade] = chunk[:fade] * _env(ramp_in, chunk[:fade])
+            prev = out[pos - fade:pos]
+            out[pos - fade:pos] = prev * _env(1.0 - ramp_in, prev)
+        out[pos:pos + take] = out[pos:pos + take] * 0.0 + chunk
+        pos += take
+    return out
+
+
 def _load_stem_slice(track_path: str, part: str, sr: int, offset: float, duration: float,
                      rate: float) -> np.ndarray | None:
     """Кусок стема ровно с той же секунды и той же длины, что и основной
@@ -836,15 +970,31 @@ def _load_stem_slice(track_path: str, part: str, sr: int, offset: float, duratio
     except Exception:
         return None
     paths = _stems.stem_paths(track_path)
-    if not paths or part not in paths:
-        return None
-    import librosa
+    if paths and part in paths:
+        import librosa
 
-    try:
-        y, _ = librosa.load(paths[part], sr=sr, mono=not STEREO,
-                            offset=max(0.0, offset), duration=max(0.1, duration))
-    except Exception:
-        return None
+        try:
+            y, _ = librosa.load(paths[part], sr=sr, mono=not STEREO,
+                                offset=max(0.0, offset), duration=max(0.1, duration))
+        except Exception:
+            return None
+    else:
+        # Кэша слоёв нет - читаем прямо из .stem.mp4. Он лежит рядом с
+        # треком, в нём те же четыре слоя, и второй копии на диске не
+        # нужно. Позиция при перемотке точна (проверено: сдвиг 0 отсчётов
+        # на всех позициях), см. stem_mp4.decode_layer.
+        sp = _stems.stem_mp4_for(track_path)
+        if sp is None:
+            return None
+        try:
+            import stem_mp4 as _sm
+
+            y = _sm.decode_layer(sp, part, sr=sr, offset=max(0.0, offset),
+                                 duration=max(0.1, duration), mono=not STEREO)
+        except Exception:
+            return None
+        if y is None:
+            return None
     y = _as2d(y)
     if len(y) < sr // 10:
         return None
@@ -961,6 +1111,9 @@ def render_demo(
     target_at: float | None = None,
     master_bpm: float | None = None,
     normalize_output: bool = True,
+    bars: float | None = None,
+    mix_profile: dict | None = None,
+    vocal_loop: float | None = None,
     _debug: dict | None = None,
 ) -> dict:
     """Рендерит демо и пишет WAV (PCM16) в out_path.
@@ -986,7 +1139,7 @@ def render_demo(
         try:
             import stems as _stems_check
             missing = [os.path.basename(t) for t in (track_a_path, track_b_path)
-                       if not _stems_check.stem_paths(t)]
+                       if not _stems_check.has_stems(t)]
         except Exception as exc:
             raise NotImplementedError(f"«{technique.name}» работает по слоям, "
                                       f"но модуль стемов недоступен: {exc}") from exc
@@ -1041,11 +1194,18 @@ def render_demo(
         eff_a = _rel_a["effective_bpm"] if master_bpm else bpm_a
         rate_a = _clamp(timeline_bpm / eff_a, 0.5, 2.0) if eff_a > 1 else 1.0
 
+    _overlay_mode = str((mix_profile or {}).get("entry") or "") == "overlay"
     plan = build_plan(technique_id, "demo", "source", "target", timeline_bpm, param_overrides)
     spb = _seconds_per_beat(timeline_bpm)
     bar_sec = spb * BAR_BEATS
     lead = LEAD_BARS * bar_sec
     tail = TAIL_BARS * bar_sec
+
+    # Длина перехода приходит со шва: на карточке написано «32 такта», и
+    # звучать должно ровно столько. Раньше сюда не передавалось ничего, и
+    # демо всегда шло 38 секунд независимо от того, что показано.
+    if bars and float(bars) > 0:
+        max_seconds = lead + tail + float(bars) * bar_sec
 
     # --- подбираем масштаб техники так, чтобы её ФОРМА влезла целиком ---
     raw_end = max([4.0 * spb] + [_event_window(e, spb)[1] for e in plan["events"]])
@@ -1055,7 +1215,12 @@ def render_demo(
         if raw_end * s <= budget:
             scale = s
             break
+    else:
+        scale = TIME_SCALES[-1]
     events = _scale_events(plan["events"], scale)
+    # Профиль ввода применяется ПОСЛЕ масштабирования: он размечает доли
+    # уже готового окна перехода, а не «родной» длины приёма.
+    events = _apply_entry_profile(events, mix_profile)
 
     windows = [_event_window(e, spb) for e in events]
     t_max = max([2.0 * bar_sec] + [e for _, e in windows])
@@ -1122,6 +1287,21 @@ def render_demo(
     # секунда исходника, которой соответствует НАЧАЛО таймлайна
     src_origin = None if src_grid.get("file_offset") is None else \
         round(src_grid["file_offset"] + pre_seconds * rate_a, 3)
+
+    # --- луп вокала уходящего --------------------------------------------
+    # Прямая просьба диджея: «если на уходящем вокал — обязательно надо
+    # его лупать». Смысл ровно тот, что на пульте: при длинном наложении
+    # фраза старого трека обрывается на полуслове, и это слышно как
+    # обрыв, а не как приём. Лупим ВОКАЛЬНЫЙ СЛОЙ, а не всю деку:
+    # барабаны и бас должны продолжать своё, иначе получится не
+    # наложение, а заикание всего трека.
+    vocal_loop_bars = 0.0
+    if src_stems and vocal_loop and float(vocal_loop) > 0:
+        vocal_loop_bars = float(vocal_loop)
+        loop_n = int(round(vocal_loop_bars * bar_sec * sr))
+        start_i = _clamp(_sample_idx(0.0, timeline_start, sr), 0, n)
+        src_stems = dict(src_stems)
+        src_stems["vocals"] = _loop_layer(src_stems.get("vocals"), start_i, loop_n, n)
 
     # --- когда target впервые становится слышен (квантуем в такт) ---
     sync_events = [e for e in events if e["action"] == "sync" and e["deck"] == "target"]
@@ -1714,6 +1894,14 @@ def render_demo(
 
     g_out, g_in = _equal_power(cf_env)
 
+    # Наложение: входящий приходит СВОИМ фейдером канала (volume_ramp), а
+    # кроссфейдер только уводит уходящего в конце. Поэтому кривая ввода
+    # берётся из громкости, а не из кроссфейда — иначе вся первая
+    # половина перехода была бы неслышной: кроссфейдер там стоит на нуле
+    # намеренно.
+    if _overlay_mode:
+        g_in = np.ones_like(g_in)
+
     # «Одна бочка за раз». Применяем только тем декам, у которых техника
     # НЕ управляет низом сама — иначе мы бы спорили с eq_low из техники.
     decks_with_eq_low = {e["deck"] for e in events if e["action"] in ("eq_low", "eq_kill_low")}
@@ -1808,6 +1996,9 @@ def render_demo(
         "grid_confidence": round(min(float(src_grid.get("confidence", 0.0)),
                                      float(tgt_grid.get("confidence", 0.0))), 3),
         "crossfade_complete": bool(len(cf_env) and cf_env[-1] >= 0.99),
+        "entry_profile": "overlay" if _overlay_mode else "technique",
+        "vocal_loop_bars": round(vocal_loop_bars, 2) or None,
+        "bars": (round(float(bars), 1) if bars else None),
         "stems_used": bool(stems_ready),
         "drum_swap_seconds": None if stem_swap is None else round(stem_swap, 2),
     }

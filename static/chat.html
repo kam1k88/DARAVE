@@ -249,6 +249,11 @@
     background: var(--accent); color: #fff; border: none; border-radius: 8px;
     width: 30px; height: 30px; cursor: pointer; font-size: 13px;
   }
+  .tr-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+               gap: 8px 14px; margin: 8px 0 4px; }
+  .tr-param label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .tr-param label b { color: var(--text); font-weight: 600; }
+  .tr-param input[type=range] { width: 100%; }
   .transition-card .demo-btn {
     margin-left: 6px; background: var(--panel-2); color: var(--fg);
     border: 1px solid var(--accent); border-radius: 8px;
@@ -1519,10 +1524,41 @@
   document.addEventListener("click", function (e) {
     const btn = e.target.closest && e.target.closest(".track-drop");
     if (!btn) return;
-    excludedTracks.add(btn.dataset.name);
-    manualOrder = null;          // ручной порядок больше не описывает этот набор
-    addMessage("Убрал из плана: " + btn.dataset.name +
+    const gone = btn.dataset.name;
+    excludedTracks.add(gone);
+
+    // Порядок СОХРАНЯЕМ, просто вынимаем из него убранный трек.
+    //
+    // Здесь стояло `manualOrder = null`, и это рушило всю работу: без
+    // явного порядка планировщик выстраивает сет заново своим подбором,
+    // то есть на месте отобранной вручную цепочки появлялся другой набор
+    // в другом порядке. А вместе с порядком уезжали и приёмы: правки из
+    // «Отбора» привязаны к ПАРАМ треков, и в новом порядке почти ни одна
+    // пара не совпадала — отсюда «случайные тактики». Диджей хотел
+    // выкинуть один трек, а получал другой сет целиком.
+    //
+    // Убрать один трек из цепочки — это ровно одно изменение: две
+    // соседние пары превращаются в одну новую. Всё остальное обязано
+    // остаться на месте.
+    const before = (manualOrder || (currentStrategy || {}).tracks && (currentStrategy.tracks || []).map(t => t.name) || []);
+    manualOrder = before.filter(n => n !== gone);
+
+    // Пара, которой больше нет, из правок уходит: шов A->B при удалённом
+    // B не про что. Новая пара (сосед слева -> сосед справа) в отборе не
+    // судилась, приём для неё подберётся сам — и это честно.
+    const i = before.indexOf(gone);
+    if (i >= 0) {
+      const prev = before[i - 1], next = before[i + 1];
+      if (prev !== undefined) delete poolOverridesByPair[prev + "||" + gone];
+      if (next !== undefined) delete poolOverridesByPair[gone + "||" + next];
+    }
+    planOverrides = {};          // номерные правки после сдвига — про чужие пары
+
+    const lost = (i > 0 && i < before.length - 1) ? 1 : 0;
+    addMessage("Убрал из плана: " + gone +
                (excludedTracks.size > 1 ? " (всего убрано: " + excludedTracks.size + ")" : "") +
+               ". Порядок и приёмы остальных переходов сохранены" +
+               (lost ? "; на стыке соседей приём подберётся заново" : "") +
                ". Вернуть — «🗺 Построить план» после перезагрузки страницы.", "system");
     buildStrategy(true);
   });
@@ -1711,12 +1747,90 @@
         '<button data-f="hear-to" class="edit-toggle" title="послушать с этой точки входа">▶</button>' +
       '</div>' +
       '<div class="tr-hint" data-h="to">' + ((tr.to_point && tr.to_point.hint) || "") + '</div>' +
+      // Ползунки самого приёма. Их не было вовсе: диджей мог выбрать
+      // «Дабл-дроп», но не мог сказать, сколько тактов держать
+      // совмещение, — а именно это и отличает работающий переход от
+      // неработающего. Значения живут в плане (transition.params) и
+      // уходят и в демо, и в живое исполнение.
+      '<div class="tr-params" data-h="params"></div>' +
+      '<div class="tr-edit-row">' +
+        '<label>набор <select data-f="preset-pick"><option value="">— свой —</option></select></label>' +
+        '<button data-f="preset-save" class="edit-toggle" title="Сохранить эти ползунки под именем, чтобы не настраивать заново">💾 сохранить набор</button>' +
+        '<button data-f="preset-del" class="edit-toggle" title="Удалить выбранный набор">✕</button>' +
+      '</div>' +
       '<div class="tr-edit-row">' +
         '<button data-f="apply" class="edit-toggle">применить</button>' +
         '<button data-f="reset" class="edit-toggle">сбросить</button>' +
         '<button data-f="hear" class="edit-toggle">🎧 послушать этот переход</button>' +
       '</div>' +
     '</div>';
+  }
+
+  // ===================== Наборы настроек приёма =====================
+  //
+  // У приёма 2-5 ползунков, и подобранные значения — это работа: нужный
+  // дабл-дроп находится на слух за десяток прослушиваний. Без
+  // сохранения диджей настраивал одно и то же заново каждый раз, а в
+  // сет попадали значения по умолчанию — та самая версия приёма, которую
+  // он как раз и не выбирал.
+  let presetCache = null;         // {technique_id: [{name, params}]}
+
+  async function loadPresets(force) {
+    if (presetCache && !force) return presetCache;
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/technique-presets")).json();
+      presetCache = {};
+      (r.presets || []).forEach(function (p) {
+        (presetCache[p.technique_id] = presetCache[p.technique_id] || []).push(p);
+      });
+    } catch (e) { presetCache = presetCache || {}; }
+    return presetCache;
+  }
+
+  async function savePreset(techniqueId, name, params) {
+    const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/technique-presets", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({technique_id: techniqueId, name: name, params: params}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "не сохранилось");
+    await loadPresets(true);
+    return d;
+  }
+
+  async function deletePreset(techniqueId, name) {
+    await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/technique-presets?" +
+      "technique_id=" + encodeURIComponent(techniqueId) + "&name=" + encodeURIComponent(name),
+      {method: "DELETE"});
+    await loadPresets(true);
+  }
+
+  // Ползунки одного приёма в произвольный контейнер. Возвращает функцию,
+  // отдающую текущие значения, — вызывающему не нужно знать разметку.
+  function renderParamSliders(box, params, values, onChange) {
+    if (!box) return function () { return {}; };
+    const cur = Object.assign({}, values || {});
+    if (!(params || []).length) { box.innerHTML = ""; return function () { return {}; }; }
+    box.innerHTML = (params || []).map(function (p) {
+      const v = cur[p.key] !== undefined ? cur[p.key] : p.default;
+      // Шаг мельче для маленьких диапазонов: «пересечение слоёв» живёт
+      // между 0.05 и 4 долями, и шаг 0.1 там слишком груб.
+      const step = (p.max - p.min) <= 5 ? 0.05 : 0.5;
+      return '<div class="tr-param"><label>' + escapeHtml(p.label) +
+        ' <b data-v="' + p.key + '">' + v + '</b> ' + escapeHtml(p.unit || "") + '</label>' +
+        '<input type="range" data-p="' + p.key + '" min="' + p.min + '" max="' + p.max +
+        '" step="' + step + '" value="' + v + '"></div>';
+    }).join("");
+    box.querySelectorAll("input[type=range]").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        cur[inp.dataset.p] = parseFloat(inp.value);
+        const lbl = box.querySelector('[data-v="' + inp.dataset.p + '"]');
+        if (lbl) lbl.textContent = inp.value;
+        if (onChange) onChange(cur);
+      });
+    });
+    return function () { return Object.assign({}, cur); };
   }
 
   function _mmss(sec) {
@@ -1727,6 +1841,59 @@
   function _wireEditor(card, tr, i) {
     const box = card.querySelector(".tr-edit");
     const pick = (sel) => box.querySelector('[data-f="' + sel + '"]');
+
+    // --- ползунки приёма и наборы настроек ---
+    let paramsOf = function () { return {}; };
+    function techMeta(tid) {
+      return (techniquesCache || []).find(x => x.id === tid) || null;
+    }
+    function drawParams(tid, values) {
+      const t = techMeta(tid);
+      const list = (t && t.params) || tr.technique_params || [];
+      paramsOf = renderParamSliders(box.querySelector('[data-h="params"]'), list, values || {});
+      fillPresets(tid);
+    }
+    async function fillPresets(tid) {
+      const sel = pick("preset-pick");
+      if (!sel) return;
+      const all = await loadPresets();
+      const mine = (all || {})[tid] || [];
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">— свой —</option>' +
+        mine.map(p => '<option value="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>').join("");
+      if (mine.some(p => p.name === keep)) sel.value = keep;
+    }
+    drawParams(tr.technique_id, tr.params || {});
+    // Смена приёма меняет и набор ползунков: у каждого приёма свои.
+    pick("technique").addEventListener("change", function () {
+      drawParams(pick("technique").value, {});
+    });
+    pick("preset-pick").addEventListener("change", async function () {
+      const tid = pick("technique").value;
+      const name = pick("preset-pick").value;
+      if (!name) return;
+      const p = ((await loadPresets())[tid] || []).find(x => x.name === name);
+      if (p) drawParams(tid, p.params);
+    });
+    pick("preset-save").addEventListener("click", async function () {
+      const tid = pick("technique").value;
+      const name = prompt("Как назвать набор настроек для «" +
+        ((techMeta(tid) || {}).name || tid) + "»?", pick("preset-pick").value || "мой");
+      if (!name) return;
+      try {
+        await savePreset(tid, name, paramsOf());
+        await fillPresets(tid);
+        pick("preset-pick").value = name;
+        addMessage("Набор «" + name + "» сохранён для " + tid + ".", "system");
+      } catch (e) { addMessage("Не сохранилось: " + e.message, "system"); }
+    });
+    pick("preset-del").addEventListener("click", async function () {
+      const tid = pick("technique").value, name = pick("preset-pick").value;
+      if (!name) return;
+      await deletePreset(tid, name);
+      await fillPresets(tid);
+      addMessage("Набор «" + name + "» удалён.", "system");
+    });
 
     // Сдвиг точки на такт. Кандидаты из анализа попадают близко, но
     // «на два такта раньше» ухо слышит, а список готовых вариантов такой
@@ -1770,6 +1937,7 @@
         bars: parseFloat(pick("bars").value),
         from_point_seconds: pointAt("from"),
         to_point_seconds: pointAt("to"),
+        params: paramsOf(),
       };
       buildStrategy(true);
     });
@@ -1791,6 +1959,9 @@
         technique_id: pick("technique").value,
         from_seconds: pointAt("from"),
         to_seconds: pointAt("to"),
+        // Демо должно звучать ТЕМИ ЖЕ ползунками, что стоят в панели:
+        // иначе диджей слушает одно, а в плане остаётся другое.
+        param_overrides: paramsOf(),
       }, overrides || {});
       try {
         const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
@@ -1937,6 +2108,16 @@
       const body = document.getElementById("strategy-body");
       body.insertBefore(out, body.firstChild);
     }
+    // The panel is inserted at the TOP of the strategy tab. Anyone who has
+    // scrolled down to the transition list - which is where the buttons
+    // are - never sees it, so a working action ("plan exported", 200 OK)
+    // looks like nothing happened at all. Bring it into view and flash it.
+    try {
+      out.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      out.style.transition = "background-color .25s";
+      out.style.backgroundColor = "rgba(255,255,255,.10)";
+      setTimeout(function () { out.style.backgroundColor = ""; }, 700);
+    } catch (e) { /* старый браузер - не беда, текст всё равно на месте */ }
     return out;
   }
 
@@ -2071,6 +2252,14 @@
         '</div>';
     }
 
+    if ((t.params || []).length) {
+      html += '<div class="tech-param" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<span style="font-size:12px;color:var(--muted)">набор настроек</span>' +
+        '<select id="tech-preset-pick"><option value="">— свой —</option></select>' +
+        '<button id="tech-preset-save" title="Сохранить эти ползунки под именем">💾 сохранить</button>' +
+        '<button id="tech-preset-del" title="Удалить выбранный набор">✕</button>' +
+        '</div>';
+    }
     (t.params || []).forEach(function (p) {
       const key = t.id + ":" + p.key;
       const current = paramOverrides[key] !== undefined ? paramOverrides[key] : p.default;
@@ -2092,6 +2281,60 @@
         if (label) label.textContent = input.value;
       });
     });
+
+    // Наборы настроек этого приёма — те же, что в настройщике перехода
+    // в Стратегии: настроил здесь, применил там.
+    const pSel = document.getElementById("tech-preset-pick");
+    if (pSel) {
+      const curParams = function () {
+        const out = {};
+        (t.params || []).forEach(function (p) {
+          const k = t.id + ":" + p.key;
+          out[p.key] = paramOverrides[k] !== undefined ? paramOverrides[k] : p.default;
+        });
+        return out;
+      };
+      const applyValues = function (vals) {
+        (t.params || []).forEach(function (p) {
+          if (vals[p.key] === undefined) return;
+          const k = t.id + ":" + p.key;
+          paramOverrides[k] = vals[p.key];
+          const inp = detail.querySelector('input[data-key="' + k + '"]');
+          if (inp) inp.value = vals[p.key];
+          const lbl = document.getElementById("val-" + k.replace(/[^a-zA-Z0-9]/g, "_"));
+          if (lbl) lbl.textContent = vals[p.key];
+        });
+      };
+      const fill = async function () {
+        const mine = ((await loadPresets()) || {})[t.id] || [];
+        const keep = pSel.value;
+        pSel.innerHTML = '<option value="">— свой —</option>' +
+          mine.map(x => '<option value="' + escapeHtml(x.name) + '">' + escapeHtml(x.name) + '</option>').join("");
+        if (mine.some(x => x.name === keep)) pSel.value = keep;
+      };
+      fill();
+      pSel.addEventListener("change", async function () {
+        const mine = ((await loadPresets()) || {})[t.id] || [];
+        const p = mine.find(x => x.name === pSel.value);
+        if (p) applyValues(p.params);
+      });
+      document.getElementById("tech-preset-save").addEventListener("click", async function () {
+        const name = prompt("Как назвать набор настроек для «" + t.name + "»?",
+                            pSel.value || "мой");
+        if (!name) return;
+        try {
+          await savePreset(t.id, name, curParams());
+          await fill(); pSel.value = name;
+          addMessage("Набор «" + name + "» сохранён для " + t.id + ".", "system");
+        } catch (e) { addMessage("Не сохранилось: " + e.message, "system"); }
+      });
+      document.getElementById("tech-preset-del").addEventListener("click", async function () {
+        if (!pSel.value) return;
+        const name = pSel.value;
+        await deletePreset(t.id, name); await fill();
+        addMessage("Набор «" + name + "» удалён.", "system");
+      });
+    }
 
     if (!t.requires_stems) {
       const srcSel = document.getElementById("tech-source-select");

@@ -235,6 +235,127 @@ def playable_path(track_path: str | Path) -> str:
     return str(track_path)
 
 
+# --------------------------------------------- чтение слоёв ИЗ .stem.mp4
+#
+# Раньше слои читались только из кэша DARAVE (stems/<ключ>/drums.mp3 и так
+# далее), то есть одни и те же секунды лежали на диске дважды: отдельными
+# файлами для рендера и внутри .stem.mp4 для Mixxx. Диджей второй кэш
+# удалил - и вся библиотека разом стала «без стемов», потому что
+# stems.stem_paths() смотрит только туда. Читаем прямо из mp4: он и так
+# рядом с треком, и в нём ровно те же четыре слоя.
+
+# Поток 0 - готовый мастер, слои идут за ним в порядке STEM_ORDER.
+MASTER_STREAM = 0
+# Сколько секунд декодировать «на подлёте» ради точной посадки (см. decode_layer).
+SEEK_PAD = 2.0
+LAYER_STREAM = {part: i + 1 for i, part in enumerate(STEM_ORDER)}
+# Мастер ПОЧТИ РАВЕН сумме слоёв (остаток -23.7 dB, измерено). Значит
+# ошибка на единицу в индексе - это не «немного не тот звук», а удвоение
+# сигнала: +6 dB и перегруз. Поэтому индексы выводятся, а не пишутся, и
+# проверяются здесь, а не в отладчике потом.
+assert list(LAYER_STREAM.values()) == [1, 2, 3, 4], LAYER_STREAM
+assert MASTER_STREAM not in LAYER_STREAM.values()
+
+
+def decode_layer(mp4_path: str | Path, part: str, sr: int = 44100,
+                 offset: float = 0.0, duration: float | None = None,
+                 mono: bool = False) -> "np.ndarray | None":   # noqa: F821
+    """Один слой (или его кусок) из .stem.mp4 в float32.
+
+    Форма возврата повторяет librosa.load: (n,) для моно и (каналы, n)
+    для стерео, чтобы вызывающий код не переписывать.
+
+    Перемотка двухступенчатая, и это не перестраховка. Одиночный -ss
+    ПЕРЕД -i быстрый, но неточный: измерено на реальном файле, кусок с
+    60-й секунды разошёлся с тем же куском из полного декодирования на
+    0.44 по амплитуде - это другое место в треке, а не «почти то же».
+    Одиночный -ss ПОСЛЕ -i точен, но заставляет декодировать всё от нуля.
+    Поэтому грубо перематываем перед входом на SEEK_PAD секунд раньше, а
+    точную посадку делаем вторым -ss после входа: лишнего декодируется
+    ровно SEEK_PAD секунд.
+
+    ПОЗИЦИЯ при этом точна, а значения отсчётов - нет, и это свойство
+    AAC, а не ошибка. Замер: сдвиг куска относительно того же места из
+    полного декодирования равен 0 отсчётов на всех проверенных позициях,
+    но 1-8% отсчётов отличаются, остаток -26..-31 dB. Это шумовое
+    замещение (PNS): полосы, закодированные как «шум такой-то
+    громкости», генерируются псевдослучайно от состояния декодера, и
+    после перемотки состояние другое. Порядок остатка тот же, что и у
+    собственной ошибки AAC 256 (-27.6 dB), то есть это просто другой
+    правильный декод тех же данных. Гнаться за побитовым совпадением
+    здесь бессмысленно.
+    """
+    import numpy as np
+
+    if part not in LAYER_STREAM:
+        raise ValueError(f"нет такого слоя: {part!r}, есть {tuple(LAYER_STREAM)}")
+    ff = ffmpeg_exe()
+    if not ff:
+        return None
+    offset = max(0.0, float(offset or 0.0))
+    rough = max(0.0, offset - SEEK_PAD)
+    fine = offset - rough
+    cmd = [ff, "-v", "error"]
+    if rough > 0:
+        cmd += ["-ss", f"{rough:.6f}"]
+    cmd += ["-i", str(mp4_path)]
+    if fine > 0:
+        cmd += ["-ss", f"{fine:.6f}"]
+    cmd += ["-map", f"0:a:{LAYER_STREAM[part]}"]
+    if duration:
+        cmd += ["-t", f"{float(duration):.6f}"]
+    cmd += ["-f", "f32le", "-ac", "1" if mono else "2", "-ar", str(int(sr)), "pipe:1"]
+    try:
+        raw = subprocess.run(cmd, capture_output=True, timeout=300).stdout
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if not raw:
+        return None
+    a = np.frombuffer(raw, dtype="<f4").astype("float32")
+    if mono:
+        return a
+    n = len(a) // 2
+    return a[:n * 2].reshape(n, 2).T          # (каналы, сэмплы), как у librosa
+
+
+def layer_db(mp4_path: str | Path, part: str, probes: int = 3,
+             window: float = 12.0) -> float:
+    """Громкость слоя в dBFS - по нескольким кускам, а не по всему файлу.
+
+    Нужно ровно для одного вопроса: настоящий ли это вокальный слой.
+    У HPSS его нет и быть не может, слой пишется пустым сознательно, а
+    .stem.mp4 при этом собирается и на HPSS тоже - то есть по одному лишь
+    наличию файла судить нельзя. В кэше эта величина лежала в meta.json
+    полем vocals_db; здесь она измеряется, когда кэша больше нет.
+    """
+    import numpy as np
+
+    dur = 0.0
+    try:
+        ffp = ffprobe_exe()
+        if ffp:
+            out = subprocess.run(
+                [ffp, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=nw=1:nk=1", str(mp4_path)],
+                capture_output=True, text=True, timeout=30).stdout.strip()
+            dur = float(out or 0.0)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        dur = 0.0
+
+    starts = [0.0] if dur <= window else [
+        dur * frac for frac in np.linspace(0.15, 0.75, probes)]
+    peak = 0.0
+    for st in starts:
+        buf = decode_layer(mp4_path, part, offset=st, duration=window, mono=True)
+        if buf is None or not len(buf):
+            continue
+        peak = max(peak, float(np.sqrt(np.mean(np.square(buf.astype("float64"))))))
+    if peak <= 0.0:
+        return -120.0
+    import math
+    return round(20.0 * math.log10(peak), 1)
+
+
 def _replace_with_retry(tmp: Path, out: Path, attempts: int = 10,
                         delay: float = 0.4) -> None:
     """tmp.replace(out), но с повтором.

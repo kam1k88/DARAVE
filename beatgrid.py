@@ -260,142 +260,456 @@ def refine_tempo_file(path: str, bpm_hint: float, sr: int = 22050,
     return out
 
 
-def drum_map(y: np.ndarray, sr: int, bpm: float, win_bars: float = 4.0,
-             threshold: float = 0.5) -> dict:
-    """Где в треке РЕАЛЬНО играют барабаны — по низу, по такту.
+# ---------------------------------------------------------------------------
+# Карты трека: где играют барабаны и где ходит низ
+# ---------------------------------------------------------------------------
+# Обе карты режут трек на такты, и обе раньше резали ОТ НУЛЯ ФАЙЛА. Это и
+# оказалось причиной систематического промаха меток. Замерено на «Sili —
+# Playing In The Darkness»: все четыре дропа стояли на 0.78 с раньше
+# слышимого — одинаково, до третьего знака. 0.78 с при 174 BPM это 0.57
+# такта, то есть ровно фаза сетки, а не ошибка детектора: у релиза перед
+# первой долей есть пауза, и «такт N от нуля файла» не совпадает с
+# музыкальным тактом.
+#
+# Теперь у обеих карт есть якорь `bar_offset` — секунда первой линии
+# сетки. Такт i покрывает [bar_offset + i*bar, bar_offset + (i+1)*bar).
+# Старые карты без этого поля читаются как bar_offset = 0, поэтому
+# пересчёт библиотеки не обязателен, но желателен.
+
+LOW_HZ = 180.0        # полоса «низа»: бочка и саб
+# Пороги — в долях от «полной» партии этого же трека (90-й перцентиль
+# по тактам), а не в абсолютных величинах: у одного трека дроп вдвое
+# громче интро, у другого вдесятеро, и общей шкалы тут нет.
+DRUMS_ON = 0.25       # барабаны вообще звучат (хотя бы редкая перкуссия)
+DRUMS_DENSE = 0.70    # партия плотная — это и есть «бит пошёл»
+DROP_DOWN = 0.50      # ниже этого партия считается разреженной
+DROP_FULL = 0.70      # столько держится после дропа
+DROP_STEP = 0.70      # предыдущие 8 тактов не громче этой доли от дропа
+DROP_SPAN = 8         # столько тактов дроп должен держаться
+PHRASE_SNAP = 2       # на столько тактов метку можно подвинуть на фразу
+DROP_LOW = 0.45       # запасной путь по миксу: ниже этого — низ ушёл
+DROP_HIGH = 0.70      # запасной путь по миксу: выше этого — низ вернулся
+DROP_HOLD = 4         # столько тактов смотрим после возврата
+DROP_CONFIRM = 3      # столько из них должны быть выше DROP_HIGH
+PHRASE_BARS = 8       # фраза; ближе этого два дропа не считаются разными
+
+
+def bass_envelope(y: np.ndarray, sr: int, fmax: float = LOW_HZ,
+                  wide: bool = False) -> tuple[np.ndarray, float]:
+    """Огибающая энергии (низ или вся полоса), кадр HOP.
+
+    Возвращает (огибающая, секунд на кадр)."""
+    import librosa
+
+    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=HOP))
+    if wide:
+        env = np.sqrt((S ** 2).sum(axis=0) + 1e-12)
+    else:
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+        env = np.sqrt((S[freqs <= fmax] ** 2).sum(axis=0) + 1e-12)
+    return env, HOP / sr
+
+
+def bar_offset_for(y: np.ndarray, sr: int, bpm: float) -> float:
+    """Секунда первой линии тактовой сетки — фаза, а не ноль файла.
+
+    Берём фазу гребёнки (beat_phase) и сворачиваем её в один такт: сетка
+    периодична, поэтому годится любой настоящий даунбит."""
+    try:
+        g = beat_phase(y, sr, bpm)
+    except Exception:
+        return 0.0
+    bar = float(g.get("bar_seconds") or 0.0)
+    if bar <= 0:
+        return 0.0
+    return float(g.get("downbeat_offset") or 0.0) % bar
+
+
+def _bar_levels(env: np.ndarray, frame_sec: float, bar: float,
+                offset: float = 0.0, ref: float | None = None
+                ) -> tuple[np.ndarray, float]:
+    """Уровень огибающей по тактам от якоря, в долях опорного уровня."""
+    if ref is None:
+        ref = float(np.percentile(env, 85))
+    step = max(1, int(round(bar / frame_sec)))
+    i0 = max(0, int(round(offset / frame_sec)))
+    n = max(1, (len(env) - i0) // step)
+    lv = np.array([float(np.mean(env[i0 + i * step: i0 + (i + 1) * step]))
+                   for i in range(n)])
+    return lv / max(ref, 1e-9), float(ref)
+
+
+def drums_signal(track_path: str, sr: int) -> "np.ndarray | None":
+    """Слой ударных из .stem.mp4 рядом с треком, если он есть.
+
+    Зачем: «где играют барабаны» и «где дроп» раньше мерились по полосе
+    <180 Гц МИКСА, то есть по БАСУ. Замерено на «Ci-energy —
+    Chronophage»: с 0:05 до 1:53 бас держит ровно 0.8 не прерываясь —
+    там и интро, и первый дроп, и брейкдаун подряд, и по басу они
+    неразличимы. По слою ударных та же зона читается сразу: 0:04-0:48
+    лёгкая перкуссия (0.33), 0:50-1:34 полные барабаны (0.57),
+    1:35-1:53 барабанов нет вовсе (0.00). Это разные секции, и слышны
+    они именно так."""
+    try:
+        import stems as _stems
+        import stem_mp4 as _mp4
+
+        path = _stems.stem_mp4_for(track_path)
+        if not path:
+            return None
+        y = _mp4.decode_layer(str(path), "drums", sr=int(sr), mono=True)
+        return y if y is not None and len(y) > sr else None
+    except Exception:
+        return None
+
+
+def _drum_levels(drums: np.ndarray, sr: int, bar: float, offset: float
+                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """Уровень слоя ударных по тактам, нормированный на «полные барабаны».
+
+    Нормируем на 90-й перцентиль ПО ТАКТАМ, а не на перцентиль кадров:
+    у слоя ударных кадры — это отдельные удары, и перцентиль кадров
+    меряет громкость одного удара, которая от трека к треку гуляет
+    втрое. Перцентиль по тактам — это уровень плотной партии, то есть
+    ровно то, с чем мы сравниваем.
+
+    Полоса — бочка (<180 Гц) внутри уже отделённых ударных: контраст
+    интро/дроп по ней 11-кратный против 4-кратного по всей полосе.
+
+    Возвращаем и средний уровень такта, и ПИКОВЫЙ. Средний — это
+    плотность партии, пиковый — громкость самого удара, и они говорят
+    разное. Такт, в котором один удар полной громкости и больше ничего,
+    — это первая доля дропа: у «Sili» на 0:44.5 ровно такой такт, а
+    плотная партия начинается тактом позже."""
+    env, frame_sec = bass_envelope(drums, sr)
+    lv, _ = _bar_levels(env, frame_sec, bar, offset, ref=1.0)
+    step = max(1, int(round(bar / frame_sec)))
+    i0 = max(0, int(round(offset / frame_sec)))
+    pk = np.array([float(np.max(env[i0 + i * step: i0 + (i + 1) * step]))
+                   for i in range(len(lv))])
+    full = float(np.percentile(lv, 90)) or float(np.max(lv)) or 1.0
+    full_pk = float(np.percentile(pk, 90)) or float(np.max(pk)) or 1.0
+    return lv / max(full, 1e-9), pk / max(full_pk, 1e-9), env, frame_sec, full
+
+
+def drum_map(y: np.ndarray, sr: int, bpm: float, threshold: float = 0.5,
+             offset: float = 0.0, drums: "np.ndarray | None" = None) -> dict:
+    """Где в треке РЕАЛЬНО играют барабаны — по такту.
 
     Это оказалось главной причиной кривого звучания. Точки входа
     выбирались по structure-анализу («за 16 тактов до дропа»), а дропы он
     находит с уверенностью 0.14-0.23, то есть почти наугад. Половина
     переходов заводила новый трек в его эмбиентное интро: фейдер резал с
-    громкого бита на пустоту. Ни техника, ни точность фазы этого не
-    спасают — сводить просто не с чем.
+    громкого бита на пустоту.
 
-    Метрика — энергия ниже 180 Гц относительно 85-го перцентиля этой же
-    энергии по треку. Проверено: у Hybrid Minds интро кончается на 85 с,
-    у Dualistic на 65 с — сплошным блоком, без дребезга на границе.
+    Метрика: если есть слой ударных — его собственная бочка,
+    нормированная на уровень плотной партии; иначе полоса ниже 180 Гц
+    микса, как раньше (см. drums_signal — разница принципиальная).
 
     Что НЕ работает и почему: контраст гребёнки (сколько выделяется
     лучшая фаза) в интро ВЫШЕ, чем в теле трека — редкие одиночные
     события дают острый пик, а плотная партия барабанов размазывает
     отклик по всем фазам. По контрасту интро выглядит «ритмичнее» дропа.
     """
-    import librosa
-
     bpm = float(bpm) if bpm and bpm > 20 else 172.0
     bar = 60.0 / bpm * 4
-    if len(y) < sr * 4:
-        return {"bar_seconds": round(bar, 4), "on": "", "drums_start": 0.0, "coverage": 0.0}
+    empty = {"bar_seconds": round(bar, 4), "bar_offset": 0.0, "on": "",
+             "drums_start": 0.0, "drums_end": 0.0, "coverage": 0.0,
+             "source": "none"}
+    use_stem = drums is not None and len(drums) >= sr * 4
+    if not use_stem and (y is None or len(y) < sr * 4):
+        return empty
+    offset = max(0.0, float(offset or 0.0)) % bar
 
-    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=HOP))
-    freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
-    low = S[freqs <= 180.0]
-    lb = np.sqrt((low ** 2).sum(axis=0) + 1e-12)
-    ref = float(np.percentile(lb, 85))
-    if ref <= 1e-9:
-        return {"bar_seconds": round(bar, 4), "on": "", "drums_start": 0.0, "coverage": 0.0}
+    if use_stem:
+        level, peak, env, frame_sec, ref = _drum_levels(drums, sr, bar, offset)
+        thr = DRUMS_ON
+        dense_thr = DRUMS_DENSE
+    else:
+        env, frame_sec = bass_envelope(y, sr)
+        ref = float(np.percentile(env, 85))
+        if ref <= 1e-9:
+            return empty
+        level, _ = _bar_levels(env, frame_sec, bar, offset, ref)
+        peak = None
+        thr = threshold
+        dense_thr = threshold
 
-    frame_sec = HOP / sr
-    step = max(1, int(round(bar / frame_sec)))
-    span = max(step, int(round(win_bars * bar / frame_sec)))
-    flags = []
-    for start in range(0, max(1, len(lb) - span), step):
-        flags.append(float(np.mean(lb[start:start + span])) / ref > threshold)
+    flags = _despike(level > thr)
+    n_bars = len(flags)
 
-    drums_start, run = 0.0, 0
-    for i, v in enumerate(flags):
-        run = run + 1 if v else 0
-        if run >= 4:
-            drums_start = max(0.0, (i - run + 1) * bar)
-            break
+    # Сплошные участки: одиночный такт — это не «барабаны пошли».
+    runs = []
+    i = 0
+    while i < n_bars:
+        j = i
+        while j < n_bars and flags[j] == flags[i]:
+            j += 1
+        if flags[i] and j - i >= 4:
+            runs.append((i, j))
+        i = j
+
+    # «Первый бит» — это не первый удар, а место, где партия становится
+    # ПЛОТНОЙ. У «Chronophage» бочка звучит с 0:04, но по два удара в
+    # такт под басовую подложку — заводить туда деку не во что; полный
+    # брейк начинается на 0:50, и слышно первым битом именно его.
+    dense = _despike(level >= dense_thr)
+    dense_runs = [(a, b) for a, b, v in _runs_of(dense) if v and b - a >= 4]
+
+    first_hit = drums_start = drums_end = 0.0
+    phase = 0
+    if dense_runs:
+        phase = _lead_hit(dense_runs[0][0], level, peak) % PHRASE_BARS
+    if runs:
+        first_hit = offset + _phrase_snap(runs[0][0], phase) * bar
+        drums_end = offset + _phrase_snap(runs[-1][1], phase) * bar
+    if dense_runs:
+        drums_start = offset + _lead_hit(dense_runs[0][0], level, peak) * bar
+        drums_end = max(drums_end,
+                        offset + _phrase_snap(dense_runs[-1][1], phase) * bar)
+    else:
+        drums_start = first_hit
 
     return {"bar_seconds": round(bar, 4),
-            "on": "".join("1" if v else "0" for v in flags),   # компактно для хранения в БД
+            "bar_offset": round(offset, 4),
+            # компактно для хранения в БД
+            "on": "".join("1" if v else "0" for v in flags),
+            "dense": "".join("1" if v else "0" for v in dense),
             "drums_start": round(drums_start, 2),
-            "coverage": round(float(np.mean(flags)) if flags else 0.0, 3)}
+            "first_hit": round(first_hit, 2),
+            "drums_end": round(drums_end, 2),
+            "coverage": round(float(np.mean(flags)) if n_bars else 0.0, 3),
+            "source": "stem" if use_stem else "mix"}
 
 
-def energy_map(y: np.ndarray, sr: int, bpm: float) -> dict:
+def _despike(mask: np.ndarray) -> np.ndarray:
+    """Медиана по трём тактам: одиночный такт не меняет секцию.
+
+    Без этого один такт с перкуссией посреди брейкдауна резал его на
+    три куска — у «Sili» брейкдаун 2:14-2:57 разваливался на 2:14-2:35,
+    2:36-2:47 и 2:49-2:57, и каждый огрызок претендовал на свой дроп."""
+    m = np.asarray(mask, dtype=bool)
+    if len(m) < 3:
+        return m
+    out = m.copy()
+    out[1:-1] = (m[:-2].astype(int) + m[1:-1].astype(int)
+                 + m[2:].astype(int)) >= 2
+    return out
+
+
+def _runs_of(mask: np.ndarray) -> list[tuple[int, int, bool]]:
+    """Однородные полосы булева массива: (начало, конец, значение)."""
+    out: list[tuple[int, int, bool]] = []
+    n = len(mask)
+    start = 0
+    for i in range(1, n + 1):
+        if i == n or bool(mask[i]) != bool(mask[start]):
+            out.append((start, i, bool(mask[start])))
+            start = i
+    return out
+
+
+def _lead_hit(b: int, level: np.ndarray, peak: "np.ndarray | None") -> int:
+    """Такт-затакт: один удар полной громкости и пустота после него.
+
+    Дроп слышен с этого удара, а не с начала плотной партии. Отличить
+    его от разреженного интро можно только по паре «пик/плотность»: у
+    «Sili» такт 0:44.5 пустой (0.16) с ударом в полную громкость (1.01)
+    — это первая доля дропа; у «Chronophage» такт перед дропом тоже
+    бьёт в полную громкость (0.97), но плотность там 0.53 — это не
+    затакт, а сам рисунок интро, и метку туда двигать нельзя."""
+    if peak is None or b <= 0:
+        return b
+    if level[b - 1] < DRUMS_ON and peak[b - 1] >= 0.8:
+        return b - 1
+    return b
+
+
+def _phrase_phase(level: np.ndarray, peak: "np.ndarray | None") -> int:
+    """Остаток от деления на 8, на котором стоят фразы этого трека.
+
+    Танцевальная музыка строится фразами по 8 тактов, и все события
+    сидят на одной и той же фразовой сетке. Якорь — первый дроп: он
+    определяется однозначно (первый удар после пустого интро), а всё
+    остальное к нему подтягивается. Проверено на двух треках: у
+    «Chronophage» оба дропа сами встали на такты 36 и 108, то есть
+    ровно 4 mod 8; у «Sili» первый дроп на такте 32, а второй детектор
+    видел на 129 — 129 не на фразе, и на слух он на 128."""
+    dense = _despike(level >= DRUMS_DENSE)
+    runs = [(a, b) for a, b, v in _runs_of(dense) if v and b - a >= 4]
+    if not runs:
+        return 0
+    return _lead_hit(runs[0][0], level, peak) % PHRASE_BARS
+
+
+def _phrase_snap(i: int, phase: int, tol: int = PHRASE_SNAP) -> int:
+    """Подтянуть такт к ближайшей границе фразы, если она рядом."""
+    k = round((i - phase) / PHRASE_BARS)
+    j = int(phase + k * PHRASE_BARS)
+    return j if j >= 0 and abs(j - i) <= tol else int(i)
+
+
+def _cluster(cands: list[int], span: int = PHRASE_BARS) -> list[int]:
+    """Кандидаты внутри одной фразы — одно событие; дроп это его начало.
+
+    Без этого дроп с ямой внутри давал два события подряд, и в список
+    попадали оба, причём поздний выглядел не хуже раннего — отсюда
+    «метка на 4 такта позже»."""
+    kept: list[int] = []
+    for b in sorted(set(cands)):
+        if kept and b - kept[-1] < span:
+            continue
+        kept.append(b)
+    return kept
+
+
+def _drum_events(level: np.ndarray, peak: "np.ndarray | None" = None
+                 ) -> tuple[list[int], list[tuple[int, int]], list[int]]:
+    """Дропы, брейкдауны и ямы по слою ударных.
+
+    Дроп — это не «громко», а СТУПЕНЬКА: партия становится в полтора
+    раза плотнее, чем была четыре такта назад, выходит на уровень
+    плотной партии и держится восемь тактов. Так первый дроп отличается
+    от возврата лёгкого лупа после брейкдауна: у «Chronophage» на 1:54
+    барабаны возвращаются, но на 0.6 от полного уровня — это куплет, а
+    дроп там только на 2:29."""
+    n = len(level)
+    thin = _despike(level < DROP_DOWN)
+    breakdowns, pits = [], []
+    for a, b, low in _runs_of(thin):
+        if not low:
+            continue
+        if b - a >= DROP_HOLD:
+            breakdowns.append((a, b))
+        elif a > 0:
+            pits.append((a, b))   # яма в самом начале файла — это тишина
+    cand = []
+    for b in range(1, n):
+        span = level[b:b + DROP_SPAN]
+        if len(span) < 2:
+            continue
+        held = float(np.median(span))
+        # держится на полном уровне и сам такт уже громкий
+        if held < DROP_FULL or level[b] < DROP_FULL * 0.8:
+            continue
+        # и это именно СТУПЕНЬКА: до неё было заметно тише.
+        # Сравниваем с медианой восьми тактов, а не четырёх и не со
+        # средним: перед дропом почти всегда яма в 1-2 такта, и среднее
+        # она утаскивает вниз ровно настолько, чтобы «дропом» оказался
+        # любой возврат после любой ямы — так у «Sili» появлялись лишние
+        # дропы на 1:08 и 1:52 посреди сплошной партии.
+        prev = level[max(0, b - DROP_SPAN):b]
+        base = float(np.median(prev)) if len(prev) else 0.0
+        if base > DROP_STEP * held:
+            continue
+        cand.append(_lead_hit(b, level, peak))
+    phase = _phrase_phase(level, peak)
+    cand = [_phrase_snap(b, phase) for b in _cluster(cand)]
+    breakdowns = [(_phrase_snap(a, phase), _phrase_snap(b, phase))
+                  for a, b in breakdowns]
+    return _cluster(cand), breakdowns, [a for a, _ in pits]
+
+
+def _bass_events(level: np.ndarray) -> tuple[list[int], list[tuple[int, int]], list[int]]:
+    """Тот же разбор по низу микса — когда слоя ударных нет.
+
+    Подтверждение дропа было `mean(level[b:b+4]) > 0.70`: одного
+    провального такта внутри четвёрки хватало, чтобы среднее не
+    дотянуло, и настоящий дроп пропускался. Теперь «3 такта из 4»."""
+    n = len(level)
+    breakdowns, pits, cand = [], [], []
+    for a, b, low in _runs_of(level < DROP_LOW):
+        if not low:
+            continue
+        if b - a >= DROP_HOLD:
+            breakdowns.append((a, b))
+        elif a > 0:
+            pits.append(a)
+        if b < n:
+            after = level[b:b + DROP_HOLD]
+            if int(np.sum(after >= DROP_HIGH)) >= min(DROP_CONFIRM, len(after)):
+                cand.append(b)
+    return _cluster(cand), breakdowns, pits
+
+
+def energy_map(y: np.ndarray, sr: int, bpm: float, offset: float = 0.0,
+               drums: "np.ndarray | None" = None) -> dict:
     """Уровень низа ПО ТАКТАМ и события структуры: брейкдауны, ямы, дропы.
 
     Зачем отдельно от structure-анализа: там дропы находятся с
-    уверенностью 0.14-0.26, то есть почти наугад, и точка входа по ним
-    попадала мимо. А брейкдаун и дроп на самом деле видны прямым
-    измерением — это ровно те места, где низ уходит и где он возвращается.
-    Ту же метрику (энергия ниже 180 Гц относительно 85-го перцентиля по
-    треку) уже проверили на drum_map, она даёт сплошные блоки без
-    дребезга на границе.
+    уверенностью 0.14-0.26, то есть почти наугад. А брейкдаун и дроп на
+    самом деле видны прямым измерением.
 
-    Разница между тремя событиями — только в длине и направлении:
-      * брейкдаун — низ ушёл и не возвращается 4 такта и дольше;
-      * яма — та же просадка, но короткая (1-3 такта): вдох перед дропом;
-      * дроп — такт, где низ вернулся после просадки и держится 4 такта.
+    `level` — по-прежнему низ МИКСА: это «сколько сейчас баса», и именно
+    его спрашивают техники. А вот СОБЫТИЯ (дроп, брейкдаун, яма) с
+    появлением стемов считаются по слою ударных: по басу интро, дроп и
+    брейкдаун сплошь и рядом неразличимы (см. drums_signal). Без стема
+    остаётся прежний путь по низу микса.
 
-    Дроп мы намеренно считаем как «конец просадки», а не как «пик
-    энергии». Пиков в драм-н-бейсе много, а событие, которое слышно как
-    дроп, ровно одно — момент, когда после пустоты возвращается бас.
+    Три вещи, из-за которых метки стояли не там:
+
+    1. Дроп искался по возврату БАСА, а слышен он как возврат
+       БАРАБАНОВ. Теперь при наличии стема — по барабанам.
+    2. Кандидаты не схлопывались, и поздний выигрывал у раннего
+       (см. _cluster).
+    3. Сетка тактов шла от нуля файла (см. комментарий к bar_offset).
     """
-    import librosa
-
     bpm = float(bpm) if bpm and bpm > 20 else 172.0
     bar = 60.0 / bpm * 4
-    empty = {"bar_seconds": round(bar, 4), "level": [], "drops": [],
-             "breakdowns": [], "pits": []}
-    if len(y) < sr * 8:
+    empty = {"bar_seconds": round(bar, 4), "bar_offset": 0.0, "level": [],
+             "drops": [], "breakdowns": [], "pits": [], "source": "none"}
+    if y is None or len(y) < sr * 8:
         return empty
 
-    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=HOP))
-    freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
-    lb = np.sqrt((S[freqs <= 180.0] ** 2).sum(axis=0) + 1e-12)
-    ref = float(np.percentile(lb, 85))
+    env, frame_sec = bass_envelope(y, sr)
+    ref = float(np.percentile(env, 85))
     if ref <= 1e-9:
         return empty
+    offset = max(0.0, float(offset or 0.0)) % bar
+    level, _ = _bar_levels(env, frame_sec, bar, offset, ref)
 
-    frame_sec = HOP / sr
-    step = max(1, int(round(bar / frame_sec)))
-    n_bars = max(1, len(lb) // step)
-    level = np.array([float(np.mean(lb[i * step:(i + 1) * step])) / ref
-                      for i in range(n_bars)])
+    use_stem = drums is not None and len(drums) >= sr * 4
+    if use_stem:
+        dlevel, dpeak, _denv, _dframe, _dref = _drum_levels(drums, sr, bar, offset)
+        cand, breaks, pits = _drum_events(dlevel, dpeak)
+    else:
+        cand, breaks, pits = _bass_events(level)
 
-    LOW, HIGH, HOLD = 0.45, 0.70, 4
-    is_low = level < LOW
+    def sec(i: int) -> float:
+        return offset + i * bar
 
-    # разбиваем на однородные полосы
-    runs = []
-    start = 0
-    for i in range(1, n_bars + 1):
-        if i == n_bars or is_low[i] != is_low[start]:
-            runs.append((start, i, bool(is_low[start])))
-            start = i
-
-    breakdowns, pits, drops = [], [], []
-    for idx, (a, b, low) in enumerate(runs):
-        if not low:
-            continue
-        length = b - a
-        if length >= HOLD:
-            breakdowns.append((round(a * bar, 2), round(b * bar, 2)))
-        elif a > 0:
-            pits.append(round(a * bar, 2))
-        # дроп — возврат низа после просадки, если он держится
-        if b < n_bars and float(np.mean(level[b:b + HOLD])) > HIGH:
-            drops.append(round(b * bar, 2))
+    # Доводка «до кадра» тут была и оказалась вредной. Сетка тактов уже
+    # привязана к музыке (bar_offset), поэтому номер такта — это и есть
+    # ответ; поиск подъёма внутри соседнего такта только уводил метку на
+    # такт назад, потому что в конце билда бочка уже почти полной
+    # громкости. Замерено: дроп «Chronophage» стоял на 0:48 вместо 0:50.
+    drops = [round(sec(b), 2) for b in cand]
 
     return {"bar_seconds": round(bar, 4),
+            "bar_offset": round(offset, 4),
             "level": [round(float(v), 3) for v in level],
             "drops": drops,
-            "breakdowns": breakdowns,
-            "pits": pits}
+            "breakdowns": [(round(sec(a), 2), round(sec(b), 2)) for a, b in breaks],
+            "pits": [round(sec(a), 2) for a in pits],
+            "source": "stem" if use_stem else "mix"}
+
+
+def bar_index(emap: dict, seconds: float) -> int:
+    """Индекс такта в карте по абсолютной секунде — с учётом якоря."""
+    bar = float((emap or {}).get("bar_seconds") or 0.0)
+    off = float((emap or {}).get("bar_offset") or 0.0)
+    if bar <= 0:
+        return 0
+    return int((float(seconds) - off) // bar)
 
 
 def level_at(emap: dict, seconds: float) -> float:
     """Уровень низа в этой секунде, 1.0 — как в теле трека."""
     bars = emap.get("level") or []
-    bar = float(emap.get("bar_seconds") or 1.379)
-    if not bars or bar <= 0:
+    if not bars:
         return 1.0
-    i = int(max(0.0, seconds) // bar)
-    return float(bars[min(i, len(bars) - 1)])
+    i = bar_index(emap, seconds)
+    return float(bars[min(max(i, 0), len(bars) - 1)])
 
 
 def next_drop(emap: dict, after_seconds: float = 0.0) -> float | None:
@@ -416,10 +730,9 @@ def in_breakdown(emap: dict, seconds: float) -> bool:
 def drums_at(dmap: dict, seconds: float, need_bars: float = 0.0) -> bool:
     """Играют ли барабаны в этот момент — и держатся ли ещё need_bars тактов."""
     on = (dmap or {}).get("on") or ""
-    bar = float((dmap or {}).get("bar_seconds") or 1.4)
     if not on:
         return True          # карты нет — не мешаем выбору
-    i = int(round(float(seconds) / bar))
+    i = bar_index(dmap, seconds)
     j = i + int(round(need_bars))
     if i < 0 or i >= len(on):
         return False
@@ -429,6 +742,10 @@ def drums_at(dmap: dict, seconds: float, need_bars: float = 0.0) -> bool:
 
 def drums_start_of(dmap: dict) -> float:
     return float((dmap or {}).get("drums_start") or 0.0)
+
+
+def drums_end_of(dmap: dict) -> float:
+    return float((dmap or {}).get("drums_end") or 0.0)
 
 
 def chroma_map(y: np.ndarray, sr: int, bpm: float, phrase_bars: float = 8.0) -> dict:

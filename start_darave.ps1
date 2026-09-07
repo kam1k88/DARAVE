@@ -214,7 +214,13 @@ try {
         Write-Log "Модуль rtmidi на месте." "Green"
     }
 
-    # ---------- 2. loopMIDI ----------
+    # ---------- 2. loopMIDI (только если явно включён) ----------
+    # Порт теперь даёт встроенный loopback Windows MIDI Services, стороннее
+    # ПО для этого не нужно. Блок оставлен как путь отката: UseLoopMidi = $true
+    # в darave_config.ps1.
+    if (-not $cfg.UseLoopMidi) {
+        Write-Log "loopMIDI не нужен: порт даёт встроенный loopback Windows MIDI Services." "Green"
+    } else {
     $loopMidi = Find-Program -Explicit $cfg.LoopMidiPath -RegistryNameLike "*loopMIDI*" -ExeName "loopMIDI.exe" -Candidates @(
         (Join-Path $Env:ProgramFiles "Tobias Erichsen\loopMIDI\loopMIDI.exe"),
         (Join-Path ${Env:ProgramFiles(x86)} "Tobias Erichsen\loopMIDI\loopMIDI.exe"),
@@ -228,6 +234,7 @@ try {
         } else { Write-Log "loopMIDI уже запущен." "Green" }
     } else {
         Write-Log "loopMIDI не найден (ни по путям, ни в реестре). Если он установлен — впишите путь в LoopMidiPath; если нет — поставьте с tobias-erichsen.de/software/loopmidi.html и создайте порт '$($cfg.MidiPortName)'." "Yellow"
+    }
     }
 
     # ---------- 3. Mixxx ----------
@@ -535,10 +542,17 @@ sys.exit(0 if any(name in p for p in ports) else 1)
 '@
         $portCheck = Invoke-Native $companionPy @("-c", $portCheckCode, $cfg.MidiPortName)
         if (-not $portCheck.Ok) {
-            Write-Log ("Виртуальный MIDI-порт '{0}' не создан в loopMIDI — это разовая настройка вручную (loopMIDI сидит в трее, окна на панели задач нет):" -f $cfg.MidiPortName) "Yellow"
-            Write-Log "  1. Найдите значок loopMIDI в системном трее (стрелка ^ рядом с часами, если не видно сразу) и откройте его окно." "Yellow"
-            Write-Log ("  2. В поле имени портов впишите ровно:  {0}" -f $cfg.MidiPortName) "Yellow"
-            Write-Log "  3. Нажмите '+' — порт создан и запомнится loopMIDI на все следующие запуски." "Yellow"
+            if ($cfg.UseLoopMidi) {
+                Write-Log ("Виртуальный MIDI-порт '{0}' не создан в loopMIDI — это разовая настройка вручную (loopMIDI сидит в трее, окна на панели задач нет):" -f $cfg.MidiPortName) "Yellow"
+                Write-Log "  1. Найдите значок loopMIDI в системном трее (стрелка ^ рядом с часами, если не видно сразу) и откройте его окно." "Yellow"
+                Write-Log ("  2. В поле имени портов впишите ровно:  {0}" -f $cfg.MidiPortName) "Yellow"
+                Write-Log "  3. Нажмите '+' — порт создан и запомнится loopMIDI на все следующие запуски." "Yellow"
+            } else {
+                Write-Log ("MIDI-порт '{0}' не найден. Порт даёт служба Windows MIDI (midisrv):" -f $cfg.MidiPortName) "Yellow"
+                Write-Log "  1. Откройте приложение MIDI Settings -> MIDI 2.0 Loopback Endpoints и убедитесь, что пара эндпоинтов есть." "Yellow"
+                Write-Log "  2. Если службы нет в списке процессов — MIDI Settings -> Home -> 'Set MIDI Service to auto-start at boot'." "Yellow"
+                Write-Log "  3. Global MIDI Settings: стиль имён должен быть 'compatible with previous versions', иначе имена портов не различаются." "Yellow"
+            }
             Write-Log "Пока поднимаю companion в mock-режиме (чат/библиотека/стратегия работают, команды в Mixxx не уходят) — после создания порта просто перезапустите start_darave.bat." "Yellow"
             $midiMode = "mock"
         } else {

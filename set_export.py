@@ -27,6 +27,49 @@ from pathlib import Path
 logger = logging.getLogger("darave")
 
 
+def set_master_bpm(strategy: dict, fallback: float = 174.0) -> float:
+    """One tempo for the whole set: the median of the tracks that share the
+    library centre's tempo family.
+
+    Why not a plain median of the raw BPM values. Half-time and double-time
+    readings are the SAME tempo counted at a different rate, so a raw median
+    mixes 87 and 174 and lands somewhere in between: that is bug #20 in
+    claude/status.md, where the master came out 120-147 for a drum'n'bass set
+    and the whole thing played at 70% speed.
+
+    So: find the library centre (tempo.library_center already folds octaves
+    and applies the performance-band prior once), keep only the tracks that
+    are in the same family as that centre, fold each of them onto the
+    centre's octave, and take the median of those. A track at a genuinely
+    different tempo does not drag the master anywhere - it is simply not in
+    the family and does not vote.
+    """
+    import tempo
+
+    tracks = strategy.get("tracks") or []
+    bpms = []
+    for t in tracks:
+        try:
+            b = float(t.get("bpm") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if b > 0:
+            bpms.append(b)
+    if not bpms:
+        return float(fallback)
+
+    centre = tempo.library_center(bpms, fallback)
+    family = [tempo.fold_to_center(b, centre) for b in bpms
+              if tempo.same_family(b, centre)]
+    if not family:
+        # Nothing shares the centre's family - the centre itself is still the
+        # best answer we have, and it is already in the performance band.
+        return round(float(centre), 2)
+
+    family.sort()
+    return round(float(family[len(family) // 2]), 2)
+
+
 def export_m3u(strategy: dict, out_path: str, title: str = "DARAVE set") -> dict:
     """Пишет M3U8 с треками сета в порядке плана.
 
@@ -298,6 +341,12 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
 
         bar_n = int(round(float(meta.get("bar_seconds") or 1.4) * sr))
         chunk = _trim_to_bars(chunk, bar_n)
+        # Превью микса склеивается из одних переходов, и без выравнивания
+        # куски скачут по уровню друг относительно друга ровно так же,
+        # как в полном сете скачут переход и тело.
+        chunk = _ride_to_reference(
+            chunk, sr,
+            ref_rms=_solo_level(chunk, sr, meta.get("sync_time_seconds")) or SET_DECK_RMS)
         pieces.append(chunk)
         bar_ns.append(bar_n)
         used += len(chunk) / sr
@@ -358,63 +407,131 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
 
 # Общий добор громкости всего сета. Деки приведены к -18 dBFS по RMS,
 # чтобы сумма двух не клиппировала; готовый файл при этом тихий, поэтому
-# в конце добавляем фиксированные +4 dB — одинаковые для тел и переходов,
-# так что относительные уровни не меняются.
+# в конце добавляем фиксированные +7.6 dB — одинаковые для тел и
+# переходов, так что относительные уровни не меняются.
 SET_MAKEUP = 2.4
 
+# Уровень, к которому приведена ОДНА дека (demo_render.TARGET_RMS).
+# Всё, что в переходе выше него, — это сумма двух дек, а не музыка.
+#
+# Замер на реальном сведении (ST-08, Enei -> Paramount, обе деки со
+# слоями):
+#
+#     кусок перехода   -3.6 dBFS RMS, лимитер давит 2.4 dB, пик -0.4 dB
+#     тело трека      -13.1 dBFS RMS, лимитер не работает,  пик -4.1 dB
+#
+# То есть на стыке скачок почти в 10 dB, и весь переход идёт через
+# постоянно работающий ограничитель — это и слышно как перегруз. В демо
+# этого не было слышно, потому что демо нормализуется целиком
+# (normalize_output=True), а в сет кусок кладётся как есть.
+#
+# Приём тут ни при чём: на ST-09, где играет по одному слою с деки,
+# разница тела и перехода 0.9 dB. Виновата именно СУММА двух полных дек
+# в приёмах, где кроссфейдер стоит посередине и деки не приглушает.
+SET_DECK_RMS = 0.125
+# Насколько сильно позволено срезать. Больше 9 dB — это уже не выравнивание,
+# а другой микс; лучше оставить как есть и не врать про уровень.
+SET_RIDE_MAX_CUT_DB = 9.0
 
-def _trim_trailing_silence(path: str, sr: int, floor_db: float = -55.0) -> float:
-    """Убирает тишину в конце: последний трек дочитывается до конца файла,
-    а там у многих релизов несколько секунд пустоты."""
+
+def _solo_level(y, sr: int, solo_seconds: float | None) -> float:
+    """Уровень куска ТАМ, ГДЕ ИГРАЕТ ОДНА ДЕКА.
+
+    Это и есть та громкость, с которой переход обязан состыковаться с
+    телом трека: до входа второй деки в куске звучит ровно тот же
+    уходящий трек, что играл до сведения.
+
+    Брать вместо этого общую константу (уровень, к которому приведена
+    дека) нельзя: у трека своя динамика, и если сведение назначено на
+    дроп, дека там честно громче своего среднего. Замер показал ровно
+    это — на ST-13 первые полторы секунды куска, где играет ОДИН
+    уходящий трек, идут на -8.4 dBFS при среднем уровне деки -18. С
+    константой их срезало бы на 9 dB, то есть в сет добавилась бы дырка
+    ровно там, где мы её и чинили, только с другой стороны.
+    """
     import numpy as np
-    import soundfile as sf
 
-    y, _ = sf.read(path, dtype="float32")
-    if y.ndim > 1:
-        y = y.mean(axis=1)
-    if len(y) < sr:
-        return len(y) / sr
-    k = sr // 4
-    prof = np.array([np.sqrt(np.mean(y[i * k:(i + 1) * k] ** 2) + 1e-12) for i in range(len(y) // k)])
-    db = 20 * np.log10(np.maximum(prof, 1e-7))
-    voiced = np.nonzero(db > floor_db)[0]
-    if len(voiced) == 0 or voiced[-1] >= len(prof) - 2:
-        return len(y) / sr
-    end = min(len(y), (voiced[-1] + 2) * k)
-    y = y[:end]
-    fade = min(len(y) // 4, int(1.5 * sr))
-    if fade > 1:
-        y[-fade:] *= np.linspace(1.0, 0.0, fade)
-    sf.write(path, y, sr, subtype="PCM_16")
-    return len(y) / sr
+    if not solo_seconds or solo_seconds <= 0.2:
+        return 0.0
+    n = min(len(y), int(solo_seconds * sr))
+    if n < sr // 4:
+        return 0.0
+    m = (y[:n].mean(axis=1) if y.ndim > 1 else y[:n]).astype("float64")
+
+    # Не среднее, а ВЕРХНЯЯ граница уровня одиночной деки.
+    #
+    # Среднее — плохой ориентир: скользящее СКЗ на окне в одну долю
+    # гуляет вокруг него на пару децибел (бочка громче паузы между
+    # бочками), и выравнивание начинало резать сильные доли ЕДИНСТВЕННОЙ
+    # играющей деки. Замер: соло-участок терял 2.3 dB там, где резать
+    # нечего. Девяностая процентиль тех же окон описывает «как громко эта
+    # дека бывает» и не срабатывает на собственном ритме трека.
+    step, win = 128, max(1, int(0.35 * sr))
+    csum = np.concatenate([[0.0], np.cumsum(m ** 2)])
+    grid = np.arange(0, len(m), step)
+    lo = np.maximum(0, grid - win // 2)
+    hi = np.minimum(len(m), grid + win // 2)
+    env = np.sqrt((csum[hi] - csum[lo]) / np.maximum(1, hi - lo))
+    if not len(env):
+        return float(np.sqrt((m ** 2).mean()))
+    return float(np.percentile(env, 90))
 
 
-def set_master_bpm(strategy: dict) -> float:
-    """Темп, в котором играет весь сет.
+def _ride_to_reference(y, sr: int, ref_rms: float = SET_DECK_RMS,
+                       window_sec: float = 0.35, attack_sec: float = 0.03,
+                       release_sec: float = 0.8,
+                       max_cut_db: float = SET_RIDE_MAX_CUT_DB):
+    """Приводит кусок перехода к уровню одиночной деки — но только вниз.
 
-    НЕ медиана сырых BPM. На реальной библиотеке медиана дала 147 (а на
-    части плана — 120): в неё попали треки, которые детектор посчитал в
-    2/3 темпа, 112 и 117 вместо 168 и 176. Весь драм-н-бейс тогда
-    растягивался к 120 и играл на 70% скорости — это и слышно как «в два
-    раза медленнее».
+    Почему не одним коэффициентом на весь кусок: в куске есть и
+    совмещение (две деки), и хвост, где играет уже только входящий. Один
+    коэффициент, посчитанный по среднему, сделал бы хвост на 9 dB тише
+    тела — то есть дырку после каждого сведения.
 
-    Правильно: сначала центр семьи темпов (tempo.library_center — он
-    голосует по октавам и один раз прикладывает полосу исполнения), потом
-    медиана только среди тех треков, которые в эту семью попадают. Треки
-    другого темпа на мастер-темп не влияют и растягиваться к нему не
-    будут (см. guard в demo_render)."""
-    import statistics
+    Почему огибающая несимметричная. Сначала усиление сглаживалось
+    симметричным окном в полторы секунды — и срез «протекал назад», в те
+    полторы секунды начала куска, где играет ещё ОДНА дека. Замер: на
+    ST-08 соло-участок терял 2.8 dB ни за что. Теперь как у нормального
+    компрессора: быстрая атака (30 мс — среагировать на вход второй
+    деки) и долгое отпускание (0.8 с — не качать в такт), и будущее на
+    прошлое не влияет вовсе.
 
-    import tempo as _tempo
+    Только вниз и не глубже max_cut_db: это выравнивание, а не
+    компрессия. Тихий переход (приём разобрал деку на слои и играет один
+    из них) обязан остаться тихим — это музыка, а не перебор."""
+    import numpy as np
 
-    bpms = [float(t.get("bpm") or 0) for t in (strategy.get("tracks") or []) if t.get("bpm")]
-    bpms = [b for b in bpms if b > 20]
-    if not bpms:
-        return 174.0
-    center = _tempo.library_center(bpms) or statistics.median(bpms)
-    family = [_tempo.fold_to_center(b, center) for b in bpms]
-    family = [b for b in family if _tempo.same_family(center, b)]
-    return round(statistics.median(family) if family else center, 2)
+    if len(y) < sr // 4 or ref_rms <= 0:
+        return y
+    m = (y.mean(axis=1) if y.ndim > 1 else y).astype("float64")
+
+    # Скользящее СКЗ через интеграл квадратов, но считаем его на
+    # прореженной сетке: 128 отсчётов — это 2.9 мс, мельче любой атаки.
+    step = 128
+    csum = np.concatenate([[0.0], np.cumsum(m ** 2)])
+    grid = np.arange(0, len(m), step)
+    win = max(1, int(window_sec * sr))
+    lo = np.maximum(0, grid - win // 2)
+    hi = np.minimum(len(m), grid + win // 2)
+    env = np.sqrt((csum[hi] - csum[lo]) / np.maximum(1, hi - lo))
+
+    floor = 10.0 ** (-max_cut_db / 20.0)
+    want = np.clip(ref_rms / np.maximum(env, 1e-9), floor, 1.0)
+
+    # Огибающая усиления с атакой и отпусканием, по прореженной сетке.
+    dt = step / sr
+    a_att = float(np.exp(-dt / max(1e-4, attack_sec)))
+    a_rel = float(np.exp(-dt / max(1e-4, release_sec)))
+    g = np.empty_like(want)
+    cur = 1.0
+    for i, w in enumerate(want):
+        coef = a_att if w < cur else a_rel
+        cur = w + (cur - w) * coef
+        g[i] = cur
+
+    gain = np.interp(np.arange(len(m)), grid, g)
+    gain = np.minimum(gain, 1.0)
+    return y * (gain[:, None] if y.ndim > 1 else gain)
 
 
 def _write_body(fh, path: str, start: float, end: float, rate: float, sr: int,
@@ -728,6 +845,16 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
             if chunk_sr != sr and len(chunk):
                 import librosa
                 chunk = librosa.resample(chunk, orig_sr=chunk_sr, target_sr=sr, axis=0)
+            # Выравниваем кусок по уровню одиночной деки ДО добора и
+            # ограничителя: иначе ограничитель делает эту работу за нас,
+            # но искажением, а не громкостью.
+            # Выравниваем кусок по уровню ОДИНОЧНОЙ деки ДО добора и
+            # ограничителя: иначе эту работу делает ограничитель, но
+            # искажением, а не громкостью. Опорный уровень берём из
+            # самого куска — из его начала, где вторая дека ещё молчит.
+            chunk = _ride_to_reference(
+                chunk, sr,
+                ref_rms=_solo_level(chunk, sr, meta.get("sync_time_seconds")) or SET_DECK_RMS)
             chunk = demo_render._soft_limit(chunk * SET_MAKEUP)
             fh.write(chunk)
             written += len(chunk) / sr

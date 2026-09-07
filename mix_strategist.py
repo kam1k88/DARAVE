@@ -374,7 +374,7 @@ def technique_candidates(a: dict, b: dict, compat: float, mismatch: bool,
     return sorted(out, reverse=True)
 
 
-BLEND_BARS_MIN, BLEND_BARS_MAX = 4.0, 12.0
+BLEND_BARS_MIN, BLEND_BARS_MAX = 8.0, 32.0
 
 # Вес штрафа за два кита разом ПРИ ВЫБОРЕ ТОЧЕК. Ноль — и это результат
 # замера, а не осторожность. Ставил 0.9, потом 0.3: и там и там штраф
@@ -431,20 +431,25 @@ def _mid_duck_for(share: float) -> float:
 
 
 def _blend_bars(a: dict, b: dict, want_exit: float | None, slot_seconds: float | None,
-                default: float = 8.0) -> float:
-    """Сколько тактов длится сведение: 4, 8 или 12.
+                default: float = 16.0) -> float:
+    """Сколько тактов длится сведение: 8, 16 или 32 — целыми фразами.
 
-    Раньше это было 32 такта на всё — 44 секунды при 174 BPM. Живой
-    диджей столько не тянет: сведение в драм-н-бейсе длится фразу или
-    две. Длина не одна на всех, она зависит от того, есть ли чем
-    заполнить наложение:
+    Длина всегда кратна фразе (8 тактов): переход в 17 тактов означает,
+    что одна дека встанет на середине фразы и её сбивка придёт туда, где
+    у другой ровное место.
+
+    Длина не одна на всех, она зависит от того, есть ли чем заполнить
+    наложение:
 
       * уходящий уходит в свой брейкдаун — низ освобождается сам, можно
-        не спешить: 12 тактов;
+        не спешить: 32 такта;
       * у входящего почти нет интро (барабаны с первых тактов) — прятать
-        его не под что, две плотные партии столкнутся лбами: 4 такта;
+        его не под что, две плотные партии столкнутся лбами: 8 тактов;
       * треку и так отведено меньше минуты — длинное наложение съест его
-        целиком: не больше 4-8.
+        целиком.
+
+    Пороги подняты вдвое по прямой просьбе диджея: длинный переход
+    всегда можно оборвать раньше, а короткий растянуть нечем.
     """
     bar_a = 60.0 / float(a.get("bpm") or 174.0) * 4
     bar_b = 60.0 / float(b.get("bpm") or 174.0) * 4
@@ -460,15 +465,17 @@ def _blend_bars(a: dict, b: dict, want_exit: float | None, slot_seconds: float |
                   and min(abs(x - want_exit) for x in breaks_a) <= 16 * bar_a)
 
     if intro_bars_b < 8:
-        bars = 4.0                      # прятать нечем — сводим коротко
+        bars = 8.0                      # прятать нечем — сводим короче
     elif near_break:
-        bars = 12.0                     # уходящий сам расчищает место
+        bars = 32.0                     # уходящий сам расчищает место
     if slot_seconds:
         if slot_seconds < 45:
-            bars = min(bars, 4.0)
-        elif slot_seconds < 90:
             bars = min(bars, 8.0)
-    return float(max(BLEND_BARS_MIN, min(BLEND_BARS_MAX, bars)))
+        elif slot_seconds < 90:
+            bars = min(bars, 16.0)
+    import style as _style
+
+    return _style.phrase_bars(max(BLEND_BARS_MIN, min(BLEND_BARS_MAX, bars)))
 
 
 def _overlap_seconds(technique_id: str, bpm: float = 174.0) -> float:
@@ -1165,10 +1172,24 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
     if track_order:
         # Порядок, выставленный диджеем руками, важнее любого алгоритма:
         # он слышал эти треки, а мы считали их спектры.
+        #
+        # И список — тоже его. Здесь стояло `ordered += missing`: все
+        # треки библиотеки, не названные в порядке, приклеивались в
+        # конец. На сете из «Отбора» это означало 13 отобранных треков
+        # плюс 52 случайных хвостом — диджей убирал ОДИН трек и получал
+        # другой сет целиком, с чужими приёмами (правки привязаны к парам,
+        # а пары после такого хвоста другие).
+        #
+        # Ни один нынешний вызов приклеивания не хочет: и перетаскивание,
+        # и удаление, и «+ добавить трек», и сборка из пула присылают
+        # ПОЛНЫЙ список того, что должно остаться в сете.
         by_name = {t["name"]: t for t in tracks}
         ordered = [by_name[n] for n in track_order if n in by_name]
-        missing = [t for t in tracks if t["name"] not in set(track_order)]
-        ordered += missing
+        if len(ordered) < 2:
+            # Порядок ни на что не похож (устарел, треки переименованы) —
+            # лучше построить план по всей библиотеке, чем отдать сет из
+            # одного трека.
+            ordered = ordered + [t for t in tracks if t["name"] not in set(track_order)]
     else:
         ordered = order_tracks(tracks, arc_shape, el_map, variant=variant)
     dropped_tracks: list[dict] = []
@@ -1303,8 +1324,8 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
         mid_duck = _mid_duck_for(both_share)
         # Если разойтись по барабанам не вышло, длинное наложение только
         # умножает спотыкание: режем сведение до четырёх тактов.
-        if both_share > 0.35 and not ov.get("bars") and bars > 4.0:
-            bars = 4.0
+        if both_share > 0.35 and not ov.get("bars") and bars > 8.0:
+            bars = 8.0
             length_seconds = bars * 4 * 60.0 / (a["bpm"] or 174.0)
             both_share = _both_drums_share(
                 a, b,
@@ -1320,6 +1341,16 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
             "index": i,
             "from": a["name"], "to": b["name"],
             "technique_id": tid, "technique_name": technique.name,
+            # Значения ползунков приёма, если диджей их правил. Живут в
+            # плане, а не только в интерфейсе: по ним же считается демо и
+            # исполняется живой переход, и без этого «настроенный» приём
+            # в плане звучал бы значениями по умолчанию.
+            "params": {k: v for k, v in (ov.get("params") or {}).items()
+                       if k in {p.key for p in technique.params}},
+            "technique_params": [
+                {"key": p.key, "label": p.label, "default": p.default,
+                 "min": p.min, "max": p.max, "unit": p.unit}
+                for p in technique.params],
             "confidence": round(confidence, 2),
             "risks": risk,
             "bpm_from": a["bpm"], "bpm_to": b["bpm"],

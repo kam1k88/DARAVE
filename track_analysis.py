@@ -149,7 +149,14 @@ def analyze_track(path: str) -> dict:
     try:
         import beatgrid
 
-        structure["drum_map"] = beatgrid.drum_map(y, sr, bpm)
+        # Якорь тактовой сетки — фаза музыки, а не ноль файла, и слой
+        # ударных, если он посчитан: обе карты без них систематически
+        # промахиваются (подробности в beatgrid.bar_offset_for и
+        # beatgrid.drums_signal).
+        offset = beatgrid.bar_offset_for(y, sr, bpm)
+        drums = beatgrid.drums_signal(path, sr)
+        structure["drum_map"] = beatgrid.drum_map(y, sr, bpm, offset=offset,
+                                                  drums=drums)
         structure["chroma_map"] = beatgrid.chroma_map(y, sr, bpm)
         # Карта энергии низа — дропы, брейкдауны, ямы. Раньше её считал
         # ТОЛЬКО фоновый перемер BPM, то есть сразу после сканирования у
@@ -157,7 +164,8 @@ def analyze_track(path: str) -> dict:
         # (cue_points.py) сводились к «первый бит» и «аутро». Считается
         # она по тому же уже загруженному сигналу и стоит около секунды —
         # держать её отдельным проходом незачем.
-        structure["energy_map"] = beatgrid.energy_map(y, sr, bpm)
+        structure["energy_map"] = beatgrid.energy_map(y, sr, bpm,
+                                                      offset=offset, drums=drums)
     except Exception:
         pass
 

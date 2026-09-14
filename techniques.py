@@ -1328,6 +1328,22 @@ def _stem(beat_offset: float, deck: str, stem: str, duration_beats: float,
             "params": {"stem": stem}}
 
 
+def _stem_loop(beat_offset: float, deck: str, stem: str, loop_beats: float,
+               duration_beats: float) -> dict:
+    """Зациклить ОДИН слой: кусок длиной loop_beats повторяется до конца
+    окна duration_beats.
+
+    Нужно ровно за тем, за чем это делают на пульте. Диджей: «нужно было
+    оставить стем на вокал на уходящем и залупать его с 9 до 12 секунды
+    1-2 раза». Голос уходящего допевает свою фразу столько, сколько
+    нужно новому треку, чтобы встать на ноги, и уходит на границе, а не
+    посреди строки. Лупить всю деку нельзя — заикаться начнут и
+    барабаны; лупится именно слой."""
+    return {"beat_offset": beat_offset, "action": "stem_loop", "deck": deck,
+            "kind": "hold", "duration_beats": max(loop_beats, duration_beats),
+            "params": {"stem": stem, "beats": loop_beats}}
+
+
 def _stems_at(beat: float, deck: str, levels: dict, ramp_beats: float = 0.5) -> list[dict]:
     """Выставить сразу несколько слоёв деки. Не мгновенно, а за полдоли:
     мгновенный обрыв слоя щёлкает так же, как мгновенный фейдер."""
@@ -1363,6 +1379,59 @@ def _build_acappella_over(source: str, target: str, bpm: float, p: dict) -> list
         _stem(hold - tail, source, "vocals", tail, 1.0, 0.0, "ease_out"),
         _cut(hold, source, 0.35, 1.0),
         _stem(hold, target, "vocals", ramp, 0.0, 1.0),
+    ]
+    return ev
+
+
+def _build_vocal_handover(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Передача вокала: голос уходящего поверх нового трека, потом обмен
+    голосами.
+
+    Приём продиктован диджеем дословно, после прослушивания двух демо:
+    «оставить стем на вокал на уходящем и продлить его, чтобы он играл с
+    bass, drums, others входящего трека какое-то время, а потом сделать
+    crossfader vocal stem A и vocal stem B».
+
+    Отличие от ST-01 («Вокал уходящего поверх»), с которым его легко
+    спутать, — в двух вещах, и обе принципиальны:
+
+      * голос уходящего ЛУПИТСЯ, а не просто держится: фраза кончается
+        раньше, чем новый трек успевает встать, и без лупа голос обрывался
+        на полуслове;
+      * уходит он не в эхо, а КРОССФЕЙДОМ в голос входящего — то есть
+        двух голосов подряд не случается, они меняются один в другой.
+
+    Инструментал меняется целиком и сразу: барабаны, бас и гармония
+    входящего приходят под чужой голос, и это единственная причина, по
+    которой такой переход вообще держится — ритм не спорит сам с собой.
+    """
+    over = float(p["over_bars"]) * 4       # сколько голос A поёт над B
+    loop_bars = float(p["loop_bars"])
+    swap = float(p["swap_bars"]) * 4       # длина обмена голосами
+    ramp = 4.0
+    ev = [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        _ramp(0, "crossfade", source, ramp, 0.0, 0.5),
+        # У входящего нет только голоса: два голоса разом — единственный
+        # клэш, который слышат вообще все.
+        *_stems_at(0, target, {"vocals": 0.0}),
+        _stem(0, target, "drums", ramp * 2, 0.0, 1.0, "ease_in"),
+        _stem(ramp, target, "bass", ramp * 2, 0.0, 1.0, "ease_in"),
+        _stem(ramp * 2, target, "other", ramp * 2, 0.0, 1.0, "ease_in"),
+    ]
+    # У уходящего гаснет всё, кроме голоса, — постепенно, за фразу.
+    for i, part in enumerate(("drums", "bass", "other")):
+        ev.append(_stem(ramp * (1 + i * 0.5), source, part, ramp * 2, 1.0, 0.0, "ease_out"))
+    ev += [
+        # Голос уходящего держится и лупится, пока не придёт время меняться.
+        _stem(0, source, "vocals", 1, 1.0, 1.0),
+        _stem_loop(0, source, "vocals", loop_bars * 4, over),
+        # Кроссфейдер стоит в середине: обе деки звучат полноценно, а не
+        # по половине. Уводим его только вместе с голосом.
+        _ramp(over, "crossfade", source, swap, 0.5, 1.0),
+        _stem(over, source, "vocals", swap, 1.0, 0.0, "ease_out"),
+        _stem(over, target, "vocals", swap, 0.0, 1.0, "ease_in"),
     ]
     return ev
 
@@ -1462,6 +1531,27 @@ def _build_vocal_echo_out(source: str, target: str, bpm: float, p: dict) -> list
     ]
 
 
+
+_register(Technique(
+    id="ST-15", name="Передача вокала", category="stems", difficulty=3,
+    description=(
+        "Голос уходящего ЛУПИТСЯ и поёт над барабанами, басом и гармонией "
+        "входящего, а потом кроссфейдом меняется на голос входящего. От "
+        "«Акапеллы поверх» отличается двумя вещами: фраза голоса не "
+        "обрывается на полуслове (её зацикливают), и голоса меняются один "
+        "в другой, а не уходят в эхо."),
+    bpm_delta_max=6, key_rule="compatible", energy_direction="any",
+    requires_stems=True, requires_decks=2, needs_vocals=True,
+    params=[
+        TechniqueParam("over_bars", "Голос A над треком B", 8, 2, 32, "тактов"),
+        TechniqueParam("loop_bars", "Длина лупа голоса", 2, 1, 8, "тактов"),
+        TechniqueParam("swap_bars", "Обмен голосами", 4, 1, 16, "тактов"),
+    ],
+    steps=["Завести новый: барабаны, бас, гармония. Его вокал выключен.",
+           "У старого погасить всё, кроме голоса.",
+           "Голос старого зациклить — он поёт над новым треком.",
+           "Кроссфейдом поменять голос старого на голос нового."],
+), _build_vocal_handover)
 
 _register(Technique(
     id="ST-01", name="Акапелла поверх", category="stems", difficulty=4,
@@ -2229,7 +2319,18 @@ def _build_piecewise_intro(source: str, target: str, bpm: float, p: dict) -> lis
     такой: сначала приходит верх ударных (он ни с чем не спорит), потом
     меняется бас (главный носитель тональности), последними — барабаны
     (после них трек уже новый). Каждая замена происходит на границе
-    фразы, поэтому ни одна из них не слышна как событие."""
+    фразы, поэтому ни одна из них не слышна как событие.
+
+    Две правки по замечаниям диджея после прослушивания:
+
+    * бас входящего приходит РАНЬШЕ и разгоняется дольше — половину
+      фразы вместо целой и за фразу вместо четырёх долей. Было слышно
+      как «басса нет, а потом он вдруг есть»;
+    * голос и гармония уходящего убираются ПОСТЕПЕННО и в два приёма:
+      сначала до трети за фразу, потом в ноль. Раньше оба уходили за
+      восемь долей, а при сжатии приёма во времени это превращалось в
+      две доли — то есть в рез, а не в увод.
+    """
     step = float(p["step_bars"]) * 4
     return [
         _discrete(0, "sync", target),
@@ -2240,20 +2341,22 @@ def _build_piecewise_intro(source: str, target: str, bpm: float, p: dict) -> lis
         _stem(0, target, "drums", 4, 0.0, float(p["perc_level"]), "ease_in"),
         _stem_eq(0, target, "drums", "low", step * 2, 1.0, 0.0),
         _stem_eq(0, target, "drums", "mid", step * 2, 1.0, 0.35),
-        # 2) через фразу — бас меняется целиком
-        _stem(step, source, "bass", 4, 1.0, 0.0, "ease_out"),
-        _stem(step, target, "bass", 4, 0.0, 1.0, "ease_in"),
+        # 2) бас входящего — с половины фразы и целой фразой на разгон
+        _stem(step * 0.5, target, "bass", step, 0.0, 1.0, "ease_in"),
+        _stem(step, source, "bass", step * 0.5, 1.0, 0.0, "ease_out"),
         # 3) ещё через фразу — барабаны
         _stem_eq(step * 2, target, "drums", "low", 4, 0.0, 1.0, "ease_in"),
         _stem_eq(step * 2, target, "drums", "mid", 4, 0.35, 1.0, "ease_in"),
         _stem(step * 2, target, "drums", 4, float(p["perc_level"]), 1.0, "ease_in"),
         _stem(step * 2, source, "drums", 4, 1.0, 0.0, "ease_out"),
-        # 4) последней приходит гармония — трек стал новым
-        _stem(step * 3, target, "other", 8, 0.0, 1.0, "ease_in"),
-        _stem(step * 3, target, "vocals", 8, 0.0, 1.0, "ease_in"),
-        _stem(step * 3, source, "other", 8, 1.0, 0.0, "ease_out"),
-        _stem(step * 3, source, "vocals", 8, 1.0, 0.0, "ease_out"),
-        _ramp(step * 3, "crossfade", source, 8, 0.5, 1.0),
+        # 4) гармония и голос уходящего убираются в два шага, а не разом
+        _stem(step * 2, source, "other", step, 1.0, 0.35, "ease_out"),
+        _stem(step * 2, source, "vocals", step, 1.0, 0.45, "ease_out"),
+        _stem(step * 3, target, "other", step, 0.0, 1.0, "ease_in"),
+        _stem(step * 3, target, "vocals", step, 0.0, 1.0, "ease_in"),
+        _stem(step * 3, source, "other", step, 0.35, 0.0, "ease_out"),
+        _stem(step * 3, source, "vocals", step, 0.45, 0.0, "ease_out"),
+        _ramp(step * 3, "crossfade", source, step, 0.5, 1.0),
     ]
 
 

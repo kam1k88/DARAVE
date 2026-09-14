@@ -102,10 +102,10 @@ def _ordinal(n: int, case: str = "nom") -> str:
 
 
 def _bars_word(n: int) -> str:
-    """«1 такт», «4 такта», «16 тактов»."""
-    if 11 <= n % 100 <= 14:
-        return "тактов"
-    return {1: "такт", 2: "такта", 3: "такта", 4: "такта"}.get(n % 10, "тактов")
+    """Единица длины секции. По-английски — как и названия самих секций:
+    в подписи «groove 2 · 14 тактов» половина слов была не на том языке,
+    на котором диджей эти секции называет."""
+    return "bar" if int(n) == 1 else "bars"
 
 
 class PhraseGrid:
@@ -377,18 +377,23 @@ def cues_for_track(track: dict, bpm: float | None = None,
 # треков из 115, остальные показывали брейкдаун от нулевой секунды.
 SECTION_PRIORITY = ("drop", "build", "intro", "outro", "breakdown", "groove")
 
-# Названия — по общепринятой схеме танцевальной аранжировки
-# (Intro - Verse - Build Up - Drop - Breakdown - Verse 2 - Build Up 2 -
-# Drop 2 - Outro). Ключ `groove` остался прежним: на него завязаны
-# таблицы переходов в style.py, а вот подпись честнее назвать куплетом —
-# «грув» ничего не говорит о месте в аранжировке.
+# Названия секций — ПО-АНГЛИЙСКИ, и это решение диджея. Причина не в
+# моде на англицизмы: русские кальки расходятся с тем, как эти секции
+# называют в самой музыке, и «куплет» — главный пример. Куплет это термин
+# песенных жанров; в электронной музыке тело трека называется groove.
+#
+# Отдельной секции verse у нас НЕТ, и тоже по решению диджея: «в моей
+# библиотеке вокал — почти всегда зацикленный сэмпл, а не полноценный
+# куплет с разным текстом, поэтому термин verse структурно неверен».
+# Вокал — это ФЛАГ на секции (`vocal`), а не вид секции: groove с вокалом
+# остаётся groove, вокальный дроп остаётся drop.
 SECTION_NAMES = {
-    "intro": "интро",
-    "build": "билд",
-    "drop": "дроп",
-    "breakdown": "брейкдаун",
-    "groove": "куплет",
-    "outro": "аутро",
+    "intro": "intro",
+    "build": "build",
+    "drop": "drop",
+    "breakdown": "breakdown",
+    "groove": "groove",
+    "outro": "outro",
 }
 
 # Типичная длина секции в тактах — для подсказки и проверки разбора.
@@ -400,6 +405,11 @@ SECTION_BARS = {
     "breakdown": (8, 16),
     "outro": (8, 16),
 }
+
+# Какую долю секции должен занимать голос, чтобы секция считалась
+# вокальной. Вокал на четыре такта из тридцати двух — украшение, а не то,
+# с чем столкнётся второй вокал на сведении.
+VOCAL_SECTION_COVER = 0.33
 
 # Секции, которые в треке одни: их не нумеруем.
 SECTION_UNIQUE = ("intro", "outro")
@@ -498,6 +508,36 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
     for d in drops:
         paint("build", d - grid.phrase, d)
 
+    # 6. Вокал — не секция, а ПРИЗНАК секции.
+    #    Раньше здесь рисовался verse, и это было ошибкой сразу в двух
+    #    местах: во-первых, вокальный сэмпл в лупе — не куплет, и секцию
+    #    он не образует; во-вторых, детектор ловил утечку баса в чужой
+    #    слой и объявлял вокалом её. Теперь карта вокала только помечает
+    #    уже готовые секции флагом `vocal`, а структуру не трогает.
+    vmap = structure.get("vocal_map")
+    if vmap is None:
+        try:
+            import stems as _stems
+
+            vmap = _stems.vocal_map(track.get("path") or "")
+        except Exception:
+            vmap = None
+    vocal_spans = []
+    for span in (vmap or ()):
+        try:
+            a, b = float(span[0]), float(span[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if b > a:
+            vocal_spans.append((a, b))
+
+    def vocal_cover(t0: float, t1: float) -> float:
+        """Какая доля секции покрыта вокалом."""
+        if t1 <= t0 or not vocal_spans:
+            return 0.0
+        hit = sum(max(0.0, min(t1, b) - max(t0, a)) for a, b in vocal_spans)
+        return hit / (t1 - t0)
+
     # Склейка соседних тактов с одной ролью.
     out: list[dict] = []
     levels, level_bar, level_off = _levels(track)
@@ -528,9 +568,17 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
                 if seg:
                     lvl = round(sum(seg) / len(seg), 3)
             role = SECTION_ROLE.get(kind, {})
+            # Секция считается вокальной, если голос занимает заметную её
+            # часть. Треть — не круглое число для красоты: вокал, звучащий
+            # четыре такта из тридцати двух, это украшение, а не то, с чем
+            # столкнётся второй вокал на сведении.
+            cover = vocal_cover(t0, min(duration, t1))
+            is_vocal = cover >= VOCAL_SECTION_COVER
             out.append({
                 "kind": kind,
                 "name": SECTION_NAMES.get(kind, kind),
+                "vocal": is_vocal,
+                "vocal_cover": round(cover, 2),
                 "start_seconds": round(t0, 2),
                 "end_seconds": round(min(duration, t1), 2),
                 "bars": bars,
@@ -539,8 +587,9 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
                 "level": lvl,
                 "can_enter": bool(role.get("enter")),
                 "can_exit": bool(role.get("exit")),
-                "label": f"{SECTION_NAMES.get(kind, kind)} · "
-                         f"{bars} {_bars_word(bars)} · {_fmt(t0)}",
+                "label": (f"{SECTION_NAMES.get(kind, kind)}"
+                          f"{' + vocal' if is_vocal else ''} · "
+                          f"{bars} {_bars_word(bars)} · {_fmt(t0)}"),
             })
             start = k
 
@@ -565,9 +614,15 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
         merged.append(sec)
     out = merged
 
-    # Нумерация повторяющихся секций: «дроп 2», «куплет 2», «билд 2».
-    # Без неё список выглядел как «дроп, брейкдаун, дроп» и по нему
-    # нельзя было понять, о каком именно дропе речь.
+    # Нумерация повторяющихся секций: «drop 2», «groove 2», «build 2».
+    # Без неё список выглядел как «drop, breakdown, drop» и по нему нельзя
+    # было понять, о каком именно дропе речь. Второй дроп в драм-н-бейсе
+    # обычно и сильнее первого, и уходить лучше с него — значит их надо
+    # различать не только глазами, но и в коде (поле `index`).
+    #
+    # Вокал дописывается к подписи, а не к названию: `name` — это вид
+    # секции, по нему собираются метки стыка (groove→drop), и «groove +
+    # vocal» сломало бы их. Флаг живёт отдельным полем `vocal`.
     seen: dict[str, int] = {}
     total: dict[str, int] = {}
     for sec in out:
@@ -580,7 +635,8 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
             name = f"{name} {seen[kind]}"
             sec["index"] = seen[kind]
         sec["name"] = name
-        sec["label"] = (f"{name} · {sec['bars']} {_bars_word(sec['bars'])} · "
+        sec["label"] = (f"{name}{' + vocal' if sec.get('vocal') else ''} · "
+                        f"{sec['bars']} {_bars_word(sec['bars'])} · "
                         f"{_fmt(sec['start_seconds'])}")
 
     return {

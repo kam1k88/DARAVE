@@ -41,6 +41,9 @@ def _techniques_context() -> str:
 
 
 def _system_prompt() -> str:
+    import music_theory
+
+    theory = music_theory.for_agent()
     controls = mixxx_controls.describe_for_agent()
     catalog_covered = full_catalog.stats()["covered"]
     catalog_families = full_catalog.describe_families()
@@ -105,6 +108,12 @@ find_mixxx_control с описанием («параметр эхо», «beatjum
 Если непонятно, какие деки использовать (не видно двух загруженных треков, \
 или не ясно откуда-куда переходим) — не вызывай инструмент, а уточни у \
 диджея коротким вопросом.
+
+Музыкальная грамота, на которую опирайся, когда советуешь МЕСТО перехода,
+а не только приём. Она же зашита в планировщик, так что твои советы и план
+должны говорить одно и то же:
+
+{theory}
 
 Отвечай кратко (1-3 предложения) — это чат во время живого сета, а не эссе.
 """

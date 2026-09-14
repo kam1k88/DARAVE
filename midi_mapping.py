@@ -230,8 +230,34 @@ def resolve_ramp_tick(action: str, deck: str, value_0_1: float,
         return stem_volume_message(deck, stem, value_0_1)
     if action not in CC_NUMBER:
         raise ValueError(f"Unknown ramp action: {action}")
+    if action == "crossfade":
+        value_0_1 = crossfader_raw(deck, value_0_1)
     channel = _channel_for(action, deck)
     return cc(channel, CC_NUMBER[action], round(value_0_1 * 127))
+
+
+# Деки, сидящие на ПРАВОЙ стороне кроссфейдера. В Mixxx по умолчанию
+# именно так: 1 и 3 — слева, 2 и 4 — справа (см. deck_startup_messages,
+# где мы это ещё и проставляем явно, чтобы не зависеть от настроек).
+RIGHT_SIDE_DECKS = {"B", "D"}
+
+
+def crossfader_raw(source_deck: str, value_0_1: float) -> float:
+    """«Сколько уходящей деки осталось» -> положение кроссфейдера Mixxx.
+
+    Все 75 мест в techniques.py пишут кроссфейд как `("crossfade", source)`
+    со смыслом: 0 — уходящий слышен полностью, 1 — ушёл совсем. У Mixxx
+    же контрол абсолютный: 0 — влево, 1 — вправо. Пока живьём исполнялся
+    только переход A->B, разницы не было видно — 0 и правда означало
+    «полностью A».
+
+    Автопилот играет сет подряд, деки чередуются, и каждый ВТОРОЙ переход
+    идёт B->A. Без этого разворота такой переход отработал бы наоборот:
+    фейдер уезжал бы к уходящей деке, а входящую глушил — то есть сведение
+    звучало бы задом наперёд ровно в половине случаев.
+    """
+    v = max(0.0, min(1.0, float(value_0_1)))
+    return 1.0 - v if (source_deck or "A").upper() in RIGHT_SIDE_DECKS else v
 
 
 def resolve_master_discrete(action: str) -> list[int]:
@@ -357,6 +383,12 @@ def deck_startup_messages(decks: int = 4, quantize: bool = True,
     out: list[list[int]] = []
     for n in range(1, decks + 1):
         g = f"[Channel{n}]"
+        # Сторона кроссфейдера. Техники считают, что уходящая дека — это
+        # «своя» сторона фейдера (см. crossfader_raw). Если у диджея дека
+        # стоит по центру или на чужой стороне, сведение звучит наоборот,
+        # поэтому не полагаемся на настройки, а проставляем сами:
+        # нечётные деки слева, чётные справа — как и по умолчанию в Mixxx.
+        out.append(sysex_set(g, "orientation", 0 if n % 2 else 2))
         if quantize:
             out.append(sysex_set(g, "quantize", 1))
         if slip:

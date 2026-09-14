@@ -30,6 +30,13 @@ FastAPI backend — облачный сервис DARAVE.
                                             по всей/части загруженной библиотеки
   POST /api/rooms/{session_id}/strategy/execute — исполнить ОДИН переход из
                                             последнего построенного плана прямо сейчас
+  POST /api/rooms/{session_id}/autopilot/start  — играть СЕТ в самом Mixxx:
+                                            DARAVE сам грузит треки на деки,
+                                            ставит иглу в нужную секунду, ждёт
+                                            момент по телеметрии и сводит
+                                            (mode="clip" — один стык с разбегом)
+  POST /api/rooms/{session_id}/autopilot/stop   — остановить автопилот
+  GET  /api/rooms/{session_id}/autopilot        — что играет и сколько до перехода
   GET  /api/techniques              — библиотека техник сведения (techniques.py)
 
 Запуск:
@@ -544,16 +551,9 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     seam_bars = body.get("bars")
     mix_profile = body.get("mix_profile") or None
     vocal_loop = body.get("vocal_loop")
-    # «Если на уходящем вокал — обязательно лупать». Решение принимаем
-    # здесь, а не в интерфейсе: он не знает, посчитаны ли стемы.
-    if vocal_loop is None:
-        try:
-            import style as _style_v
-
-            if _style_v.has_vocals(track_a) and _style_v.has_stems(track_a):
-                vocal_loop = 8.0
-        except Exception:
-            vocal_loop = None
+    extra_events = body.get("extra_events") or None
+    # Луп вокала уходящего включается ЯВНО (кнопкой или приёмом), а не
+    # сам собой: автоматика здесь один раз уже сломала все демо разом.
     if source_at is None or target_at is None:
         try:
             cue = mix_strategist.technique_cue_hints(technique, track_a, track_b)
@@ -580,6 +580,7 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
             bars=(float(seam_bars) if seam_bars else None),
             mix_profile=mix_profile,
             vocal_loop=(float(vocal_loop) if vocal_loop else None),
+            extra_events=extra_events,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=f"Файл трека не найден на диске backend'а: {exc}") from exc
@@ -599,8 +600,14 @@ async def get_technique_demo(session_id: str, filename: str) -> FileResponse:
     # session_id участвует только в маршруте (симметрично остальным /rooms/{id}/...
     # эндпоинтам) — сами demo-файлы содержат session_id в имени, отдельная
     # директория на комнату не нужна (secrets.token_hex делает имя уникальным).
-    path = DEMOS_DIR / filename
-    if ".." in filename or "/" in filename or not path.is_file():
+    # Отложенные переходы держат своё демо в demos/keep — там его не
+    # трогает ни чистка отказов, ни уборка по расписанию. Поэтому один
+    # уровень вложенности разрешён, а выход наверх — по-прежнему нет.
+    parts = [x for x in filename.replace("\\", "/").split("/") if x]
+    if ".." in parts or len(parts) > 2 or (len(parts) == 2 and parts[0] != "keep"):
+        raise HTTPException(status_code=404, detail="Демо-файл не найден")
+    path = DEMOS_DIR.joinpath(*parts)
+    if not path.is_file():
         raise HTTPException(status_code=404, detail="Демо-файл не найден")
     # Демо теперь mp3; отдаём тип по расширению, чтобы старые wav из
     # прошлых прогонов продолжали открываться.
@@ -691,6 +698,40 @@ async def export_set(session_id: str, body: dict | None = None) -> JSONResponse:
         "skipped": result["skipped"],
         "how_to": "В Mixxx: Медиатека -> Импорт плейлиста -> выбрать этот .m3u8",
     })
+
+
+@app.post("/api/rooms/{session_id}/strategy/autodj")
+async def export_autodj(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Кладёт порядок сета в очередь Auto DJ самого Mixxx.
+
+    Единственное место в Mixxx, где есть последовательное воспроизведение.
+    Плейлист .m3u8 порядок ИГРАТЬ не заставляет — он только список путей;
+    ни точки, ни приёма в него положить нельзя, потому что таких полей
+    нет в модели плейлиста Mixxx (см. mixxx_autodj.py)."""
+    import mixxx_autodj
+
+    room = sessions.get_or_create(session_id)
+    if room.last_strategy is None:
+        raise HTTPException(status_code=400, detail="Сначала постройте план (кнопка «Построить план»).")
+    body = body or {}
+    if not body.get("dry_run") and _mixxx_running():
+        raise HTTPException(status_code=409,
+                            detail="Mixxx запущен — он перезапишет библиотеку при выходе. Закройте его.")
+    by_name = {t.get("name"): t.get("path")
+               for t in room.library_tracks if t.get("name")}
+    paths = []
+    for tr in (room.last_strategy.get("tracks") or []):
+        p = tr.get("path") or by_name.get(tr.get("name"))
+        if p:
+            paths.append(p)
+    if not paths:
+        raise HTTPException(status_code=400, detail="в плане нет треков с путями")
+    out = mixxx_autodj.export_autodj(paths, dry_run=bool(body.get("dry_run")),
+                                     replace=body.get("replace", True),
+                                     log=logger.info)
+    if not out.get("ok"):
+        raise HTTPException(status_code=400, detail=out.get("error") or "не вышло")
+    return JSONResponse(out)
 
 
 @app.post("/api/rooms/{session_id}/strategy/render")
@@ -801,6 +842,13 @@ async def demo_transition(session_id: str, index: int, body: dict | None = None)
              **{k: v for k, v in (body.get("param_overrides") or {}).items()}},
             float(body.get("max_seconds") or 45.0), 44100,
             from_at, to_at, master,
+            True,
+            # Длина перехода — из плана: на карточке написано «16 тактов»,
+            # и звучать должно ровно столько.
+            float(tr.get("bars") or 0) or None,
+            body.get("mix_profile") or None,
+            None,
+            body.get("extra_events") or None,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=f"Файл трека не найден: {exc}") from exc
@@ -863,7 +911,10 @@ async def render_full(session_id: str, body: dict | None = None) -> JSONResponse
                 float(body.get("max_minutes") or 150.0),
                 body.get("master_bpm"),
                 _progress,
-                str(body.get("format") or "mp3"),
+                # Без потерь по умолчанию: сет забирают, чтобы слушать на
+                # другой системе и резать, а mp3 для этого уже
+                # проигранный этап качества.
+                str(body.get("format") or "flac"),
             )
         except Exception as exc:
             logger.exception("не смог собрать полный сет")
@@ -896,7 +947,7 @@ async def get_set_file(session_id: str, filename: str) -> FileResponse:
     if ".." in filename or "/" in filename or not path.is_file():
         raise HTTPException(status_code=404, detail="Файл сета не найден")
     media = {"m3u8": "audio/x-mpegurl", "wav": "audio/wav", "mp3": "audio/mpeg",
-             "txt": "text/plain; charset=utf-8"}
+             "flac": "audio/flac", "txt": "text/plain; charset=utf-8"}
     return FileResponse(path, media_type=media.get(filename.rsplit(".", 1)[-1], "application/octet-stream"))
 
 
@@ -1222,6 +1273,73 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
     return JSONResponse({"ok": True, "started": True})
 
 
+@app.post("/api/rooms/{session_id}/library/metadata")
+async def library_metadata(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Дописать библиотеке стиль из открытых каталогов.
+
+    Отдельной кнопкой, а не внутри сканирования: MusicBrainz разрешает
+    один запрос в секунду, и 70 треков — это минута с лишним. Внутри
+    скана это выглядело бы как «скан стал вдвое медленнее без причины».
+
+    Токен Discogs — бесплатный (discogs.com/settings/developers) и нужен
+    только ради СТИЛЕЙ: именно там написано «Neurofunk», а не
+    «Electronic». Без него работает один MusicBrainz, и ответ честно
+    говорит, чего не спрашивали."""
+    import metadata as _metadata
+
+    room = sessions.get_or_create(session_id)
+    tracks = room.library_tracks or []
+    if not tracks:
+        raise HTTPException(status_code=400, detail="Библиотека пуста — сначала отсканируйте папку.")
+    body = body or {}
+    token = _metadata.resolve_discogs_token(body.get("discogs_token"))
+    limit = int(body.get("limit") or 0)
+    subset = tracks[:limit] if limit > 0 else tracks
+    report = await asyncio.to_thread(
+        _metadata.enrich_library, subset, token,
+        bool(body.get("only_missing", True)), lambda *_a, **_k: None)
+    # Поджанр из каталога дописываем только туда, где своего не было:
+    # тег в файле и разбор имени — источники диджея, каталог лишь
+    # заполняет пустоты.
+    filled = 0
+    for t in subset:
+        sub = ((t.get("meta") or {}).get("subgenre"))
+        if not sub:
+            continue
+        tags = dict(t.get("tags") or {})
+        g = dict(tags.get("genre") or {})
+        if not g.get("subgenre"):
+            g["subgenre"] = sub
+            g["subgenre_source"] = "discogs"
+            tags["genre"] = g
+            t["tags"] = tags
+            filled += 1
+    logger.info("каталоги: проверено %d, найдено %d, поджанров дописано %d",
+                report.get("checked", 0), report.get("found", 0), filled)
+    return JSONResponse({"ok": True, "subgenres_filled": filled,
+                         "discogs": bool(token), **report})
+
+
+@app.post("/api/rooms/{session_id}/library/catalog-search")
+async def library_catalog_search(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Поиск по MusicBrainz и Discogs — строка поиска в библиотеке.
+
+    Каталоги отдают СВЕДЕНИЯ о треках, но не файлы, и искать по темпу и
+    тональности в них нельзя: там этого просто не хранят. Поэтому ответ
+    несёт `note` с этой оговоркой, а не делает вид, что нашёл всё."""
+    import metadata as _metadata
+
+    body = body or {}
+    query = str(body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Пустой запрос.")
+    token = _metadata.resolve_discogs_token(body.get("discogs_token"))
+    res = await asyncio.to_thread(
+        _metadata.search_catalog, query, str(body.get("kind") or "release"),
+        int(body.get("limit") or 10), token)
+    return JSONResponse({"ok": True, **res})
+
+
 @app.get("/api/rooms/{session_id}/library/scan/status")
 async def library_scan_status(session_id: str) -> JSONResponse:
     status = _scan_status.get(session_id, {"running": False, "tail": [], "ok": None, "returncode": None})
@@ -1491,9 +1609,85 @@ async def audition_technique(session_id: str, body: dict) -> JSONResponse:
     b = by_path.get(seam["b_path"])
     if a is None or b is None:
         raise HTTPException(status_code=400, detail="трек шва не найден в библиотеке комнаты")
-    out = audition.swap_technique(seam, a, b, body.get("technique_id") or None)
+    out = audition.swap_technique(seam, a, b, body.get("technique_id") or None,
+                                  session_id=session_id)
     return JSONResponse({"ok": True, "seam": out,
                          "techniques": audition.techniques_for(a, b, seam.get("pair_label"))})
+
+
+@app.post("/api/rooms/{session_id}/audition/lucky")
+async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
+    """«Повезёт»: перебрать ВСЕ стыковки этой пары на все подходящие
+    приёмы и отдать лучшее. Полсотни-сотня комбинаций на пару."""
+    import audition
+
+    seam = body.get("seam") or {}
+    tracks = _room_tracks(session_id)
+    # seen — комбинации, которые диджей на этой паре уже видел. Без них
+    # перебор детерминированный: лучшая комбинация одна, и кнопка со
+    # второго нажатия ничего не меняла.
+    items = audition.lucky(session_id, tracks, seam.get("a_path"),
+                           seam.get("b_path"), limit=int(body.get("limit") or 1),
+                           exclude=list(body.get("seen") or ()))
+    if not items:
+        raise HTTPException(status_code=404, detail="для этой пары нет содержательных стыковок")
+    return JSONResponse({"ok": True, "seam": items[0], "tried": len(items),
+                         "combo": audition.combo_key(items[0])})
+
+
+@app.post("/api/rooms/{session_id}/audition/swap-b")
+async def audition_swap_b(session_id: str, body: dict) -> JSONResponse:
+    """Заменить входящий на близкий по темпу, тональности и жанру."""
+    import audition
+
+    seam = body.get("seam") or {}
+    tracks = _room_tracks(session_id)
+    # exclude — то, что уже отобрано в пул и что диджей на этой паре уже
+    # отверг. Иначе кнопка подставляет трек, который в сете уже стоит.
+    cand = audition.nearest_b(tracks, seam.get("a_path"), seam.get("b_path"),
+                              limit=1, exclude=list(body.get("exclude") or ()))
+    if not cand:
+        raise HTTPException(status_code=404, detail="не нашёл близкого трека вне пула")
+    items = audition.lucky(session_id, tracks, seam.get("a_path"),
+                           cand[0].get("path"), limit=1)
+    if not items:
+        raise HTTPException(status_code=404, detail="с этим треком не складывается ни одной стыковки")
+    return JSONResponse({"ok": True, "seam": items[0]})
+
+
+@app.post("/api/rooms/{session_id}/audition/other-pair")
+async def audition_other_pair(session_id: str, body: dict) -> JSONResponse:
+    """Другая пара целиком: два трека из библиотеки и лучший их стык."""
+    import audition
+
+    seam = body.get("seam") or {}
+    tracks = _room_tracks(session_id)
+    items = audition.other_pair(
+        session_id, tracks,
+        exclude=list(body.get("exclude") or ()),
+        avoid=[p for p in (seam.get("a_path"), seam.get("b_path")) if p],
+        limit=1)
+    if not items:
+        raise HTTPException(status_code=404,
+                            detail="в библиотеке не осталось пар вне пула")
+    return JSONResponse({"ok": True, "seam": items[0],
+                         "combo": audition.combo_key(items[0])})
+
+
+@app.get("/api/rooms/{session_id}/track-sections")
+async def track_sections(session_id: str, path: str) -> JSONResponse:
+    """Секции трека — чтобы точку входа можно было переставить не на
+    «плюс четыре такта», а на «второй куплет»."""
+    import cue_points
+
+    by_path = {t.get("path"): t for t in _room_tracks(session_id)}
+    tr = by_path.get(path)
+    if tr is None:
+        raise HTTPException(status_code=404, detail="трек не найден в библиотеке комнаты")
+    data = cue_points.sections_for_track(tr)
+    return JSONResponse({"sections": data.get("sections", []),
+                         "duration_seconds": tr.get("duration_seconds"),
+                         "anchored": data.get("anchored")})
 
 
 @app.get("/api/rooms/{session_id}/audition/techniques")
@@ -1543,6 +1737,120 @@ async def delete_technique_preset(session_id: str, technique_id: str, name: str)
     return JSONResponse(presets.delete(session_id, technique_id, name))
 
 
+# ------------------------------------------------- библиотека переходов
+
+@app.post("/api/rooms/{session_id}/transitions")
+async def save_transition(session_id: str, body: dict) -> JSONResponse:
+    """Отложить понравившийся переход: {seam, rating, note, demo_file}.
+
+    Не то же самое, что «в пул»: пул — материал одного сета, а это
+    коллекция на будущее, с оценкой и словами о том, чем переход хорош.
+    Из неё же потом растут автотехники — заметка диджея единственный
+    источник знания о том, ПОЧЕМУ переход сработал."""
+    import transitions
+
+    seam = body.get("seam") or {}
+    if not seam.get("a_path") or not seam.get("b_path"):
+        raise HTTPException(status_code=400, detail="в шве нужны a_path и b_path")
+    rating = body.get("rating")
+    try:
+        rating = max(1, min(5, int(rating))) if rating else None
+    except (TypeError, ValueError):
+        rating = None
+    return JSONResponse(transitions.save(
+        session_id, seam, rating=rating,
+        note=(body.get("note") or None), demo_file=body.get("demo_file"),
+        source=body.get("source") or "audition"))
+
+
+@app.get("/api/rooms/{session_id}/transitions")
+async def list_transitions(session_id: str, min_rating: int = 0) -> JSONResponse:
+    import transitions
+
+    return JSONResponse({"transitions": transitions.listing(session_id, min_rating),
+                         "stats": transitions.stats(session_id)})
+
+
+@app.post("/api/rooms/{session_id}/transitions/{tid}")
+async def update_transition(session_id: str, tid: int, body: dict) -> JSONResponse:
+    """Поменять оценку или заметку у уже отложенного перехода."""
+    import transitions
+
+    rating = body.get("rating")
+    try:
+        rating = max(1, min(5, int(rating))) if rating else None
+    except (TypeError, ValueError):
+        rating = None
+    return JSONResponse(transitions.update(session_id, tid, rating,
+                                           body.get("note")))
+
+
+@app.delete("/api/rooms/{session_id}/transitions/{tid}")
+async def delete_transition(session_id: str, tid: int) -> JSONResponse:
+    import transitions
+
+    return JSONResponse(transitions.remove(session_id, tid))
+
+
+@app.get("/api/rooms/{session_id}/mixxx-library")
+async def mixxx_library_compare(session_id: str) -> JSONResponse:
+    """Что разошлось между библиотекой DARAVE и библиотекой Mixxx.
+
+    Ничего не меняет — только показывает. Добавить файл в медиатеку
+    Mixxx снаружи нельзя, это делает только он сам пересканированием."""
+    import mixxx_library
+
+    return JSONResponse(mixxx_library.compare(_room_tracks(session_id)))
+
+
+# ------------------------------------------------- профиль настроек Mixxx
+
+def _mixxx_running() -> bool:
+    """Запущен ли Mixxx прямо сейчас.
+
+    Нужно ровно перед записью в его файлы: Mixxx держит и mixxx.cfg, и
+    библиотеку в памяти и перезаписывает их при выходе, стирая всё, что
+    туда положили снаружи. Ту же граблю мы уже проходили с метками."""
+    try:
+        import subprocess as _sp
+
+        if os.name == "nt":
+            out = _sp.run(["tasklist", "/FI", "IMAGENAME eq mixxx.exe"],
+                          capture_output=True, text=True, timeout=8).stdout
+            return "mixxx.exe" in out.lower()
+        out = _sp.run(["pgrep", "-x", "mixxx"], capture_output=True, timeout=8)
+        return out.returncode == 0
+    except Exception:
+        return False
+
+
+@app.get("/api/rooms/{session_id}/mixxx-profile")
+async def mixxx_profile_status(session_id: str) -> JSONResponse:
+    import mixxx_profile
+
+    return JSONResponse(mixxx_profile.profile_status(session_id))
+
+
+@app.post("/api/rooms/{session_id}/mixxx-profile")
+async def mixxx_profile_action(session_id: str, body: dict | None = None) -> JSONResponse:
+    """{action: export|apply, dry_run}. Настройки Mixxx принадлежат
+    комнате: снимаются с текущей установки и накладываются на любую
+    другую сборку — см. mixxx_profile.py."""
+    import mixxx_profile
+
+    body = body or {}
+    action = str(body.get("action") or "export")
+    if action == "export":
+        return JSONResponse(mixxx_profile.export_profile(session_id, log=logger.info))
+    if action == "apply":
+        if _mixxx_running():
+            raise HTTPException(status_code=409,
+                                detail="Mixxx запущен — он перезапишет mixxx.cfg при выходе. Закройте его.")
+        return JSONResponse(mixxx_profile.apply_profile(
+            session_id, dry_run=bool(body.get("dry_run")), log=logger.info))
+    raise HTTPException(status_code=400, detail="action: export | apply")
+
+
 @app.get("/api/rooms/{session_id}/audition/pool")
 async def audition_pool(session_id: str) -> JSONResponse:
     import audition
@@ -1552,6 +1860,24 @@ async def audition_pool(session_id: str) -> JSONResponse:
                          "rejected": audition.rejections(session_id),
                          "taste": audition.taste(session_id),
                          "progress": audition.progress(session_id, tracks)})
+
+
+@app.delete("/api/rooms/{session_id}/audition/pool/{seam_id}")
+async def audition_pool_drop(session_id: str, seam_id: int) -> JSONResponse:
+    """Убрать один шов из пула."""
+    import audition
+
+    return JSONResponse(audition.drop(session_id, seam_id))
+
+
+@app.delete("/api/rooms/{session_id}/audition/pool")
+async def audition_pool_clear(session_id: str, what: str = "approved") -> JSONResponse:
+    """Очистить пул: approved | rejected | all."""
+    import audition
+
+    out = audition.clear(session_id, what)
+    out["progress"] = audition.progress(session_id, _room_tracks(session_id))
+    return JSONResponse(out)
 
 
 @app.post("/api/rooms/{session_id}/audition/build")
@@ -1613,7 +1939,24 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
         include_subgenres=body.get("include_subgenres"),
     )
     strategy["genre_breakdown"] = mix_strategist.genre_breakdown(room.library_tracks)
+    # Как весь план ведёт фейдеры. Один ключ на весь сет, и он ОБЯЗАН
+    # быть: без него превью и полный сет собирались по кроссфейду приёма,
+    # а в Clipping диджей вёл два независимых фейдера — то есть половины
+    # программы сводили по-разному. Правка конкретного перехода этот
+    # ключ перебивает (см. set_export.set_mix_profile).
+    #
+    # Умолчание — ручное ведение со значениями, которые диджей нашёл сам
+    # и описал как «чистый фейдер при любой технике». Режим «по приёму»
+    # остаётся, но выбирается явно.
+    import mix_profile as _mix_profile
+
+    strategy["mix_profile"] = (body.get("mix_profile")
+                               or {"entry": "manual", **_mix_profile.DEFAULTS})
     room.last_strategy = strategy
+    # План — документ, а не результат вычисления: в нём живут правки
+    # переходов. Сохраняем, чтобы он пережил и перезапуск backend'а, и
+    # закрытие Mixxx ради очереди Auto DJ.
+    persistence.save_strategy(session_id, strategy)
 
     # Пишем в лог, ЧТО реально получилось с энергией: без этого «EL всё ещё
     # 3-4» невозможно отличить от «план на экране старый» — снаружи и то, и
@@ -1628,6 +1971,19 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
         dict(sorted(els.items())),
     )
     return JSONResponse(strategy)
+
+
+@app.get("/api/rooms/{session_id}/strategy")
+async def get_strategy(session_id: str) -> JSONResponse:
+    """Последний построенный план сета.
+
+    Нужен фронтенду при открытии: план жил только в памяти вкладки, и
+    перезагрузка страницы (или перезапуск backend'а ради очереди Auto DJ)
+    означала «стройте заново» — вместе со всеми правками переходов."""
+    room = sessions.get_or_create(session_id)
+    if room.last_strategy is None:
+        raise HTTPException(status_code=404, detail="План ещё не построен")
+    return JSONResponse(room.last_strategy)
 
 
 @app.post("/api/rooms/{session_id}/strategy/suggest-length")
@@ -1656,6 +2012,11 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
     logger.info("подбор длительности '%s': начал, треков %d", session_id, len(tracks))
     body = body or {}
     exclude = body.get("exclude")
+    # ВАЖНО: те же аргументы, что и у «Построить план». Раньше сюда не
+    # доходили ни ручной порядок, ни фильтр жанра, ни правки переходов, ни
+    # fit_mode — и подбор перебирал длительности для ДРУГОГО набора
+    # треков. Снаружи это выглядело как «кнопка не работает на моей
+    # сборке сета»: она честно считала, но не то.
     kwargs = dict(
         arc_shape=body.get("arc_shape", "rising"),
         track_order=body.get("track_order"),
@@ -1663,6 +2024,9 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
         variant=int(body.get("variant") or 0),
         overrides=body.get("overrides"),
         exclude=exclude,
+        include_genres=body.get("include_genres"),
+        include_subgenres=body.get("include_subgenres"),
+        fit_mode=body.get("fit_mode") or "compress",
     )
 
     playable = [t for t in tracks
@@ -1738,6 +2102,199 @@ async def execute_strategy_transition(session_id: str, body: dict) -> JSONRespon
     return JSONResponse({"ok": sent, "plan_id": plan["plan_id"]})
 
 
+def _strategy_paths(room, from_index: int = 0) -> list[str]:
+    """Пути треков плана, начиная с трека `from_index`.
+
+    Именно этот список должен лежать в очереди Auto DJ: автопилот
+    наполняет деки ею, а очередь отдаёт треки строго по порядку."""
+    by_name = {t.get("name"): t.get("path")
+               for t in (room.library_tracks or []) if t.get("name")}
+    out: list[str] = []
+    for tr in ((room.last_strategy or {}).get("tracks") or [])[max(0, from_index):]:
+        p = tr.get("path") or by_name.get(tr.get("name"))
+        if p:
+            out.append(p)
+    return out
+
+
+TELEMETRY_WAIT_SECONDS = 90.0
+
+
+async def _wait_for_telemetry(room, timeout: float) -> bool:
+    """Ждём, пока Mixxx снова начнёт рассказывать о деках."""
+    mark = float(getattr(room, "telemetry_at", 0.0) or 0.0)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        now = float(getattr(room, "telemetry_at", 0.0) or 0.0)
+        if now > mark and room.latest_telemetry:
+            return True
+        await asyncio.sleep(0.5)
+    return False
+
+
+async def _ensure_autodj_queue(room, paths: list[str]) -> str | None:
+    """Привести очередь Auto DJ в соответствие с планом — сколько бы это
+    ни стоило, но без единого действия от диджея.
+
+    Очередь живёт в библиотеке Mixxx, а её он держит в памяти и пишет при
+    выходе. Значит переписать очередь можно только при закрытом Mixxx.
+    Раньше здесь стоял отказ «закройте Mixxx», и это складывалось в
+    замкнутый круг: закрыл -> план потерян -> построил заново -> очередь
+    снова не та. Теперь backend закрывает и поднимает Mixxx сам: он и так
+    работает на этой машине, а план переживает перезапуск."""
+    import mixxx_autodj
+    import mixxx_process
+
+    state = mixxx_autodj.queue_matches(paths)
+    if state["ok"]:
+        return None
+
+    logger.info("очередь Auto DJ расходится с планом (в ней %d, нужно %d) — готовлю",
+                state["queued"], state["expected"])
+    was_running = await asyncio.to_thread(mixxx_process.is_running)
+    exe = None
+    if was_running:
+        closed = await asyncio.to_thread(mixxx_process.close, 30.0, logger.info)
+        if not closed.get("ok"):
+            raise HTTPException(status_code=409, detail=closed.get("error") or
+                                "не смог закрыть Mixxx, чтобы переписать очередь")
+        exe = closed.get("path")
+
+    out = await asyncio.to_thread(mixxx_autodj.export_autodj, paths, None, True, False,
+                                  logger.info)
+    if not out.get("ok"):
+        if was_running:
+            await asyncio.to_thread(mixxx_process.start, exe, logger.info)
+        raise HTTPException(status_code=409,
+                            detail=f"не смог подготовить очередь Auto DJ: {out.get('error')}")
+    logger.info("очередь Auto DJ переписана под план: %d треков", out.get("queued"))
+
+    # Обратно Mixxx поднимает _ensure_mixxx_ready: он нужен автопилоту в
+    # любом случае — и когда мы его закрывали ради очереди, и когда диджей
+    # просто не запускал его сам.
+    return exe
+
+
+async def _ensure_mixxx_ready(room, exe: str | None = None) -> None:
+    """Mixxx должен работать и слать телеметрию — иначе играть некому.
+
+    Раньше здесь была дыра: очередь готовилась, а Mixxx поднимался только
+    если мы сами его закрывали. Диджей, нажавший «В Mixxx» при закрытом
+    Mixxx, получал «Auto DJ не положил трек ни на одну деку» — команда
+    уходила в никуда, и виноватой выглядела очередь, хотя дело было в
+    том, что играть попросту нечему."""
+    import mixxx_process
+
+    if not await asyncio.to_thread(mixxx_process.is_running):
+        started = await asyncio.to_thread(mixxx_process.start, exe, logger.info)
+        if not started.get("ok"):
+            raise HTTPException(status_code=409, detail=started.get("error") or
+                                "не смог запустить Mixxx")
+
+    # Процесс есть — это ещё не значит, что он готов принимать команды:
+    # маппинг контроллера поднимается позже, и до этого момента телеметрия
+    # молчит, а автопилот по ней и ориентируется.
+    if room.latest_telemetry and await _wait_for_telemetry(room, 3.0):
+        return
+    if not await _wait_for_telemetry(room, TELEMETRY_WAIT_SECONDS):
+        raise HTTPException(
+            status_code=409,
+            detail=("Mixxx не присылает телеметрию. Проверьте, что маппинг DARAVE "
+                    "включён в Настройках -> Контроллеры, и что companion запущен."))
+
+
+# ---------------------------------------------------------------- автопилот
+#
+# «В Mixxx» — это не выгрузка, а исполнение. Плейлист и очередь Auto DJ
+# отдают Mixxx только ПОРЯДОК треков: ни точки входа, ни приёма в них
+# положить некуда, таких полей в модели плейлиста нет. Поэтому сет,
+# собранный в DARAVE, играет в Mixxx единственным честным способом — его
+# играет DARAVE, руками своего виртуального контроллера. Зато на экране
+# при этом настоящие деки: две волны, движущийся фейдер, живые ручки —
+# то, ради чего это и понадобилось (на слух правку не всегда слышно).
+
+@app.get("/api/rooms/{session_id}/mixxx-settings")
+async def mixxx_settings_check(session_id: str) -> JSONResponse:
+    """Настройки самого Mixxx, от которых зависит, звучит ли живое
+    сведение так же, как посчитанное демо (см. mixxx_settings.py)."""
+    import mixxx_settings
+
+    out = mixxx_settings.check()
+    if not out.get("ok"):
+        raise HTTPException(status_code=404, detail=out.get("error"))
+    return JSONResponse(out)
+
+
+@app.post("/api/rooms/{session_id}/mixxx-settings")
+async def mixxx_settings_apply(session_id: str, body: dict | None = None) -> JSONResponse:
+    import mixxx_settings
+
+    if _mixxx_running():
+        raise HTTPException(status_code=409,
+                            detail="Mixxx запущен — он перезапишет mixxx.cfg при выходе. Закройте его.")
+    out = mixxx_settings.apply(only_must=bool((body or {}).get("must_only")),
+                               log=logger.info)
+    if not out.get("ok"):
+        raise HTTPException(status_code=400, detail=out.get("error") or "не вышло")
+    return JSONResponse(out)
+
+
+@app.post("/api/rooms/{session_id}/autopilot/start")
+async def autopilot_start(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Играть сет в Mixxx подряд, начиная с перехода `index`.
+
+    mode="set" — весь сет до конца; mode="clip" — один переход с разбегом
+    в несколько тактов и коротким хвостом (чтобы посмотреть ОДИН стык,
+    не слушая сет целиком)."""
+    room = sessions.get_or_create(session_id)
+    if room.last_strategy is None:
+        raise HTTPException(status_code=400, detail="Сначала постройте план сета.")
+    body = body or {}
+    index = int(body.get("index") or 0)
+
+    # Очередь Auto DJ — это и есть то, чем автопилот наполняет деки
+    # (см. autodj_loader.py: контрола «загрузи файл по пути» в Mixxx нет).
+    # Значит порядок в ней обязан совпадать с планом начиная с текущего
+    # перехода, иначе на деку приедет чужой трек. Проверяем ДО старта, а
+    # не ловим по длительности на третьем переходе.
+    import mixxx_autodj
+
+    paths = _strategy_paths(room, index)
+    exe = None
+    if paths and not bool(body.get("skip_queue")):
+        exe = await _ensure_autodj_queue(room, paths)
+    await _ensure_mixxx_ready(room, exe)
+
+    ap = room.get_autopilot(logger=logger.info)
+    import autopilot as _ap
+    try:
+        out = await ap.start(room.last_strategy, index=index,
+                             mode=str(body.get("mode") or "set"))
+    except _ap.AutopilotError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    logger.info(f"автопилот запущен (комната '{session_id}'): {out['mode']}, "
+                f"переход №{out['index'] + 1} из {out['total']}")
+    return JSONResponse(out)
+
+
+@app.post("/api/rooms/{session_id}/autopilot/stop")
+async def autopilot_stop(session_id: str) -> JSONResponse:
+    room = sessions.get_or_create(session_id)
+    if room.autopilot is None:
+        return JSONResponse({"type": "autopilot", "running": False, "state": "idle"})
+    return JSONResponse(await room.autopilot.stop())
+
+
+@app.get("/api/rooms/{session_id}/autopilot")
+async def autopilot_status(session_id: str) -> JSONResponse:
+    room = sessions.get_or_create(session_id)
+    if room.autopilot is None:
+        return JSONResponse({"type": "autopilot", "running": False, "state": "idle",
+                             "index": 0, "total": len(
+                                 (room.last_strategy or {}).get("transitions") or [])})
+    return JSONResponse(room.autopilot.status())
+
+
 @app.websocket("/ws/companion/{session_id}")
 async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
@@ -1755,6 +2312,10 @@ async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
 
             elif msg_type == "telemetry":
                 room.latest_telemetry = msg["decks"]
+                # Отметка по МОНОТОННЫМ часам backend'а: автопилот
+                # доигрывает по ней время, прошедшее с последнего тика, и
+                # часы companion'а тут не годятся — они чужие.
+                room.telemetry_at = time.monotonic()
                 # Транслируем сырую телеметрию в чат тоже — фронтенду пригодится
                 # для отрисовки BPM/waveform-позиции, не только агенту.
                 payload = {"type": "telemetry", "decks": msg["decks"]}
@@ -1762,7 +2323,18 @@ async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
                     payload["recording_status"] = msg["recording_status"]
                 await room.broadcast_to_chat(payload)
 
+            elif msg_type in ("load_result", "deck_result"):
+                # Ответы на «положи трек на деку» / «дёрни транспорт» —
+                # их ждёт автопилот, чтобы идти по сету дальше.
+                if room.autopilot is not None:
+                    room.autopilot.on_load_result(msg)
+                if not msg.get("ok"):
+                    logger.info(f"{msg_type}: {msg.get('error')} (комната '{session_id}')")
+                    await room.broadcast_to_chat(msg)
+
             elif msg_type in ("plan_started", "plan_finished", "plan_rejected", "control_done"):
+                if room.autopilot is not None and msg_type != "control_done":
+                    room.autopilot.on_plan_event(msg)
                 # Companion теперь исполняет MixPlan отдельной задачей и
                 # рассказывает, что с ним происходит. Транслируем в чат: без
                 # этого нажатие "Выполнить" во время уже идущего перехода

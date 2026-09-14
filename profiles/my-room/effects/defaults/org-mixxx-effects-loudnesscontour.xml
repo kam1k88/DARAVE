@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Effect>
+ <MetaParameterValue>1</MetaParameterValue>
+ <Id>org.mixxx.effects.loudnesscontour</Id>
+ <BackendType>Built-In</BackendType>
+ <Parameters>
+  <Parameter>
+   <Id>loudness</Id>
+   <Value>-15</Value>
+   <LinkType>LINKED</LinkType>
+   <LinkInversion>0</LinkInversion>
+   <Hidden>0</Hidden>
+  </Parameter>
+  <Parameter>
+   <Id>useGain</Id>
+   <Value>0</Value>
+   <LinkType>NONE</LinkType>
+   <LinkInversion>0</LinkInversion>
+   <Hidden>0</Hidden>
+  </Parameter>
+ </Parameters>
+</Effect>

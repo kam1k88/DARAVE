@@ -41,10 +41,21 @@ class SessionRoom:
     # Библиотека, загруженная track_analysis.py --upload (см. server.py:
     # POST /api/rooms/{id}/library) — список аналитических записей треков.
     library_tracks: list[dict] = field(default_factory=list)
-    # Последний посчитанный mix_strategist.py::plan_strategy() план сета —
-    # кэш для "▶ выполнить переход N" (POST /api/rooms/{id}/strategy/execute),
-    # не персистится (пересчитывается по запросу, дёшево).
+    # Последний посчитанный mix_strategist.py::plan_strategy() план сета.
+    # ПЕРСИСТИТСЯ (persistence.save_strategy): раньше считалось, что его
+    # дёшево пересчитать, но пересчёт не вернёт правки — технику, точки
+    # ухода и входа, ползунки приёмов у конкретных переходов. Любой
+    # перезапуск backend'а выбрасывал час работы, а закрыть Mixxx ради
+    # очереди Auto DJ без этого было нельзя: план исчезал вместе с ним.
     last_strategy: dict | None = None
+    # Когда телеметрия приехала В BACKEND (монотонные часы). received_at
+    # внутри пакета — часы companion'а, и сравнивать их с нашими нельзя:
+    # автопилот доигрывает по этому полю прошедшее с последнего тика
+    # время, а расхождение часов машин дало бы ошибку в секунды.
+    telemetry_at: float = 0.0
+    # Автопилот этой комнаты (autopilot.Autopilot) — создаётся лениво,
+    # чтобы session.py не тянул mix_strategist на импорте.
+    autopilot: object | None = None
 
     async def broadcast_to_chat(self, message: dict) -> None:
         dead = set()
@@ -71,6 +82,33 @@ class SessionRoom:
         await self.companion_ws.send_json({"type": "control", **cmd})
         return True
 
+    async def send_load_to_companion(self, msg: dict) -> bool:
+        """«Положи вот этот трек на деку N» — путь автопилота.
+
+        Отдельный тип сообщения, а не control: загрузка не мгновенная
+        (поиск в медиатеке, фокус окна, ожидание телеметрии) и обязана
+        вернуть ответ — backend без него не знает, тот ли трек нашёлся."""
+        if self.companion_ws is None:
+            return False
+        await self.companion_ws.send_json({"type": "load_track", **msg})
+        return True
+
+    async def send_deck_action_to_companion(self, msg: dict) -> bool:
+        """Транспорт одной деки без плана: play/stop/игла/играть с CUE."""
+        if self.companion_ws is None:
+            return False
+        await self.companion_ws.send_json({"type": "deck_action", **msg})
+        return True
+
+    def get_autopilot(self, logger=None):
+        """Автопилот комнаты. Ленивый импорт: mix_strategist тяжёлый, а
+        комнаты создаются на каждое подключение чата."""
+        if self.autopilot is None:
+            import autopilot as _ap
+
+            self.autopilot = _ap.Autopilot(self, logger=logger)
+        return self.autopilot
+
     async def send_command_to_companion(self, action: str) -> bool:
         if self.companion_ws is None:
             return False
@@ -93,6 +131,7 @@ class SessionManager:
                 agent=agent,
                 last_plan=persistence.load_last_plan(session_id),
                 library_tracks=persistence.load_library(session_id),
+                last_strategy=persistence.load_strategy(session_id),
             )
             self._rooms[session_id] = room
             print(

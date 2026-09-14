@@ -84,6 +84,37 @@ def key_to_camelot(key_name: str) -> str:
     return _CAMELOT_MAJOR[idx] if mode == "major" else _CAMELOT_MINOR[idx]
 
 
+def who_is_it(path: str) -> dict:
+    """Исполнитель и название трека: {'artist', 'title', 'source'}.
+
+    Порядок: ID3-тег -> имя файла. Тег точнее всегда, но в библиотеке
+    диджея он есть далеко не у всех: из 70 записей теги нашлись у 46.
+    Имя файла — честный запасной вариант, и разбирается оно одним местом
+    (`genre.artist_title_from_name`), а не тремя чуть разными."""
+    artist = title = None
+    source = None
+    try:
+        import id3_tags
+
+        t = id3_tags.read_tags(path)
+        artist, title = t.get("artist"), t.get("title")
+        if artist or title:
+            source = "tag"
+    except Exception:                                # noqa: BLE001
+        pass
+    if not (artist and title):
+        try:
+            import genre as _genre
+
+            a, ti = _genre.artist_title_from_name(path)
+            artist = artist or a
+            title = title or ti
+            source = source or ("filename" if (a or ti) else None)
+        except Exception:                            # noqa: BLE001
+            pass
+    return {"artist": artist, "title": title, "source": source}
+
+
 def analyze_track(path: str) -> dict:
     """Возвращает {bpm, key, camelot, energy, brightness, danceability,
     duration_seconds, structure}. Числовые оценки 0..1, кроме bpm (уд/мин) и
@@ -169,9 +200,17 @@ def analyze_track(path: str) -> dict:
     except Exception:
         pass
 
+    who = who_is_it(path)
     return {
         "bpm": round(bpm, 2),
         "genre": classify_track_genre(path, bpm),
+        # Исполнитель и название — отдельными полями, а не «разберём имя
+        # файла, когда понадобится». По ним работает определение поджанра
+        # по артисту, поиск в библиотеке и запрос в MusicBrainz/Discogs;
+        # разбирать имя файла заново в каждом из этих мест значило бы
+        # получать три слегка разных ответа.
+        "artist": who["artist"],
+        "title": who["title"],
         "key": key,
         "camelot": key_to_camelot(key),
         "energy": round(energy, 3),
@@ -181,6 +220,75 @@ def analyze_track(path: str) -> dict:
         "duration_seconds": round(duration, 1),
         "structure": structure,
     }
+
+
+# --- Mood: совместимость с rekordbox, а не замена нашей энергии ---------
+#
+# В rekordbox Mood — это три корзины (HIGH / MID / LOW), в которые трек
+# попадает по темпу, ритму, бочке и плотности микса. Главное в нём не
+# классификация энергии, а то, что ОТ НЕГО ЗАВИСИТ СЛОВАРЬ ФРАЗ: у HIGH
+# доступны Intro/Up/Down/Chorus/Outro, у MID и LOW — Intro/Verse/Chorus/
+# Bridge/Outro. То есть Up и Down нельзя поставить треку, который попал в
+# MID, а Verse — треку из HIGH.
+#
+# Стоит ли переходить на эту модель? Нет, и вот почему по пунктам.
+#
+# 1. ИЗМЕРЯЕТ ОНА ТО ЖЕ САМОЕ. Входы Mood — темп, ритм, бочка, плотность.
+#    Наш `energy` считается по трём независимым признакам ровно об этом
+#    же, но НЕПРЕРЫВНО (0..1), а `EL` — квинтилями по самой библиотеке.
+#    Три корзины вместо пяти квинтилей и непрерывной величины — это
+#    потеря информации, а не приобретение. Для драм-н-бейсовой библиотеки
+#    потеря полная: ВСЕ треки диджея попадут в HIGH, и различать их Mood
+#    перестанет вовсе.
+# 2. СЛОВАРЬ ФРАЗ У НАС УЖЕ ЗАВИСИТ ОТ МАТЕРИАЛА — только не от энергии,
+#    а от жанра и темпа (`style.PHRASE_LADDERS`, `genre.BPM_FAMILIES`).
+#    Это та же идея, применённая к более надёжному признаку: стиль
+#    определяет форму аранжировки прямее, чем громкость.
+# 3. СЛОВАРЬ HIGH — ЭТО ПОЧТИ НАШ СЛОВАРЬ, с точностью до названий:
+#    Up ≈ build, Chorus ≈ drop, Down ≈ breakdown. Разница одна: у
+#    rekordbox нет секции для ТЕЛА трека, а у нас есть groove. Переходить
+#    на модель, которая беднее нашей на одну секцию, смысла нет.
+# 4. А MID и LOW — это песенная схема (Verse/Chorus/Bridge), от которой
+#    диджей отказался сам: «в моей библиотеке вокал — почти всегда
+#    зациклённый сэмпл, а не полноценный куплет».
+#
+# Зачем тогда Mood здесь. Ровно за одним: СОВМЕСТИМОСТЬ. Если трек или
+# набор меток поедет в rekordbox, ярлык нужен, и лучше вывести его из
+# наших измерений, чем считать заново чужой формулой. Поэтому mood — это
+# ПРОИЗВОДНАЯ величина, а не источник истины: наша энергия остаётся.
+
+MOOD_HIGH_ENERGY = 0.62      # выше — плотный танцевальный материал
+MOOD_LOW_ENERGY = 0.32       # ниже — спокойный, эмбиентный
+MOOD_HIGH_BPM = 138.0        # быстрее — почти наверняка HIGH при любой энергии
+
+
+def mood(energy: float | None, bpm: float | None = None) -> str:
+    """Ярлык rekordbox (HIGH/MID/LOW), выведенный из нашей энергии.
+
+    Нужен только для обмена с rekordbox. Внутри DARAVE решения
+    принимаются по `energy` и `EL` — они непрерывные и различают там, где
+    три корзины уже не различают ничего."""
+    e = float(energy) if energy is not None else 0.5
+    b = float(bpm) if bpm else 0.0
+    if e >= MOOD_HIGH_ENERGY or b >= MOOD_HIGH_BPM:
+        return "HIGH"
+    if e <= MOOD_LOW_ENERGY:
+        return "LOW"
+    return "MID"
+
+
+# Как наши секции называются в rekordbox. Односторонняя таблица: наружу
+# переводим, внутрь — нет. Обратный перевод потерял бы groove, которому в
+# словаре HIGH соответствия нет вовсе (ближайшее — Chorus 2, но это уже
+# не перевод, а выдумка).
+REKORDBOX_PHRASE = {
+    "intro": "Intro",
+    "build": "Up",
+    "drop": "Chorus",
+    "breakdown": "Down",
+    "groove": "Chorus 2",     # приблизительно: точного соответствия нет
+    "outro": "Outro",
+}
 
 
 # --- энергетика ---------------------------------------------------------
@@ -474,10 +582,20 @@ def init_db(db_path: str) -> sqlite3.Connection:
             bpm REAL, key TEXT, camelot TEXT, energy REAL, brightness REAL,
             danceability REAL, duration_seconds REAL,
             structure_json TEXT, tags_json TEXT,
+            artist TEXT, title TEXT, meta_json TEXT,
             scanned_at REAL
         )"""
     )
     conn.commit()
+    # Миграция уже существующих баз. Колонки добавляются по одной и молча:
+    # у диджея база живёт с первого дня проекта, пересканировать 70 треков
+    # ради трёх полей — час работы на ровном месте.
+    for col, decl in (("artist", "TEXT"), ("title", "TEXT"), ("meta_json", "TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE tracks ADD COLUMN {col} {decl}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass                       # колонка уже есть
     # Чистим накопленные дубли по регистру ДО прохода: иначе новый скан
     # добавит правильные строки рядом со старыми, а не вместо них.
     try:
@@ -642,18 +760,21 @@ def _upsert_track(conn: sqlite3.Connection, path: Path, info: dict, tags: dict |
         try:
             conn.execute(
                 """INSERT INTO tracks (path, bpm, key, camelot, energy, brightness, danceability,
-                                        duration_seconds, structure_json, tags_json, scanned_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        duration_seconds, structure_json, tags_json,
+                                        artist, title, scanned_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
                        bpm=excluded.bpm, key=excluded.key, camelot=excluded.camelot,
                        energy=excluded.energy, brightness=excluded.brightness,
                        danceability=excluded.danceability, duration_seconds=excluded.duration_seconds,
                        structure_json=excluded.structure_json, tags_json=excluded.tags_json,
+                       artist=excluded.artist, title=excluded.title,
                        scanned_at=excluded.scanned_at""",
                 (
                     canon_track_path(path), info["bpm"], info["key"], info["camelot"], info["energy"],
                     info["brightness"], info["danceability"], info["duration_seconds"],
-                    json.dumps(info["structure"]), json.dumps(tags) if tags else None, time.time(),
+                    json.dumps(info["structure"]), json.dumps(tags) if tags else None,
+                    info.get("artist"), info.get("title"), time.time(),
                 ),
             )
             conn.commit()
@@ -666,6 +787,36 @@ def _upsert_track(conn: sqlite3.Connection, path: Path, info: dict, tags: dict |
                 pass
             time.sleep(2.0 * (attempt + 1))
     raise last if last is not None else sqlite3.OperationalError("не смог записать трек")
+
+
+# Папки и имена, которые производит сам DARAVE. В медиатеке им не место:
+# отрендеренный сет — это не трек, сводить его не с чем и незачем.
+#
+# Диджей нашёл это дважды. Сперва: «в библиотеке есть какие-то треки,
+# которых нет в папке Музыка — my-room_*.mp3». Потом в его библиотеке из
+# 70 записей нашлись четыре таких, и одна из них — полный сет на 117.5
+# BPM, который перекашивал и статистику темпа, и выбор пар.
+OWN_OUTPUT_DIRS = ("sets", "demos", "recordings", "stems", "scan_dbs",
+                   "mixxx-export")
+OWN_OUTPUT_PREFIXES = ("my-room_", "my-room-")
+
+
+def is_own_output(path) -> bool:
+    """Файл, который DARAVE сам и сделал.
+
+    Путь разбираем по ОБОИМ разделителям, а не через Path.parts: бэкенд
+    крутится на Windows, а тесты и часть инструментов — нет, и на Linux
+    «C:\\...\\sets\\x.mp3» превращается в одно длинное имя файла без
+    единой части. Проверка молча переставала работать ровно там, где
+    проверять и надо."""
+    raw = str(path).replace("\\", "/")
+    parts = [x for x in raw.split("/") if x]
+    if not parts:
+        return False
+    name = parts[-1].lower()
+    if any(name.startswith(x) for x in OWN_OUTPUT_PREFIXES):
+        return True
+    return any(x.lower() in OWN_OUTPUT_DIRS for x in parts[:-1])
 
 
 def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]:
@@ -683,6 +834,7 @@ def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]
     files = [
         p for p in Path(root).rglob("*")
         if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+        and not is_own_output(p)
     ]
     results = []
     for i, path in enumerate(files, 1):

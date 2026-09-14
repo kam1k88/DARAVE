@@ -962,6 +962,13 @@ def select_for_duration(tracks: list[dict], ordered: list[dict],
 
 
 # Меньше этого трек не успевает прозвучать как трек, а не как склейка.
+# Сколько трек ОБЯЗАН отыграть. Не «сколько хочется», а нижняя граница
+# осмысленности: диджей сказал прямо — «должен быть проигран хотя бы
+# один stage». Секция танцевального трека это 16-32 такта; 32 такта при
+# 174 BPM — 44 секунды, при 140 BPM — 55. Берём 45 секунд как ту самую
+# одну секцию: короче — и слушатель не успевает понять, что за трек
+# играет, а переход приходит раньше, чем трек себя назвал.
+MIN_STAGE_BARS = 32
 MIN_SLOT_SECONDS = 35.0
 
 
@@ -1056,6 +1063,17 @@ def plan_layout(ordered: list[dict], target_minutes: float | None) -> dict:
     # длиннее самого трека слот быть не может
     longest = max(float(t.get("duration_seconds") or 300.0) for t in ordered)
     slot = min(slot, longest)
+    # ...но и короче одной секции — тоже. Слот меньше секции означает, что
+    # трек уходит раньше, чем успел себя назвать: входящий B поиграет
+    # несколько секунд и его уже уводят. Считаем секцию по САМОМУ
+    # медленному треку набора — у него такт длиннее, и 32 такта дольше.
+    slowest = min((float(t.get("bpm") or 174.0) for t in ordered), default=174.0)
+    one_stage = MIN_STAGE_BARS * 4 * 60.0 / max(60.0, slowest)
+    if slot < one_stage <= longest:
+        warning = ((warning + " ") if warning else "") + (
+            f"Слот {slot:.0f}с короче одной секции ({one_stage:.0f}с) — "
+            f"поднимаю до неё: иначе трек уводят раньше, чем он себя назвал.")
+        slot = one_stage
     return {"slot_seconds": round(slot, 1), "target_minutes": target_minutes,
             "tracks": n, "warning": warning,
             "planned_minutes": round(slot * n / 60.0, 1)}
@@ -1347,6 +1365,11 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
             # в плане звучал бы значениями по умолчанию.
             "params": {k: v for k, v in (ov.get("params") or {}).items()
                        if k in {p.key for p in technique.params}},
+            # Профиль ввода приезжает из отбора (одобренный шов) или из
+            # тонкой настройки перехода. Он живёт в самом переходе,
+            # потому что его читают все три тракта: демо, сборка сета и
+            # живое исполнение.
+            "mix_profile": ov.get("mix_profile") or (ov.get("params") or {}).get("mix_profile"),
             "technique_params": [
                 {"key": p.key, "label": p.label, "default": p.default,
                  "min": p.min, "max": p.max, "unit": p.unit}
@@ -1523,5 +1546,19 @@ def build_transition_plan(strategy: dict, transition_index: int, source_deck: st
     MixPlan (для кнопки "▶" у перехода в UI — см. server.py). param_overrides
     — значения слайдеров параметров техники из вкладки "Техника" (см.
     static/chat.html), если диджей их поправил перед запуском."""
+    import mix_profile
+
     tr = strategy["transitions"][transition_index]
-    return build_plan(tr["technique_id"], plan_id, source_deck, target_deck, tr["bpm_from"], param_overrides)
+    plan = build_plan(tr["technique_id"], plan_id, source_deck, target_deck,
+                      tr["bpm_from"], param_overrides)
+    # Профиль ввода — часть перехода, а не настройка экрана. Пока он
+    # применялся только в офлайн-рендере, живое сведение звучало иначе,
+    # чем демо, которое диджей слушал и одобрял: кроссфейд приёма вместо
+    # двух фейдеров, которые он свёл руками.
+    profile = mix_profile.from_overrides(tr) or mix_profile.from_overrides(
+        {"mix_profile": (param_overrides or {}).get("mix_profile")})
+    if profile:
+        plan["events"] = mix_profile.apply(plan["events"], profile,
+                                           target_deck=target_deck,
+                                           source_deck=source_deck)
+    return plan

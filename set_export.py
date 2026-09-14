@@ -195,6 +195,94 @@ def _equal_power_join(a, b, overlap_n: int):
     return np.concatenate([a[:-overlap_n], tail, b[overlap_n:]])
 
 
+def _trim_trailing_silence(wav_path: str, sr: int,
+                           floor_db: float = -60.0,
+                           keep_seconds: float = 0.35) -> float:
+    """Обрезает тишину в конце готового WAV и возвращает его длину в секундах.
+
+    Зачем вообще. Последний трек дописывается «столько же, сколько играли
+    остальные», и если он кончился раньше отведённого хвоста, в файле
+    остаётся ровная тишина — иногда на минуту. В плеере это выглядит как
+    сет, который завис.
+
+    Как. Файл читается блоками С КОНЦА до первого места громче порога, и
+    дальше он ПРОСТО ОБРЕЗАЕТСЯ: PCM WAV — это заголовок и сплошной кусок
+    данных, поэтому достаточно укоротить файл и поправить два поля длины
+    в заголовке. Переписывать целиком нельзя: часовой сет это полгигабайта,
+    и копия ради выброшенной тишины стоит дороже самой тишины.
+
+    Ошибка здесь не должна ронять готовый сет: файл уже отрендерен, и если
+    что-то пошло не так — возвращаем длину как есть.
+    """
+    import struct
+
+    try:
+        import numpy as _np
+        import soundfile as _sf
+
+        with _sf.SoundFile(wav_path) as f:
+            total = len(f)
+            channels = f.channels
+            if total <= 0:
+                return 0.0
+            thr = 10.0 ** (float(floor_db) / 20.0)
+            block = max(1, int(sr))          # секунда за раз
+            end = total
+            pos = total
+            while pos > 0:
+                start = max(0, pos - block)
+                f.seek(start)
+                buf = f.read(pos - start, dtype="float32", always_2d=True)
+                loud = _np.nonzero(_np.max(_np.abs(buf), axis=1) > thr)[0]
+                if len(loud):
+                    end = start + int(loud[-1]) + 1
+                    break
+                pos = start
+            else:
+                end = 0
+        end = min(total, end + int(max(0.0, keep_seconds) * sr))
+        if end >= total:
+            return round(total / float(sr), 2)
+
+        # --- укорачиваем файл на месте ---
+        with open(wav_path, "r+b") as fh:
+            head = fh.read(12)
+            if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+                return round(total / float(sr), 2)
+            data_off = bits = None
+            while True:
+                hdr = fh.read(8)
+                if len(hdr) < 8:
+                    return round(total / float(sr), 2)
+                cid, csize = struct.unpack("<4sI", hdr)
+                if cid == b"fmt ":
+                    fmt = fh.read(csize)
+                    bits = struct.unpack("<H", fmt[14:16])[0]
+                elif cid == b"data":
+                    data_off = fh.tell()
+                    break
+                else:
+                    fh.seek(csize + (csize & 1), 1)
+            if data_off is None or not bits:
+                return round(total / float(sr), 2)
+            new_bytes = end * channels * (bits // 8)
+            fh.seek(data_off - 4)
+            fh.write(struct.pack("<I", new_bytes))
+            fh.seek(4)
+            fh.write(struct.pack("<I", data_off + new_bytes - 8))
+        os.truncate(wav_path, data_off + new_bytes)
+        return round(end / float(sr), 2)
+    except Exception as exc:                      # noqa: BLE001 — сет уже готов
+        logger.info("не смог обрезать тишину в конце: %s", exc)
+        try:
+            import soundfile as _sf2
+
+            with _sf2.SoundFile(wav_path) as f:
+                return round(len(f) / float(f.samplerate), 2)
+        except Exception:
+            return 0.0
+
+
 def _trim_to_bars(chunk, bar_n: int):
     """Обрезает кусок до целого числа тактов — иначе на каждой склейке
     пульс сдвигается на огрызок такта и сет начинает спотыкаться."""
@@ -228,6 +316,28 @@ def _blend_override(transition: dict) -> dict | None:
     return out or None
 
 
+def set_mix_profile(strategy: dict, transition: dict) -> dict | None:
+    """Профиль ведения фейдеров для ЭТОГО перехода.
+
+    Порядок: правка конкретного перехода -> умолчание плана -> ничего
+    (форму ведёт приём).
+
+    Зачем понадобился плановый уровень. Профиль появлялся только у швов,
+    отобранных в Clipping: там диджей ведёт фейдеры руками, и профиль
+    уезжает вместе со швом. А план, собранный в ControlC, не нёс его
+    вовсе — и превью с полным сетом собирались по кроссфейду приёма.
+    Получалось ровно то, на что диджей и пожаловался: «при сведении
+    используется фейдер для каждого трека, а сведение превью и микса до
+    сих пор использует логику, будто треки сводятся единым
+    кроссфейдером». Две половины программы вели фейдеры по-разному.
+    """
+    own = (transition or {}).get("mix_profile") \
+        or ((transition or {}).get("params") or {}).get("mix_profile")
+    if own:
+        return own
+    return (strategy or {}).get("mix_profile") or None
+
+
 def _point_seconds(point) -> float | None:
     if not isinstance(point, dict):
         return None
@@ -237,6 +347,12 @@ def _point_seconds(point) -> float | None:
     except (TypeError, ValueError):
         return None
     return v if v > 0.5 else None
+
+
+# Сколько тактов хвоста оставлять после сведения в превью. Четыре — это
+# одна фраза: слышно, чем сведение кончилось, и не начинается прослушивание
+# интро входящего трека.
+PREVIEW_TAIL_BARS = 4.0
 
 
 def render_set(strategy: dict, out_path: str, sr: int = 44100,
@@ -272,6 +388,7 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
     master = set_master_bpm(strategy)
     pieces: list = []
     bar_ns: list[int] = []
+    solos: list[float] = []
     rendered = 0
     skipped: list[str] = []
     used_techniques: dict[str, int] = {}
@@ -308,6 +425,9 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
                 max_seconds=min(seconds_between, max(8.0, budget - used)),
                 source_at=_point_seconds(t.get("from_point")),
                 target_at=_point_seconds(t.get("to_point")),
+                # Профиль ввода — тот же, с которым шов слушали и
+                # одобряли. Без него превью сета звучит иначе, чем клип.
+                mix_profile=set_mix_profile(strategy, t),
                 # Тот же мастер-темп, что и у полного сета. Раньше здесь
                 # стоял None (темп ведёт уходящий), а render_full_set
                 # собирал всё под общий мастер — то есть превью и готовый
@@ -340,14 +460,24 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
             chunk = librosa.resample(chunk, orig_sr=chunk_sr, target_sr=sr, axis=0)
 
         bar_n = int(round(float(meta.get("bar_seconds") or 1.4) * sr))
+        # Хвост после сведения обрезаем до нескольких тактов.
+        #
+        # Превью существует, чтобы слушать ШВЫ, а не интро входящих
+        # треков. А хвост куска — это и есть интро: входящий заведён в
+        # своё начало, и там у него 15-20 dB ниже, чем в сведении.
+        # Сшитые подряд, такие хвосты читаются как провалы между
+        # сведениями — диджей на это и пожаловался: «между треками
+        # образуется пустое пространство». Пары тактов хватает, чтобы
+        # услышать, чем сведение кончилось.
+        sync = float(meta.get("sync_time_seconds") or 0.0)
+        bar_sec = float(meta.get("bar_seconds") or 1.4)
+        blend_bars = float(t.get("blend_bars") or t.get("bars") or 8)
+        end_of_blend = sync + blend_bars * bar_sec
+        tail_limit = int(round((end_of_blend + PREVIEW_TAIL_BARS * bar_sec) * sr))
+        chunk = chunk[:max(bar_n * 2, min(len(chunk), tail_limit))]
         chunk = _trim_to_bars(chunk, bar_n)
-        # Превью микса склеивается из одних переходов, и без выравнивания
-        # куски скачут по уровню друг относительно друга ровно так же,
-        # как в полном сете скачут переход и тело.
-        chunk = _ride_to_reference(
-            chunk, sr,
-            ref_rms=_solo_level(chunk, sr, meta.get("sync_time_seconds")) or SET_DECK_RMS)
         pieces.append(chunk)
+        solos.append(_solo_level(chunk, sr, meta.get("sync_time_seconds")) or 0.0)
         bar_ns.append(bar_n)
         used += len(chunk) / sr
         rendered += 1
@@ -357,6 +487,20 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
 
     if not pieces:
         raise ValueError("Ни один переход не удалось отрендерить: " + "; ".join(skipped[:3]))
+
+    # Куски выравниваются по ОБЩЕМУ уровню, а не каждый по своему.
+    #
+    # Раньше каждый кусок подгонялся под свой соло-участок — и это ровно
+    # та же ошибка «двух разных мерок», из-за которой в полном сете
+    # переходы шли на 9 dB громче тел (см. claude/seam-loudness.md).
+    # В превью она читается иначе: куски скачут по уровню друг
+    # относительно друга. Общая мерка — медиана соло-уровней: половина
+    # кусков её и так держит, а выбивающиеся приводятся к ней.
+    import numpy as _np
+
+    live = [x for x in solos if x > 0]
+    common = float(_np.median(live)) if live else SET_DECK_RMS
+    pieces = [_ride_to_reference(p, sr, ref_rms=common) for p in pieces]
 
     mix = pieces[0]
     joins: list[float] = []
@@ -429,9 +573,52 @@ SET_MAKEUP = 2.4
 # разница тела и перехода 0.9 dB. Виновата именно СУММА двух полных дек
 # в приёмах, где кроссфейдер стоит посередине и деки не приглушает.
 SET_DECK_RMS = 0.125
-# Насколько сильно позволено срезать. Больше 9 dB — это уже не выравнивание,
-# а другой микс; лучше оставить как есть и не врать про уровень.
-SET_RIDE_MAX_CUT_DB = 9.0
+# Насколько сильно позволено срезать. Потолок нужен: без него выравнивание
+# превращается в компрессор, и тихий переход (приём разобрал деку на слои и
+# играет один из них) вытянулся бы до уровня соседей, то есть перестал бы
+# быть тихим.
+#
+# Было 9 dB — и этого не хватало. Замер на настоящем плане диджея: на
+# стыке требовалось срезать 11.9 dB, кусок упирался в потолок и оставался
+# на 2.8 dB громче соседей. Сумма двух полных дек — это уже 6 dB, плюс
+# собственная динамика материала; 12 dB покрывает худший случай с запасом.
+SET_RIDE_MAX_CUT_DB = 12.0
+
+
+def _level_p90(m, sr: int) -> float:
+    """«Как громко здесь бывает» — 90-я процентиль скользящего СКЗ.
+
+    ОДНА функция на все измерения уровня в сете, и это главное её
+    свойство. Пока тела мерились средним по треку, а переходы — 90-й
+    процентилью своего соло-участка, две величины назывались «уровнем», а
+    означали разное: у трека с сильной динамикой p90 дропа вдвое выше
+    среднего. Переход честно подгонялся под свою мерку, тело под свою, и
+    на стыке получался скачок, которого никто не закладывал.
+
+    Замер на сете диджея (44 минуты, 20 переходов): области, где работал
+    ограничитель, шли на -6.1 dBFS против -15.3 у остального — **+9.2 dB
+    на каждом переходе**. Ограничитель там работал непрерывно, и это и
+    слышно как «овер дБ»."""
+    import numpy as np
+
+    m = np.asarray(m, dtype="float64")
+    if len(m) < sr // 8:
+        return float(np.sqrt((m ** 2).mean())) if len(m) else 0.0
+    step, win = 128, max(1, int(0.35 * sr))
+    csum = np.concatenate([[0.0], np.cumsum(m ** 2)])
+    grid = np.arange(0, len(m), step)
+    lo = np.maximum(0, grid - win // 2)
+    hi = np.minimum(len(m), grid + win // 2)
+    env = np.sqrt((csum[hi] - csum[lo]) / np.maximum(1, hi - lo))
+    if not len(env):
+        return float(np.sqrt((m ** 2).mean()))
+    return float(np.percentile(env, 90))
+
+
+def _mono_of(y):
+    import numpy as np
+
+    return (y.mean(axis=1) if getattr(y, "ndim", 1) > 1 else y).astype("float64")
 
 
 def _solo_level(y, sr: int, solo_seconds: float | None) -> float:
@@ -466,15 +653,7 @@ def _solo_level(y, sr: int, solo_seconds: float | None) -> float:
     # играющей деки. Замер: соло-участок терял 2.3 dB там, где резать
     # нечего. Девяностая процентиль тех же окон описывает «как громко эта
     # дека бывает» и не срабатывает на собственном ритме трека.
-    step, win = 128, max(1, int(0.35 * sr))
-    csum = np.concatenate([[0.0], np.cumsum(m ** 2)])
-    grid = np.arange(0, len(m), step)
-    lo = np.maximum(0, grid - win // 2)
-    hi = np.minimum(len(m), grid + win // 2)
-    env = np.sqrt((csum[hi] - csum[lo]) / np.maximum(1, hi - lo))
-    if not len(env):
-        return float(np.sqrt((m ** 2).mean()))
-    return float(np.percentile(env, 90))
+    return _level_p90(m, sr)
 
 
 def _ride_to_reference(y, sr: int, ref_rms: float = SET_DECK_RMS,
@@ -501,9 +680,10 @@ def _ride_to_reference(y, sr: int, ref_rms: float = SET_DECK_RMS,
     из них) обязан остаться тихим — это музыка, а не перебор."""
     import numpy as np
 
-    if len(y) < sr // 4 or ref_rms <= 0:
+    ref = np.asarray(ref_rms, dtype="float64")
+    if len(y) < sr // 4 or not ref.size or float(ref.min()) <= 0:
         return y
-    m = (y.mean(axis=1) if y.ndim > 1 else y).astype("float64")
+    m = _mono_of(y)
 
     # Скользящее СКЗ через интеграл квадратов, но считаем его на
     # прореженной сетке: 128 отсчётов — это 2.9 мс, мельче любой атаки.
@@ -516,7 +696,19 @@ def _ride_to_reference(y, sr: int, ref_rms: float = SET_DECK_RMS,
     env = np.sqrt((csum[hi] - csum[lo]) / np.maximum(1, hi - lo))
 
     floor = 10.0 ** (-max_cut_db / 20.0)
-    want = np.clip(ref_rms / np.maximum(env, 1e-9), floor, 1.0)
+    # Цель может быть не числом, а КРИВОЙ: у перехода два соседа, и
+    # уровни у них разные. Уходящее тело кончилось на своём уровне,
+    # входящее начнётся на своём — значит и вести переход надо от первого
+    # ко второму, как диджей ведёт два трима. Одно число на весь кусок
+    # состыковало бы его только с одной стороной.
+    if ref.ndim:
+        # цель задана концами — растягиваем её по сетке в ДЕЦИБЕЛАХ:
+        # линейная интерполяция амплитуд дала бы кривую, которая на
+        # середине идёт не по слуху, а по арифметике
+        ref_db = np.interp(grid, np.linspace(0, len(m) - 1, len(ref)),
+                           20.0 * np.log10(np.maximum(ref, 1e-9)))
+        ref = 10.0 ** (ref_db / 20.0)
+    want = np.clip(ref / np.maximum(env, 1e-9), floor, 1.0)
 
     # Огибающая усиления с атакой и отпусканием, по прореженной сетке.
     dt = step / sr
@@ -535,24 +727,30 @@ def _ride_to_reference(y, sr: int, ref_rms: float = SET_DECK_RMS,
 
 
 def _write_body(fh, path: str, start: float, end: float, rate: float, sr: int,
-                ref_rms: float, fade_n: int) -> float:
+                ref_rms: float, fade_n: int, tail_sec: float = 4.0) -> tuple:
     """Пишет «тело» трека — кусок, который просто играет между сведениями.
 
-    Возвращает сколько секунд легло в файл. Растягиваем тем же rate, что и
-    в переходе, иначе на стыке тела и сведения менялся бы темп."""
+    Возвращает (сколько секунд легло, уровень последних tail_sec секунд).
+    Второе число — то, с чем обязан состыковаться следующий переход.
+    Меряется НА ТОМ, ЧТО РЕАЛЬНО УШЛО В ФАЙЛ, после добора и ограничителя:
+    вычислять ожидаемый уровень по формуле значило бы завести вторую
+    правду о громкости рядом с первой, а расходились они ровно на стыке.
+
+    Растягиваем тем же rate, что и в переходе, иначе на стыке тела и
+    сведения менялся бы темп."""
     import numpy as np
 
     import demo_render
 
     dur = end - start
     if dur <= 0.2:
-        return 0.0
+        return 0.0, 0.0
     import librosa
 
     y, _ = librosa.load(path, sr=sr, mono=False, offset=max(0.0, start), duration=dur)
     y = demo_render._to_stereo(y)          # поток сета двухканальный
     if len(y) < sr * 0.05:
-        return 0.0
+        return 0.0, 0.0
     y = demo_render._stretch(y, sr, rate)
     # ТОЛЬКО опорный уровень трека. _normalize_output здесь применять
     # нельзя: он подтягивает КАЖДЫЙ кусок к одному RMS, то есть стирает
@@ -566,7 +764,8 @@ def _write_body(fh, path: str, start: float, end: float, rate: float, sr: int,
         y[:fade_n] *= demo_render._env(np.linspace(0.0, 1.0, fade_n), y)
         y[-fade_n:] *= demo_render._env(np.linspace(1.0, 0.0, fade_n), y)
     fh.write(y.astype("float32"))
-    return len(y) / sr
+    tail = _level_p90(_mono_of(y[-int(tail_sec * sr):]), sr)
+    return len(y) / sr, tail
 
 
 def _write_mp3(path: str, mix, sr: int, bitrate: int = 320) -> str:
@@ -733,6 +932,70 @@ def mp3_supported() -> bool:
     return mp3_encoder()["name"] is not None
 
 
+def _wav_to_flac(wav_path: str, progress=None) -> str:
+    """WAV -> FLAC, блоками, без загрузки всего сета в память.
+
+    Зачем FLAC вообще: это единственный из форматов «без потерь», который
+    и сжимает (примерно вдвое против WAV), и читается всем — Mixxx,
+    плеерами, монтажом. Диджей забирает сет, чтобы слушать его на другой
+    системе и резать; mp3 для этого уже проигранный этап качества, а WAV
+    на полтора гигабайта неудобно возить.
+
+    Блоками — по той же причине, по какой и сам сет пишется потоком:
+    90 минут стерео 44.1/16 это около гигабайта, и держать их в памяти
+    ради перекодирования незачем.
+    """
+    import soundfile as sf
+
+    out = str(Path(wav_path).with_suffix(".flac"))
+    block = 1 << 20                      # ~1 млн кадров, около 4 МБ на канал
+    with sf.SoundFile(wav_path) as src:
+        total = max(1, len(src))
+        done = 0
+        with sf.SoundFile(out, "w", samplerate=src.samplerate,
+                          channels=src.channels, format="FLAC",
+                          subtype="PCM_16") as dst:
+            while True:
+                chunk = src.read(block, dtype="int16")
+                if not len(chunk):
+                    break
+                dst.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(min(1.0, done / total))
+    if progress:
+        progress(1.0)
+    return out
+
+
+def _body_head_level(path: str, start: float, rate: float, sr: int,
+                     ref_rms: float, probe_sec: float = 4.0) -> float:
+    """Уровень ПЕРВЫХ секунд тела, которое пойдёт после перехода.
+
+    Считается ровно тем же путём, что и само тело (`_write_body`):
+    match_loudness по опорному уровню трека, добор, ограничитель. Иначе
+    вторая половина стыка снова мерилась бы своей меркой.
+
+    Читается только четыре секунды — это дешевле одной десятой секунды
+    на переход и убирает второй скачок уровня, тот, что после сведения."""
+    import demo_render
+
+    try:
+        import librosa
+
+        y, _ = librosa.load(path, sr=sr, mono=False,
+                            offset=max(0.0, start), duration=probe_sec)
+    except Exception:                                # noqa: BLE001
+        return 0.0
+    y = demo_render._to_stereo(y)
+    if len(y) < sr * 0.2:
+        return 0.0
+    y = demo_render._stretch(y, sr, rate)
+    y = demo_render._match_loudness(y, ref_rms)
+    y = demo_render._soft_limit(y * SET_MAKEUP)
+    return _level_p90(_mono_of(y), sr)
+
+
 def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
                     max_minutes: float = 150.0,
                     master_bpm: float | None = None,
@@ -792,17 +1055,25 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
     # с какой секунды играет самый первый трек
     pos = _point_seconds(transitions[0].get("to_point")) or 0.0
     pos = 0.0  # первый трек играем с начала — перед ним ничего нет
+    # Уровень, которым кончилось последнее записанное тело. Первый
+    # переход соседа слева не имеет, поэтому стартуем от расчётного
+    # уровня одиночной деки — но уже в том масштабе, в каком лежит файл.
+    prev_tail = SET_DECK_RMS * SET_MAKEUP
     cur = first
 
     enc = mp3_encoder()
-    want_mp3 = str(fmt).lower() == "mp3" and enc["name"] is not None
-    if str(fmt).lower() == "mp3" and not want_mp3:
+    want = str(fmt).lower()
+    want_flac = want == "flac"
+    want_mp3 = want == "mp3" and enc["name"] is not None
+    if want == "mp3" and not want_mp3:
         skipped.append("нет ни lameenc, ни ffmpeg — сохраняю WAV")
     elif want_mp3 and not enc["full_quality"]:
         skipped.append("mp3 пишет libsndfile (~74 кбит/с) — поставьте lameenc "
                        "для 320: pip install lameenc")
-    # Поток всегда в WAV (90 минут в память не берём), в mp3 перекодируем
-    # в конце: LAME не умеет писать в открытый sf.SoundFile.
+    # Поток всегда в WAV (90 минут в память не берём), в mp3/FLAC
+    # перекодируем в конце: ни LAME, ни FLAC-энкодер не умеют дописывать
+    # в уже открытый sf.SoundFile, а обрезка хвостовой тишины работает
+    # по готовому WAV.
     out_path = str(Path(out_path).with_suffix(".wav"))
 
     with sf.SoundFile(out_path, "w", samplerate=sr, channels=2, subtype="PCM_16") as fh:
@@ -825,6 +1096,7 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
                     max_seconds=max(16.0, float(t.get("bars") or 8) * bar_sec + 8 * bar_sec),
                     source_at=_point_seconds(t.get("from_point")),
                     target_at=_point_seconds(t.get("to_point")),
+                    mix_profile=set_mix_profile(strategy, t),
                     master_bpm=master,
                     normalize_output=False,
                 )
@@ -835,9 +1107,13 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
             # тело уходящего трека — от текущей позиции до начала сведения
             src_in = meta.get("source_in_seconds")
             if src_in is not None and src_in > pos:
-                written += _write_body(fh, a["path"], pos, src_in,
-                                       meta.get("rate_source") or 1.0, sr,
-                                       demo_render._track_reference_rms(a["path"]), fade_n)
+                sec, tail_level = _write_body(
+                    fh, a["path"], pos, src_in,
+                    meta.get("rate_source") or 1.0, sr,
+                    demo_render._track_reference_rms(a["path"]), fade_n)
+                written += sec
+                if tail_level > 0:
+                    prev_tail = tail_level
 
             chunk, chunk_sr = sf.read(tmp, dtype="float32")
             os.remove(tmp)
@@ -852,12 +1128,35 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
             # ограничителя: иначе эту работу делает ограничитель, но
             # искажением, а не громкостью. Опорный уровень берём из
             # самого куска — из его начала, где вторая дека ещё молчит.
-            chunk = _ride_to_reference(
-                chunk, sr,
-                ref_rms=_solo_level(chunk, sr, meta.get("sync_time_seconds")) or SET_DECK_RMS)
-            chunk = demo_render._soft_limit(chunk * SET_MAKEUP)
+            # Уровень стыка задаётся СОСЕДЯМИ, а не самим переходом.
+            #
+            # Раньше кусок подгонялся под 90-ю процентиль своего же
+            # соло-участка, а тела — под средний уровень трека. Две разные
+            # мерки под одним словом «уровень»: у трека с сильной
+            # динамикой p90 дропа вдвое выше среднего, и переход честно
+            # выходил на десяток децибел громче соседей. Замер на сете
+            # диджея: +9.2 dB, ограничитель работает все 6.4% времени, что
+            # заняли переходы. Это и слышно как «овер дБ на переходах при
+            # нормальной громкости в телах».
+            #
+            # Теперь цель — кривая от того, чем кончилось предыдущее тело,
+            # к тому, с чего начнётся следующее. Оба конца измерены НА
+            # ГОТОВОМ ЗВУКЕ, тем же `_level_p90`, поэтому состыковаться они
+            # обязаны по построению, а не по совпадению формул.
+            next_head = _body_head_level(
+                b["path"], meta.get("target_out_seconds") or 0.0,
+                meta.get("rate_target") or 1.0, sr,
+                demo_render._track_reference_rms(b["path"]))
+            head = prev_tail or (SET_DECK_RMS * SET_MAKEUP)
+            tail = next_head or head
+            chunk = chunk * SET_MAKEUP
+            chunk = _ride_to_reference(chunk, sr,
+                                       ref_rms=np.array([head, tail], dtype="float64"),
+                                       max_cut_db=SET_RIDE_MAX_CUT_DB)
+            chunk = demo_render._soft_limit(chunk)
             fh.write(chunk)
             written += len(chunk) / sr
+            prev_tail = tail
 
             pos = meta.get("target_out_seconds") or 0.0
             cur = b
@@ -876,10 +1175,28 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
             tail_out = min(tail_out, max(0.0, budget - written))
             tail_end = min(float(cur.get("duration_seconds") or (pos + tail_out)),
                            pos + tail_out * rate)
-            written += _write_body(fh, cur["path"], pos, tail_end,
-                                   rate, sr, demo_render._track_reference_rms(cur["path"]), fade_n)
+            sec, _ = _write_body(fh, cur["path"], pos, tail_end, rate, sr,
+                                 demo_render._track_reference_rms(cur["path"]), fade_n)
+            written += sec
 
     written = _trim_trailing_silence(out_path, sr)
+    if want_flac:
+        def _flac_progress(frac: float) -> None:
+            if progress:
+                progress(rendered, len(transitions), round(written, 1), "encode", frac)
+
+        _flac_progress(0.0)
+        try:
+            flac_path = _wav_to_flac(out_path, progress=_flac_progress)
+        except Exception as exc:                       # noqa: BLE001
+            skipped.append(f"FLAC не собрался ({exc}) — оставляю WAV")
+            want_flac = False
+        else:
+            try:
+                os.remove(out_path)
+            except OSError:
+                skipped.append("не смог удалить временный WAV — место на диске занято им")
+            out_path = flac_path
     if want_mp3:
         def _enc_progress(frac: float) -> None:
             if progress:
@@ -902,7 +1219,8 @@ def render_full_set(strategy: dict, out_path: str, sr: int = 44100,
         "techniques_used": used_techniques,
         "skipped": skipped,
         "full": True,
-        "format": "mp3" if want_mp3 else "wav",
+        "format": "mp3" if want_mp3 else ("flac" if want_flac else "wav"),
         "bitrate": enc["bitrate"] if want_mp3 else 1411,
-        "encoder": enc["name"] if want_mp3 else "wav",
+        "encoder": enc["name"] if want_mp3 else ("libsndfile/FLAC" if want_flac else "wav"),
+        "lossless": not want_mp3,
     }

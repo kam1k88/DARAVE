@@ -1,5 +1,6 @@
 ﻿<#
-    Переименовывает окно Mixxx в DARAVE и ставит ему иконку DARAVE.
+    Переименовывает окно Mixxx в DARAVE и ставит ему иконку DARAVE —
+    и в заголовке, и НА ПАНЕЛИ ЗАДАЧ.
 
     Почему снаружи, а не внутри Mixxx: настройки заголовка там нет,
     название — строка, зашитая в mixxx.exe, и она даже не попадает в файлы
@@ -37,6 +38,8 @@ public static class DaraveWin {
     public const uint LR_LOADFROMFILE = 0x00000010;
     public const int SM_CXICON = 11;
     public const int SM_CXSMICON = 49;
+    public const int GCLP_HICON = -14;
+    public const int GCLP_HICONSM = -34;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -54,6 +57,25 @@ public static class DaraveWin {
 
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
+
+    // Панель задач Windows 10/11 читает иконку КЛАССА окна, а не только
+    // ту, что пришла в WM_SETICON: WM_SETICON меняет значок в заголовке
+    // и в Alt+Tab, а кнопка на панели остаётся пустой. Поэтому ставим обе.
+    // SetClassLongPtr существует только в 64-битной версии user32; в
+    // 32-битной его роль играет SetClassLongW, поэтому объявлены обе и
+    // выбор делается по разрядности процесса.
+    [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW", SetLastError = true)]
+    public static extern IntPtr SetClassLongPtrW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetClassLongW", SetLastError = true)]
+    public static extern uint SetClassLongW(IntPtr hWnd, int nIndex, uint dwNewLong);
+
+    public static void SetClassIcon(IntPtr hWnd, int nIndex, IntPtr hIcon) {
+        try {
+            if (IntPtr.Size == 8) SetClassLongPtrW(hWnd, nIndex, hIcon);
+            else SetClassLongW(hWnd, nIndex, (uint)hIcon.ToInt32());
+        } catch { }
+    }
 }
 "@
 
@@ -108,10 +130,16 @@ while ($true) {
 
         $key = $h.ToString()
         if (-not $iconDone.ContainsKey($key) -and $hIconBig -ne [IntPtr]::Zero) {
+            # Заголовок окна и Alt+Tab
             [void][DaraveWin]::SendMessageW($h, [DaraveWin]::WM_SETICON,
                 [IntPtr][DaraveWin]::ICON_SMALL, $hIconSmall)
             [void][DaraveWin]::SendMessageW($h, [DaraveWin]::WM_SETICON,
                 [IntPtr][DaraveWin]::ICON_BIG, $hIconBig)
+            # Кнопка на панели задач. Она берёт иконку КЛАССА окна, и
+            # именно поэтому при запущенном mixxx.exe значок был пустым:
+            # WM_SETICON до неё не доходит.
+            [DaraveWin]::SetClassIcon($h, [DaraveWin]::GCLP_HICON, $hIconBig)
+            [DaraveWin]::SetClassIcon($h, [DaraveWin]::GCLP_HICONSM, $hIconSmall)
             $iconDone[$key] = $true
         }
     }

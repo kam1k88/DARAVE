@@ -1,0 +1,7 @@
+Профиль настроек Mixxx для комнаты DARAVE «my-room»
+Снят: 2026-09-08 12:27
+Источник: C:\Users\kam1k88\AppData\Local\Mixxx
+
+Применяется командой:  python mixxx_profile.py --apply --room my-room
+Mixxx при этом должен быть ЗАКРЫТ — он перезаписывает mixxx.cfg
+при выходе и сотрёт наложенное.

@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<EffectChain>
+ <Name>Дисторшн</Name>
+ <MixMode>DRY/WET</MixMode>
+ <SuperParameterValue>0</SuperParameterValue>
+ <Effects>
+  <Effect>
+   <MetaParameterValue>0</MetaParameterValue>
+   <Id>org.mixxx.effects.distortion</Id>
+   <BackendType>Built-In</BackendType>
+   <Parameters>
+    <Parameter>
+     <Id>mode</Id>
+     <Value>0</Value>
+     <LinkType>NONE</LinkType>
+     <LinkInversion>0</LinkInversion>
+     <Hidden>0</Hidden>
+    </Parameter>
+    <Parameter>
+     <Id>drive</Id>
+     <Value>0</Value>
+     <LinkType>LINKED</LinkType>
+     <LinkInversion>0</LinkInversion>
+     <Hidden>0</Hidden>
+    </Parameter>
+   </Parameters>
+  </Effect>
+ </Effects>
+</EffectChain>

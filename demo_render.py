@@ -57,10 +57,30 @@ TARGET_RMS = 0.125
 OUTPUT_RMS = 0.20       # ~ -16 dBFS на готовом куске — общий уровень всего сета
 MAX_MATCH_GAIN = 6.0
 BASS_SPLIT_HZ = 180.0
-# Уровень возврата эффекта в микс. Ниже единицы: возврат идёт мимо
-# фейдера и мимо гейн-райдинга, и при 1.0 хвост эха на увод трека выходит
-# громче, чем сам трек был до него.
-FX_RETURN_LEVEL = 0.8
+# Уровень возврата эффекта в микс, относительно сухого сигнала. На пульте
+# ручку возврата держат заметно ниже канала: возврат идёт мимо гейн-райдинга
+# и мимо «одной бочки за раз», поэтому при 1.0 эхо звучит не как эффект, а
+# как вторая копия трека — ровно то, на что жаловались в ControlC. 0.45 —
+# примерно -7 дБ от сухого: слышно, но микс остаётся миксом.
+FX_RETURN_LEVEL = 0.45
+# Ниже какой доли от собственного уровня трека считаем, что низа НЕТ.
+# 0.35 — там, где уходящий ушёл в брейкдаун: замерено, в брейкдауне
+# энергия ниже 180 Гц падает до 0.01..0.17 от уровня тела трека.
+BASS_PRESENT_FRAC = 0.35
+
+
+def _smooth_curve(x, win: int):
+    """Скользящее среднее по крупной сетке — чтобы поправка низа не
+    дёргалась от одного удара, а следовала за секцией."""
+    import numpy as _np
+
+    win = max(1, int(win))
+    if win <= 1 or len(x) <= win:
+        return _np.asarray(x, dtype=float)
+    k = _np.ones(win) / win
+    pad = _np.concatenate([_np.full(win, x[0]), _np.asarray(x, dtype=float),
+                           _np.full(win, x[-1])])
+    return _np.convolve(pad, k, mode="same")[win:win + len(x)]
 EDGE_FADE_SEC = 0.010
 # Во сколько раз техника растягивается или ужимается по времени, чтобы
 # занять отведённое окно. Только степени двойки — 32 такта -> 16 -> 8
@@ -71,7 +91,12 @@ EDGE_FADE_SEC = 0.010
 # играла свою «родную» длину, а остаток окна просто доигрывал вошедший
 # трек. Теперь при большом окне приём РАСТЯГИВАЕТСЯ — ровно этого и
 # просил диджей, когда сказал «максимально более долгие переходы».
-TIME_SCALES = (4.0, 2.0, 1.0, 0.5, 0.25, 0.125)
+TIME_SCALES = (1.0, 0.5, 0.25, 0.125)
+# Растягивать приём (а не только ужимать) разрешено ТОЛЬКО когда длина
+# перехода задана явно — со шва или из плана. Без этого каждое демо
+# растягивалось до полного окна в 38 секунд, и все приёмы разъезжались
+# вчетверо: диджей услышал это сразу и назвал «сводит просто ужасно».
+TIME_SCALES_STRETCH = (4.0, 2.0) + TIME_SCALES
 
 # Профиль ввода «наложение». Диджей описал его дословно: новый трек
 # заходит с урезанным низом, доходит до 85% громкости, только потом
@@ -79,9 +104,8 @@ TIME_SCALES = (4.0, 2.0, 1.0, 0.5, 0.25, 0.125)
 # фейдером. Кроссфейдер при этом почти всё время стоит на месте — то
 # есть это НЕ кроссфейд, а наложение, и звучит оно принципиально иначе:
 # оба трека какое-то время играют вместе полноценно.
-OVERLAY_RISE = 0.55     # доля перехода, за которую входящий выходит на пик
-OVERLAY_PEAK = 0.85     # до какой громкости он поднимается ДО обмена низом
-OVERLAY_SWAP = 0.75     # где меняется бас и начинается увод уходящего
+OVERLAY_IN_LEN = 0.40   # за какую долю перехода входящий доходит до полного
+OVERLAY_OUT_LEN = 0.25  # сколько длится увод уходящего
 
 
 # Рендер был моно от начала и до конца: librosa.load(mono=True), все
@@ -325,6 +349,16 @@ def _time_varying_lowpass(signal: np.ndarray, sr: int, value_fn, t0: float,
 #
 # Разбираться, «как правильно», проще всего по этому признаку: если у
 # эффекта есть хвост — это посыл, если нет — вставка.
+#
+# ВАЖНО про посыл: линия возврата стоит после фейдера, но КОРМИТСЯ посыл
+# тоже после фейдера. Это не одно и то же, и путать эти две вещи —
+# ровно тот баг, из-за которого эхо звучало как ещё одна дорожка поверх
+# готового клипа и загоняло пик в потолок: дека уведена в ноль, а в эхо
+# по-прежнему уходил её сигнал на полной громкости. На пульте так не
+# бывает — увёл фейдер, и в эффект больше ничего не поступает. Хвост при
+# этом всё равно доигрывает: он уже лежит в линии задержки. Поэтому
+# возвраты считаются НЕ здесь, а откладываются в очередь (fx_send_queue)
+# и обсчитываются в конце, когда огибающие фейдеров уже известны.
 
 FX_SENDS = ("echo", "reverb")
 FX_INSERTS = ("flanger", "phaser", "wobble", "distortion", "bitcrush", "filter")
@@ -655,6 +689,52 @@ def _match_loudness(y: np.ndarray, ref_rms: float, target: float = TARGET_RMS) -
     return y * float(np.clip(gain, 1.0 / MAX_MATCH_GAIN, MAX_MATCH_GAIN))
 
 
+# Ниже этого уровня в хвосте куска — не музыка, а конец материала.
+# −60 dBFS: тише любого затухания, которое диджей ещё слышит, но выше
+# численного нуля, куда уходит рендер, вышедший за конец файла.
+TAIL_SILENCE_DB = -60.0
+# Короче этого хвост не режем: полсекунды тишины — это пауза внутри
+# музыки, а не обрыв материала.
+TAIL_SILENCE_MIN_SEC = 0.5
+
+
+def _trim_dead_tail(mix: np.ndarray, sr: int) -> tuple[np.ndarray, float]:
+    """Отрезает хвост, в котором материала уже нет.
+
+    Зачем. Окно рендера задаётся планом, а не файлами: «сведи здесь и дай
+    ещё сорок секунд». Если входящий трек заведён под конец собственного
+    файла, эти сорок секунд взять неоткуда — и рендер честно писал
+    ЦИФРОВУЮ ТИШИНУ. Замерено на треке диджея: −240 dBFS на протяжении
+    девяти секунд. В превью сета такие хвосты сшиваются встык, и между
+    сведениями возникает дыра — ровно то, на что он и пожаловался:
+    «между треками образуется пустое пространство».
+
+    Чинить это в планировщике мало: он не может знать, сколько материала
+    попросит рендер. Поэтому правило простое и последнее в цепи — кусок
+    не может быть длиннее, чем звук, из которого он сделан.
+
+    Возвращает (обрезанный кусок, сколько секунд убрали)."""
+    if not len(mix):
+        return mix, 0.0
+    m = np.abs(mix.mean(axis=1) if mix.ndim > 1 else mix)
+    thr = 10.0 ** (TAIL_SILENCE_DB / 20.0)
+    # Ищем последний отсчёт, который ещё звучит. Грубой сеткой: точность
+    # до блока в 10 мс здесь избыточна, а цикл по миллиону отсчётов — нет.
+    step = max(1, sr // 100)
+    k = len(m) // step
+    if k < 2:
+        return mix, 0.0
+    blocks = m[:k * step].reshape(k, step).max(axis=1)
+    alive = np.nonzero(blocks > thr)[0]
+    if not len(alive):
+        return mix, 0.0
+    end = min(len(mix), (int(alive[-1]) + 1) * step)
+    cut = (len(mix) - end) / sr
+    if cut < TAIL_SILENCE_MIN_SEC:
+        return mix, 0.0
+    return mix[:end], cut
+
+
 def _soft_limit(y: np.ndarray, ceiling: float = 0.95, knee: float = 0.65) -> np.ndarray:
     """Мягкий потолок вместо деления всего куска на пик.
 
@@ -713,12 +793,25 @@ def _smoothstep(x: np.ndarray) -> np.ndarray:
     return x * x * (3.0 - 2.0 * x)
 
 
-def _bass_handover(cf_env: np.ndarray, lo: float = 0.38, hi: float = 0.62) -> tuple[np.ndarray, np.ndarray]:
+def _bass_handover(cf_env: np.ndarray, lo: float = 0.46, hi: float = 0.54) -> tuple[np.ndarray, np.ndarray]:
     """«Одна бочка за раз» — правило, которое диджей выполняет руками на
     каждом сведении. Два полноспектральных драм-н-бейса, сложенные без
     разведения низа, дают кашу: сабы складываются по случайной фазе,
-    получается гудение и потеря панча. Возвращает (гейн низа уходящего,
-    гейн низа входящего) как функцию положения кроссфейда."""
+    получается гудение и потеря панча.
+
+    Ключевое слово — ОДНА. Окно было 0.38..0.62, то есть четверть пути
+    кроссфейдера, и ровно в середине обе деки получали по 0.5. Но это не
+    «одна бочка», а ДВЕ ПОЛОВИНКИ разных бочек: сигналы разные, по фазе
+    не складываются, и вместо баса получается ничто. Замерено на демо,
+    которые диджей прислал: с 1.9 до 13.9 секунды энергия ниже 180 Гц
+    держится 0.03..0.17 от уровня трека — двенадцать секунд без низа
+    подряд. Он назвал это «сводит просто ужасно», и был прав.
+
+    Теперь окно 0.46..0.54 — переключение, а не смешивание: неоднозначная
+    зона длится доли секунды вместо трети перехода.
+
+    Возвращает (гейн низа уходящего, гейн низа входящего) как функцию
+    положения кроссфейда."""
     t = _smoothstep((cf_env - lo) / max(1e-6, hi - lo))
     return 1.0 - t, t
 
@@ -734,7 +827,7 @@ def _short_rms(y: np.ndarray, sr: int, win: float = 0.5) -> np.ndarray:
 
 
 def _ride_gain(src: np.ndarray, tgt: np.ndarray, cf_env: np.ndarray, sr: int,
-               under_db: float = -9.0, max_boost: float = 16.0,
+               under_db: float = -9.0, max_boost: float = 6.0,
                win: float = 0.5, smooth_seconds: float = 2.0) -> np.ndarray:
     """Гейн входящей деки, пока она идёт ПОД уходящей.
 
@@ -760,10 +853,31 @@ def _ride_gain(src: np.ndarray, tgt: np.ndarray, cf_env: np.ndarray, sr: int,
         return np.ones(n)
     ra, rb = ra[:m], rb[:m]
 
+    # ОДНО число на весь переход, а не значение на каждые полсекунды.
+    #
+    # Здесь была слышная поломка, и диджей описал её точно: «входящий трек
+    # начинает со 100%, потом затихает до нужного уровня, и потом плавно
+    # поднимается». Причина арифметическая. Гейн считался как отношение
+    # want/rb в каждом окне; в первых окнах входящей деки ещё нет звука
+    # (она молчит до своего входа), rb там около нуля, отношение улетает в
+    # потолок — замерено: 16.0, 11.2, 8.7, 5.3, 1.7 и дальше 1.0. То есть
+    # первые полторы секунды новый трек шёл с шестнадцатикратным
+    # усилением, а как только у него появлялся собственный материал,
+    # усиление схлопывалось. Отсюда и «громко — тихо — поднимается».
+    #
+    # Диджей ручку trim крутит ОДИН раз на переход, а не каждые полсекунды.
+    # Считаем так же: берём окна, где входящая дека реально звучит, и по
+    # ним одну медиану. Тишина в расчёт не идёт вовсе — усиливать нечего.
     want = ra * (10.0 ** (under_db / 20.0))
-    boost = np.clip(want / np.maximum(rb, 1e-6), 1.0, max_boost)
-
-    # скользящее среднее через кумулятивную сумму — O(m), а не O(m*k)
+    audible = rb > max(1e-6, float(np.percentile(rb, 90)) * 0.12)
+    if not np.any(audible):
+        return np.ones(n)
+    ratio = float(np.median(want[audible] / np.maximum(rb[audible], 1e-6)))
+    boost = np.full(m, float(np.clip(ratio, 1.0, max_boost)))
+    # Пока дека молчит, гейн не нужен вовсе: он всё равно ни на что не
+    # действует, но при первом же звуке дал бы ступеньку.
+    boost[~audible] = 1.0
+    # мягкий вход гейна на границе тишина/звук
     k = max(1, int(round(smooth_seconds / win)))
     if k > 1 and m > 1:
         c = np.cumsum(np.insert(boost, 0, 0.0))
@@ -864,65 +978,42 @@ def _scale_events(events: list[dict], scale: float) -> list[dict]:
     return out
 
 
-def _apply_entry_profile(events: list[dict], profile: dict | None) -> list[dict]:
-    """Переписывает форму ввода: наложение вместо кроссфейда.
+def _fader_shape(x: float, smooth: float) -> float:
+    """Форма хода фейдера: 0 — рывком в начале, 1 — долгий разгон.
 
-    Что было не так. Почти все приёмы устроены как кроссфейд: один
-    фейдер едет из нуля в единицу, и в середине обе деки звучат
-    вполовину. Диджей ведёт иначе — и сказал это прямым текстом: новый
-    трек заходит с урезанным низом, поднимается до 85% громкости РЯДОМ
-    с ещё полностью играющим старым, потом меняется бас, и только в
-    самом конце старый уводится фейдером. Разница слышна сразу: при
-    кроссфейде середина перехода — это два полутрека, при наложении —
-    два полных.
+    Одна ручка вместо кривой: `smooth` меняет показатель степени от 0.4
+    (фейдер сразу набирает и потом доводит) до 2.5 (долго почти ничего,
+    потом быстро). 0.5 посередине — почти линейно, как и ведут руками."""
+    g = 0.4 * (2.5 / 0.4) ** _clamp(float(smooth), 0.0, 1.0)
+    return float(_clamp(x, 0.0, 1.0) ** g)
 
-    Профиль:
-      * `entry` — "overlay" включает наложение, всё остальное оставляет
-        технику как есть;
-      * `rise`  — доля перехода, за которую входящий выходит на пик;
-      * `peak`  — до какой громкости он поднимается ДО обмена низом;
-      * `swap`  — где меняется бас и начинается увод уходящего.
 
-    «Плавность» — это и есть `rise`: чем он больше, тем дольше входящий
-    подкрадывается. Пороги трогаем только у КРОССФЕЙДА и громкости;
-    всё, что техника делает своими руками (слои, эффекты, лупы),
-    остаётся нетронутым — иначе профиль превратил бы все приёмы в один.
-    """
-    profile = profile or {}
-    if str(profile.get("entry") or "") != "overlay":
-        return events
-    rise = _clamp(float(profile.get("rise", OVERLAY_RISE)), 0.15, 0.9)
-    peak = _clamp(float(profile.get("peak", OVERLAY_PEAK)), 0.4, 1.0)
-    swap = _clamp(float(profile.get("swap", OVERLAY_SWAP)), rise + 0.05, 0.95)
+def _ramp_curve(t0: float, span: float, action: str, deck: str,
+                v0: float, v1: float, smooth: float, steps: int = 8) -> list[dict]:
+    """Ход фейдера заданной формы — ломаной из нескольких отрезков.
 
-    others = [e for e in events if e["action"] not in ("crossfade", "volume_ramp")]
-    if not events:
-        return events
-    t0 = min(e["beat_offset"] for e in events)
-    t1 = max(e["beat_offset"] + float(e.get("duration_beats") or 0.0) for e in events)
-    span = max(4.0, t1 - t0)
-
-    def at(frac: float) -> float:
-        return t0 + span * frac
-
-    # Кроссфейдер стоит на нуле, пока входящий поднимается сам, и едет
-    # до конца только в последней четверти. Именно он тянет за собой
-    # передачу низа и «одну ударную установку за раз» — поэтому бас
-    # меняется ровно там, где сказал диджей, без отдельных ручек.
-    out = list(others)
-    out.append(_mk_ramp(t0, "crossfade", "master", max(1.0, span * swap), 0.0, 0.0))
-    out.append(_mk_ramp(at(swap), "crossfade", "master", max(1.0, span * (1.0 - swap)),
-                     0.0, 1.0, curve="smooth"))
-    # Громкость входящего: до пика за `rise`, там держится, и только
-    # вместе с обменом низом доходит до единицы.
-    out.append(_mk_ramp(t0, "volume_ramp", "target", max(1.0, span * rise), 0.0, peak,
-                     curve="smooth"))
-    out.append(_mk_ramp(at(rise), "volume_ramp", "target", max(0.5, span * (swap - rise)),
-                     peak, peak))
-    out.append(_mk_ramp(at(swap), "volume_ramp", "target", max(1.0, span * (1.0 - swap)),
-                     peak, 1.0, curve="smooth"))
-    out.sort(key=lambda e: e["beat_offset"])
+    `_ramp` умеет только прямую между двумя значениями, а форма — это как
+    раз то, что отличает «завёл и повёл» от «выкрутил и ждёшь»."""
+    out = []
+    span = max(0.5, float(span))
+    for i in range(steps):
+        a, b = i / steps, (i + 1) / steps
+        out.append(_mk_ramp(t0 + span * a, action, deck, span / steps,
+                            v0 + (v1 - v0) * _fader_shape(a, smooth),
+                            v0 + (v1 - v0) * _fader_shape(b, smooth)))
     return out
+
+
+def _apply_entry_profile(events: list[dict], profile: dict | None) -> list[dict]:
+    """Профиль ввода. Сам расчёт живёт в `mix_profile` — там же, откуда
+    его берут живое исполнение и сборка сета.
+
+    Раньше он был только здесь, и это и была причина расхождения: демо
+    одиночного шва звучало с ручными фейдерами, а тот же шов в пуле, в
+    сете и на деках — без них."""
+    import mix_profile
+
+    return mix_profile.apply(events, profile)
 
 
 def _loop_layer(buf: "np.ndarray | None", start_sample: int, loop_n: int,
@@ -1114,6 +1205,7 @@ def render_demo(
     bars: float | None = None,
     mix_profile: dict | None = None,
     vocal_loop: float | None = None,
+    extra_events: list[dict] | None = None,
     _debug: dict | None = None,
 ) -> dict:
     """Рендерит демо и пишет WAV (PCM16) в out_path.
@@ -1194,7 +1286,7 @@ def render_demo(
         eff_a = _rel_a["effective_bpm"] if master_bpm else bpm_a
         rate_a = _clamp(timeline_bpm / eff_a, 0.5, 2.0) if eff_a > 1 else 1.0
 
-    _overlay_mode = str((mix_profile or {}).get("entry") or "") == "overlay"
+    _overlay_mode = str((mix_profile or {}).get("entry") or "technique") != "technique"
     plan = build_plan(technique_id, "demo", "source", "target", timeline_bpm, param_overrides)
     spb = _seconds_per_beat(timeline_bpm)
     bar_sec = spb * BAR_BEATS
@@ -1210,17 +1302,23 @@ def render_demo(
     # --- подбираем масштаб техники так, чтобы её ФОРМА влезла целиком ---
     raw_end = max([4.0 * spb] + [_event_window(e, spb)[1] for e in plan["events"]])
     budget = max(2.0 * bar_sec, float(max_seconds) - lead - tail)
-    scale = TIME_SCALES[-1]
-    for s in TIME_SCALES:
+    ladder = TIME_SCALES_STRETCH if (bars and float(bars) > 0) else TIME_SCALES
+    scale = ladder[-1]
+    for s in ladder:
         if raw_end * s <= budget:
             scale = s
             break
-    else:
-        scale = TIME_SCALES[-1]
     events = _scale_events(plan["events"], scale)
     # Профиль ввода применяется ПОСЛЕ масштабирования: он размечает доли
     # уже готового окна перехода, а не «родной» длины приёма.
     events = _apply_entry_profile(events, mix_profile)
+    # Ручные добавки к приёму: луп слоя, эхо на слое, реверс — то, что
+    # диджей вешает поверх готового перехода в тонкой настройке. Идут
+    # ПОСЛЕ масштабирования: их смещения заданы в тактах готового окна,
+    # а не в «родной» длине приёма, иначе они уехали бы вместе с ним.
+    if extra_events:
+        events = sorted(list(events) + [dict(e) for e in extra_events],
+                        key=lambda e: float(e.get("beat_offset") or 0.0))
 
     windows = [_event_window(e, spb) for e in events]
     t_max = max([2.0 * bar_sec] + [e for _, e in windows])
@@ -1412,6 +1510,48 @@ def render_demo(
 
     decks = {"source": source, "target": target}
 
+    # Очередь посылов на эффекты. Сами возвраты считаются в самом конце,
+    # когда известны огибающие фейдеров: посыл КОРМИТСЯ пост-фейдерным
+    # сигналом (см. комментарий у FX_SENDS). Каждая запись — «с какого
+    # сигнала снимаем, на какой деке, каким юнитом и с какой глубиной».
+    fx_send_queue: list[dict] = []
+
+    # signal=None означает «весь сигнал деки», и он берётся в момент
+    # расчёта, а не постановки в очередь: после этого блока деку ещё
+    # обрабатывают свипы и фильтры, и посыл обязан снимать их тоже.
+    def _queue_send(deck_name: str, unit: str, signal, env, **kw) -> None:
+        fx_send_queue.append({"deck": deck_name, "unit": unit,
+                              "signal": signal, "env": env, "params": kw})
+
+    # --- сколько низа РЕАЛЬНО даёт уходящий -------------------------------
+    #
+    # Правило «одна бочка за раз» держится на молчаливом допущении, что у
+    # уходящего эта бочка есть. Уводят же чаще всего в брейкдаун — там
+    # низа нет по построению. Тогда закрытый низ входящего означает, что
+    # низа нет НИ У КОГО: замерено на присланном демо, с 2-й по 13-ю
+    # секунду энергия ниже 180 Гц держится 0.01 от уровня трека.
+    # Двенадцать секунд без баса — это и есть «сводит просто ужасно».
+    #
+    # bass_relief — обратная величина: 1 там, где уходящий низа не даёт.
+    # На неё поднимается низ входящего, чем бы он ни был закрыт: если
+    # второй бочки нет, первая не спорит ни с чем и может звучать сразу.
+    # Меряем ДОЛЮ низа в энергии уходящего, а не его абсолютный уровень:
+    # доля не зависит ни от мастеринга трека, ни от длины окна. Замерено
+    # на реальном шве: в теле трека доля 0.95, в брейкдауне 0.21.
+    _src_mono = _mono(decks["source"])
+    _src_low, _ = _split_low(_src_mono, sr)
+    _low_win = max(1, int(0.25 * sr))
+    _low_k = max(1, min(len(_src_low), len(_src_mono)) // _low_win)
+    _cut = _low_k * _low_win
+    _low_rms = np.sqrt((_src_low[:_cut].reshape(_low_k, _low_win) ** 2).mean(axis=1) + 1e-12)
+    _all_rms = np.sqrt((_src_mono[:_cut].reshape(_low_k, _low_win) ** 2).mean(axis=1) + 1e-12)
+    _share = _low_rms / np.maximum(_all_rms, 1e-9)
+    _present = _smoothstep(_share / BASS_PRESENT_FRAC)
+    _relief = _smooth_curve(1.0 - _present, max(1, int(round(bar_sec / 0.25))))
+    bass_relief = np.clip(np.interp(np.arange(n),
+                                    np.linspace(0, n - 1, len(_relief)), _relief),
+                          0.0, 1.0)
+
     # --- 1. транспорт: где в эти секунды находится игла ---
     # Бэкспин, тейп-стоп, реверс, лупы и роллы — это не обработка звука, а
     # движение ПОЗИЦИИ воспроизведения. Раньше здесь кусок буфера просто
@@ -1477,7 +1617,12 @@ def render_demo(
                 cf_raw = _envelope_array(_piecewise_ramp(cf_raw_ev, spb, default=0.0),
                                          timeline_start, n, sr,
                                          step_sec=_events_step_sec(cf_raw_ev, spb))
-                gb = _smoothstep((cf_raw - 0.40) / 0.20)
+                # Та же ошибка, что была у баса: окно 0.40..0.60 давало
+                # ровно в середине по 0.5 каждой деке, то есть ДВЕ
+                # ПОЛОВИНКИ разных ударных вместо одной установки. В
+                # присланных демо верх (тарелки, хэты) держался 0.02..0.10
+                # почти весь переход — барабанов не было слышно ни у кого.
+                gb = _smoothstep((cf_raw - 0.46) / 0.08)
                 ga = 1.0 - gb
             ga = np.clip(ga, 0.0, 1.0)
             gb = np.clip(gb, 0.0, 1.0)
@@ -1532,7 +1677,6 @@ def render_demo(
                 layer = layer - bandbuf + bandbuf * _env(np.clip(env, 0.0, 4.0), layer)
             return layer
 
-        stem_fx_returns: dict[str, np.ndarray] = {}
         drum_layers: dict[str, np.ndarray] = {}
 
         for deck_name in ("source", "target"):
@@ -1550,7 +1694,29 @@ def render_demo(
                     gain = auto_gate[deck_name]
                 else:
                     gain = None
+                # Низ входящего закрывают, чтобы он не спорил с низом
+                # уходящего. Спорить не с чем, когда уходящий в
+                # брейкдауне, — тогда бас входящего это не второй бас, а
+                # единственный, и держать его в нуле незачем (bass_relief
+                # выше; там же замеры, из-за которых это появилось).
+                if deck_name == "target" and part == "bass":
+                    gain = bass_relief if gain is None else np.maximum(
+                        np.clip(gain, 0.0, 1.0), bass_relief)
                 layer = buf if gain is None else buf * _env(np.clip(gain, 0.0, 1.0), buf)
+
+                # Луп слоя — раньше всего остального: дальше по цепочке
+                # идут фейдер, EQ и эффекты, и они должны работать уже с
+                # зацикленным материалом, а не наоборот.
+                for e in _layer_events("stem_loop", deck_name, part):
+                    beats = float((e.get("params") or {}).get("beats") or 0.0)
+                    if beats <= 0:
+                        continue
+                    start, end = _event_window(e, spb)
+                    layer = _loop_layer(
+                        layer,
+                        _clamp(_sample_idx(start, timeline_start, sr), 0, n),
+                        int(round(beats * spb * sr)),
+                        _clamp(_sample_idx(end, timeline_start, sr), 0, n))
 
                 # фаза — до всего остального: она меняет знак, а не тембр
                 for e in _layer_events("stem_phase", deck_name, part):
@@ -1609,15 +1775,15 @@ def render_demo(
                                     pass
                         return default
 
+                    # Слой кладём в очередь как есть: домножать его на
+                    # фейдер здесь нельзя — эхо нелинейно по времени, и
+                    # хвост должен родиться из того, что звучало ДО увода.
                     if e_unit == "echo":
-                        wet = _echo_return(layer, sr, env,
-                                           delay_sec=_pp("delay_beats", 0.75) * spb)
+                        _queue_send(deck_name, "echo", layer, env,
+                                    delay_sec=_pp("delay_beats", 0.75) * spb)
                     else:
-                        wet = _reverb_return(layer, sr, env,
-                                             decay_sec=_pp("decay_beats", 4.0) * spb)
-                    stem_fx_returns[deck_name] = (
-                        wet if deck_name not in stem_fx_returns
-                        else stem_fx_returns[deck_name] + wet)
+                        _queue_send(deck_name, "reverb", layer, env,
+                                    decay_sec=_pp("decay_beats", 4.0) * spb)
 
                 if part == "drums":
                     drum_layers[deck_name] = layer
@@ -1679,7 +1845,11 @@ def render_demo(
     for action, (kind, f1, f2) in eq_specs.items():
         for deck, buf in decks.items():
             ev = [e for e in events if e["action"] == action and e["deck"] == deck]
-            if not ev or buf is None:
+            if buf is None:
+                continue
+            if not ev:
+                # Низ входящего может быть закрыт не техникой, а правилом
+                # «одна бочка за раз» ниже — там своя поправка.
                 continue
             # Значения нормализованы 0..1, где «штатный уровень» ручки — это
             # её neutral (у EQ 0.25, т.к. диапазон Mixxx 0..4). Переводим в
@@ -1688,6 +1858,10 @@ def render_demo(
             gain_fn = _piecewise_ramp(ev, spb, default=neutral)
             gain_env = _envelope_array(gain_fn, timeline_start, n, sr,
                                        step_sec=_events_step_sec(ev, spb)) / neutral
+            if action == "eq_low" and deck == "target":
+                # см. bass_relief выше: закрывать низ входящего имеет
+                # смысл только против низа уходящего. Нет его — открываем.
+                gain_env = np.maximum(gain_env, bass_relief)
             if np.allclose(gain_env, 1.0):
                 continue
             if kind == "low":
@@ -1751,15 +1925,9 @@ def render_demo(
     # сочетать луп с торможением. Теперь и то и другое — одно движение
     # иглы, и считается в одном месте.
 
-    # --- 5. fx_meta — посыл на дилей. Возврат идёт МИМО фейдера ---
-    fx_returns: dict[str, np.ndarray] = {}
-    # Посылы, снятые с ОТДЕЛЬНЫХ слоёв (см. блок 1c), возвращаются здесь
-    # же и тем же путём: мимо фейдера, чтобы хвост пережил уход деки.
-    try:
-        for _d, _w in stem_fx_returns.items():
-            fx_returns[_d] = _w if _d not in fx_returns else fx_returns[_d] + _w
-    except NameError:
-        pass
+    # --- 5. fx_meta — посыл на дилей ---
+    # Возврат придёт в микс после фейдера, но и кормится посыл пост-фейдерным
+    # сигналом, поэтому здесь только ставим в очередь.
     for deck in ("source", "target"):
         # fx_mix (dry/wet юнита) и fx_meta (параметр эффекта) в реальном
         # Mixxx крутятся вместе — для демо берём максимум как «глубину эха».
@@ -1773,7 +1941,7 @@ def render_demo(
         send_env = _envelope_array(fn, timeline_start, n, sr,
                                    step_sec=_events_step_sec(fx_events, spb))
         if np.max(send_env) > 0.02:
-            fx_returns[deck] = _echo_return(decks[deck], sr, send_env)
+            _queue_send(deck, "echo", None, send_env)
 
     # --- 5b. остальные эффекты: action "fx" с именем в params ---
     # Порядок вставок фиксирован и не случаен: сначала то, что меняет
@@ -1844,13 +2012,11 @@ def render_demo(
             if np.max(env) <= 0.02:
                 continue
             if unit == "echo":
-                wet = _echo_return(decks[deck], sr, env,
-                                   delay_sec=_p(evs, "delay_beats", 0.75) * spb)
+                _queue_send(deck, "echo", None, env,
+                            delay_sec=_p(evs, "delay_beats", 0.75) * spb)
             else:
-                wet = _reverb_return(decks[deck], sr, env,
-                                     decay_sec=_p(evs, "decay_beats", 4.0) * spb)
-            fx_returns[deck] = (wet if deck not in fx_returns
-                                else fx_returns[deck] + wet)
+                _queue_send(deck, "reverb", None, env,
+                            decay_sec=_p(evs, "decay_beats", 4.0) * spb)
 
     # --- 6. filter_sweep — плавающий ФНЧ по огибающей ---
     for deck in ("source", "target"):
@@ -1892,7 +2058,27 @@ def render_demo(
     vol_fn = _piecewise_ramp(vol_events, spb, default=1.0) if vol_events else (lambda t: 1.0)
     vol_env = _envelope_array(vol_fn, timeline_start, n, sr) if vol_events else np.ones(n)
 
+    # Фейдер канала УХОДЯЩЕЙ деки. Появился вместе с ручным ведением:
+    # там уходящий уводится своим фейдером, а не кроссфейдером, потому
+    # что кривая кроссфейдера (хоть равной мощности, хоть аддитивная)
+    # рассчитана на совместное ведение двух дек одним движком — она
+    # поднимает одну ровно настолько, насколько опускает другую. При
+    # независимых фейдерах компенсировать нечего, входящий уже на
+    # полном, и эта компенсация слышна как грязь.
+    src_vol_events = [e for e in events if e["action"] == "volume_ramp" and e["deck"] == "source"]
+    src_vol_env = None
+    if src_vol_events:
+        src_fn = _piecewise_ramp(src_vol_events, spb, default=1.0)
+        src_vol_env = _envelope_array(src_fn, timeline_start, n, sr)
+        # Передача низа и ведение гейна считаются от «сколько уходящего
+        # осталось», и раньше это брали из кроссфейда. Кроссфейда больше
+        # нет — берём ту же величину из его фейдера.
+        cf_env = np.clip(1.0 - src_vol_env, 0.0, 1.0)
+
     g_out, g_in = _equal_power(cf_env)
+    if src_vol_env is not None:
+        # Прямая амплитуда фейдера, без кривой равной мощности поверх.
+        g_out = src_vol_env
 
     # Наложение: входящий приходит СВОИМ фейдером канала (volume_ramp), а
     # кроссфейдер только уводит уходящего в конце. Поэтому кривая ввода
@@ -1900,12 +2086,17 @@ def render_demo(
     # половина перехода была бы неслышной: кроссфейдер там стоит на нуле
     # намеренно.
     if _overlay_mode:
+        # Ручное ведение: уровень входящего задаёт ЕГО фейдер канала
+        # (volume_ramp), а кроссфейдер только уводит уходящего. Если брать
+        # g_in из кроссфейда, вся площадка, где оба играют полноценно,
+        # оказалась бы неслышной — кроссфейдер там намеренно стоит.
         g_in = np.ones_like(g_in)
 
     # «Одна бочка за раз». Применяем только тем декам, у которых техника
     # НЕ управляет низом сама — иначе мы бы спорили с eq_low из техники.
     decks_with_eq_low = {e["deck"] for e in events if e["action"] in ("eq_low", "eq_kill_low")}
     bass_out, bass_in = _bass_handover(cf_env)
+    bass_in = np.maximum(bass_in, bass_relief)
     if "source" not in decks_with_eq_low:
         low, rest = _split_low(decks["source"], sr)
         decks["source"] = rest + low * _env(bass_out, low)
@@ -1927,9 +2118,31 @@ def render_demo(
         _debug["ride"] = ride.copy()
     mix = (decks["source"] * _env(g_out, decks["source"])
            + decks["target"] * _env(vol_env * g_in * ride, decks["target"]))
-    # Возврат эффекта — ПОСЛЕ фейдера. Именно поэтому эхо-хвост переживает
-    # увод трека: на пульте линия возврата к каналу отношения не имеет.
-    for _wet in fx_returns.values():
+
+    # --- посылы на эффекты: считаем здесь, когда фейдеры уже известны ---
+    # Два разных «после фейдера», и путать их нельзя:
+    #   * посыл КОРМИТСЯ пост-фейдерным сигналом — увели деку, и в эффект
+    #     больше ничего не поступает;
+    #   * возврат ВЛИВАЕТСЯ в микс мимо канала — поэтому хвост, уже лежащий
+    #     в линии задержки, доигрывает после того, как деки не стало.
+    # Раньше посыл снимался с сухой деки на полной громкости, и возврат
+    # ложился поверх готового микса второй дорожкой: в ControlC это и
+    # слышалось как «добавил FX — дБ зашкаливает».
+    _fader = {"source": g_out, "target": vol_env * g_in * ride}
+    for _req in fx_send_queue:
+        _sig = _req["signal"]
+        if _sig is None:
+            _sig = decks[_req["deck"]]
+        _fed = _sig * _env(_fader[_req["deck"]], _sig)
+        _prm = _req["params"]
+        if _req["unit"] == "echo":
+            _wet = _echo_return(_fed, sr, _req["env"],
+                                **({"delay_sec": _prm["delay_sec"]}
+                                   if "delay_sec" in _prm else {}))
+        else:
+            _wet = _reverb_return(_fed, sr, _req["env"],
+                                  **({"decay_sec": _prm["decay_sec"]}
+                                     if "decay_sec" in _prm else {}))
         mix = mix + _wet * FX_RETURN_LEVEL
     # В полном сете кусок — часть большого файла, и подтягивать его уровень
     # отдельно НЕЛЬЗЯ: тела треков вокруг него нормируются по своему треку,
@@ -1954,6 +2167,17 @@ def render_demo(
     if "target" in transport_info:
         tgt_used_seconds = max(0.0, (transport_info["target"]["advance"] - start_sample) / sr)
 
+    # Хвост без материала отрезаем ПОСЛЕДНИМ действием, и вместе с ним
+    # правим все длительности: иначе render_full_set продолжил бы тело
+    # следующего трека с той секунды, до которой кусок якобы доиграл, —
+    # и вместо дырки получилась бы дырка плюс повтор.
+    mix, dead_tail = _trim_dead_tail(mix, sr)
+    if dead_tail > 0:
+        total_duration = max(0.0, total_duration - dead_tail)
+        tgt_used_seconds = max(0.0, tgt_used_seconds - dead_tail)
+        if "source" not in transport_info:
+            src_used_seconds = max(0.0, src_used_seconds - dead_tail)
+
     # Демо пишем в mp3, а не в wav. Отбор швов — это десятки прослушиваний
     # за вечер, и каждый wav на 25 секунд стерео это 4-5 МБ против 600 КБ
     # у mp3 320. Для «послушать и решить» разницы на слух нет, а разница в
@@ -1970,6 +2194,10 @@ def render_demo(
 
     return {
         "duration_seconds": round(total_duration, 2),
+        # Сколько секунд пустого хвоста пришлось отрезать. Ноль — норма;
+        # заметное число значит, что план просит у файла больше, чем в
+        # нём есть, и точку входа стоит подвинуть.
+        "dead_tail_seconds": round(dead_tail, 2),
         "sync_time_seconds": round(sync_time - timeline_start, 2),
         "events_count": len(events),
         "time_scale": scale,
@@ -1996,7 +2224,7 @@ def render_demo(
         "grid_confidence": round(min(float(src_grid.get("confidence", 0.0)),
                                      float(tgt_grid.get("confidence", 0.0))), 3),
         "crossfade_complete": bool(len(cf_env) and cf_env[-1] >= 0.99),
-        "entry_profile": "overlay" if _overlay_mode else "technique",
+        "entry_profile": (str((mix_profile or {}).get("entry") or "technique")),
         "vocal_loop_bars": round(vocal_loop_bars, 2) or None,
         "bars": (round(float(bars), 1) if bars else None),
         "stems_used": bool(stems_ready),

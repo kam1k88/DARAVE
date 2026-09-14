@@ -37,6 +37,11 @@ TELEMETRY_SEND_INTERVAL_SECONDS = 0.2
 ExecutePlanCallback = Callable[[MixPlan], Awaitable[None]]
 ExecuteCommandCallback = Callable[[str], Awaitable[None]]
 ExecuteControlCallback = Callable[[dict], Awaitable[None]]
+# Автопилот: «положи трек на деку» и «дёрни транспорт деки». Обе возвращают
+# словарь-результат, потому что backend без ответа не может идти дальше по
+# сету — он не знает, нашёлся ли трек и та ли это дорожка.
+ExecuteLoadCallback = Callable[[dict], Awaitable[dict]]
+ExecuteDeckCallback = Callable[[dict], Awaitable[dict]]
 
 
 class CompanionWSClient:
@@ -49,6 +54,8 @@ class CompanionWSClient:
         execute_command: ExecuteCommandCallback | None = None,
         session_id: str | None = None,
         execute_control: ExecuteControlCallback | None = None,
+        execute_load: ExecuteLoadCallback | None = None,
+        execute_deck: ExecuteDeckCallback | None = None,
     ) -> None:
         # session_id по умолчанию = companion_id (см. докстринг модуля)
         room = session_id or companion_id
@@ -58,6 +65,8 @@ class CompanionWSClient:
         self._execute_plan = execute_plan
         self._execute_command = execute_command
         self._execute_control = execute_control
+        self._execute_load = execute_load
+        self._execute_deck = execute_deck
         self._ws = None
         # Текущий исполняющийся MixPlan. Раньше _execute_plan вызывался
         # прямо из цикла приёма сообщений — а техника длится десятки секунд,
@@ -115,6 +124,39 @@ class CompanionWSClient:
             await self._send_json({"type": "control_done", "control": msg.get("control"),
                                    "deck": msg.get("deck"), "ok": False, "error": str(exc)})
 
+    async def _run_load(self, msg: dict) -> None:
+        """Загрузка трека на деку — отдельной задачей.
+
+        Она занимает 1-2 секунды (фокус окна, поиск, ожидание телеметрии),
+        и всё это время companion обязан продолжать читать сокет: иначе
+        телеметрия встанет ровно тогда, когда backend по ней и ждёт
+        момента перехода."""
+        token = msg.get("token")
+        if self._execute_load is None:
+            await self._send_json({"type": "load_result", "token": token, "ok": False,
+                                   "deck": msg.get("deck"),
+                                   "error": "этот companion не умеет грузить треки"})
+            return
+        try:
+            out = await self._execute_load(msg)
+        except Exception as exc:
+            out = {"ok": False, "error": repr(exc)}
+        await self._send_json({"type": "load_result", "token": token,
+                               "deck": msg.get("deck"), **out})
+
+    async def _run_deck(self, msg: dict) -> None:
+        token = msg.get("token")
+        if self._execute_deck is None:
+            await self._send_json({"type": "deck_result", "token": token, "ok": False,
+                                   "error": "этот companion не умеет команды деки"})
+            return
+        try:
+            out = await self._execute_deck(msg)
+        except Exception as exc:
+            out = {"ok": False, "error": repr(exc)}
+        await self._send_json({"type": "deck_result", "token": token,
+                               "deck": msg.get("deck"), **out})
+
     async def _run_plan(self, plan: MixPlan, plan_id: str) -> None:
         """Исполняет MixPlan, не блокируя приём сообщений, и сообщает
         backend'у о старте/конце — чтобы UI мог показать, что техника
@@ -156,6 +198,12 @@ class CompanionWSClient:
                 # дёргаем сразу. Отдельной задачей, чтобы удержание
                 # (fx_enable на N секунд) не застопорило приём сообщений.
                 asyncio.create_task(self._run_control(msg))
+
+            elif msg["type"] == "load_track":
+                asyncio.create_task(self._run_load(msg))
+
+            elif msg["type"] == "deck_action":
+                asyncio.create_task(self._run_deck(msg))
 
             elif msg["type"] == "command":
                 action = msg.get("action", "")

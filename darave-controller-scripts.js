@@ -26,8 +26,8 @@
 // Формат payload (см. companion/telemetry.py::parse_sysex_payload):
 // Шестое поле stem_count добавлено позже — старый companion его просто
 // не увидит, поэтому оно и стоит последним.
-//   "<deck>,<play 0|1>,<bpm>,<pos 0..1>,<track_loaded 0|1>"
-//   пример: "A,1,128.00,0.4123,1"
+//   "<deck>,<play 0|1>,<bpm>,<pos 0..1>,<track_loaded 0|1>,<stems>,<duration>"
+//   пример: "A,1,128.00,0.4123,1,0,312.44"
 // Плюс раз в тик — глобальный статус записи (не по деке): "R,<status>"
 //   status = engine.getValue("[Recording]", "status"): 0=нет, 1=пишет, 2=ошибка
 // SysEx-обвязка: [0xF0, ...ascii байты payload..., 0xF7]
@@ -241,8 +241,28 @@ DaraveController.sendDeckTelemetry = function (deck) {
     // (.stem.mp4). Без этого DARAVE не отличает «слои приглушены» от
     // «слоёв нет вовсе» и стем-техника молча не делает ничего.
     const stemCount = engine.getValue(group, "stem_count") || 0;
+
+    // Длительность загруженного трека, секунды. Седьмое поле — и это не
+    // украшение: контрола «загрузи файл по пути» в Mixxx нет, DARAVE
+    // грузит трек ПОИСКОМ по имени, и единственный способ убедиться, что
+    // нашёлся тот самый, — сверить длительность с той, что лежит в базе
+    // DARAVE. Без этого сет мог бы молча играть чужой трек.
+    // ВАЖНО про источник: в дампе контролов сборки диджея (36841 штука)
+    // ключа "duration" НЕТ вовсе — есть time_elapsed и time_remaining.
+    // Поэтому сначала пробуем прямой контрол, а если его в сборке нет
+    // (getValue у несуществующего возвращает 0, отличить нельзя),
+    // складываем «прошло» и «осталось». Это те же секунды, только
+    // собранные из двух половин.
+    let duration = engine.getValue(group, "duration") || 0;
+    if (!duration) {
+        const elapsed = engine.getValue(group, "time_elapsed") || 0;
+        const remaining = Math.abs(engine.getValue(group, "time_remaining") || 0);
+        duration = elapsed + remaining;
+    }
+
     const payload = deck.label + "," + playing + "," + bpm.toFixed(2) + "," +
-        position.toFixed(4) + "," + trackLoaded + "," + stemCount;
+        position.toFixed(4) + "," + trackLoaded + "," + stemCount + "," +
+        duration.toFixed(2);
 
     DaraveController.sendSysex(payload);
 };

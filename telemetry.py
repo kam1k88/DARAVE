@@ -5,8 +5,9 @@ darave-controller-scripts.js раз в 100мс шлёт SysEx-пакет с со
 каждой деки на тот же виртуальный MIDI-порт. Здесь это принимается,
 парсится и складывается в StateStore.
 
-Формат payload внутри SysEx (см. .js): "<deck>,<play 0|1>,<bpm>,<pos>,<track_loaded 0|1>"
-Пример: "A,1,128.00,0.4123,1"
+Формат payload внутри SysEx (см. .js):
+  "<deck>,<play 0|1>,<bpm>,<pos>,<track_loaded 0|1>,<stems>,<duration>"
+Пример: "A,1,128.00,0.4123,1,0,312.44"
 
 Отдельно — глобальный (не по декам) статус записи, тем же таймером:
   "R,<status>"  — status: 0=не пишет, 1=пишет, 2=ошибка (см. Mixxx [Recording] status)
@@ -60,6 +61,10 @@ def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
         # Mixxx руками, и рассинхрон на один запуск — норма, а не сбой.
         deck, play_flag, bpm, pos, track_loaded_flag = parts[:5]
         stem_count = int(parts[5]) if len(parts) > 5 else 0
+        # Седьмое поле — длительность трека; появилось вместе с
+        # автопилотом (deck_loader.py сверяет по ней, тот ли трек нашёлся
+        # поиском). Старый скрипт контроллера его не шлёт — это не сбой.
+        duration = float(parts[6]) if len(parts) > 6 else 0.0
         return DeckState(
             deck=deck,
             playing=bool(int(play_flag)),
@@ -68,6 +73,7 @@ def parse_sysex_payload(message: list[int]) -> ParsedTelemetry:
             track_loaded=bool(int(track_loaded_flag)),
             received_at=time.time(),
             stem_count=stem_count,
+            duration=duration,
         )
     except (UnicodeDecodeError, ValueError, IndexError):
         # Чужой/битый SysEx (например, от другого приложения на том же порту) —

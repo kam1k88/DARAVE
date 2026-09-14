@@ -102,15 +102,22 @@ def _id3_frames(path: str, want: tuple[str, ...]) -> dict:
 
 
 def read_tags(path: str) -> dict:
-    """{'bpm': float|None, 'key': str|None, 'genre': str|None}."""
-    bpm = key = gen = None
+    """{'bpm', 'key', 'genre', 'artist', 'title'} — что записано в файле.
+
+    Исполнитель и название читаются отсюда в первую очередь: тег точнее
+    имени файла всегда. «1. Bad Patterns - PERFECT STORM.mp3» разбирается
+    в артиста и название и по имени, но «10. MPH - Alone (Extended Mix)»
+    уже требует угадывать, где кончается номер дорожки, а в теге всё
+    записано прямо."""
+    bpm = key = gen = artist = title = None
     try:
         from mutagen import File as MutagenFile
 
         m = MutagenFile(path)
         if m is not None and getattr(m, "tags", None):
             tags = m.tags
-            for k, dst in (("TBPM", "bpm"), ("TKEY", "key"), ("TCON", "genre")):
+            for k, dst in (("TBPM", "bpm"), ("TKEY", "key"), ("TCON", "genre"),
+                           ("TPE1", "artist"), ("TIT2", "title")):
                 try:
                     v = tags.get(k)
                 except Exception:
@@ -122,21 +129,30 @@ def read_tags(path: str) -> dict:
                     bpm = v
                 elif dst == "key":
                     key = v
-                else:
+                elif dst == "genre":
                     gen = v
+                elif dst == "artist":
+                    artist = v
+                else:
+                    title = v
     except Exception:
         pass
-    if bpm is None and key is None and gen is None:
-        fr = _id3_frames(path, ("TBPM", "TKEY", "TCON"))
+    if bpm is None and key is None and gen is None and artist is None:
+        fr = _id3_frames(path, ("TBPM", "TKEY", "TCON", "TPE1", "TIT2"))
         bpm, key, gen = fr.get("TBPM"), fr.get("TKEY"), fr.get("TCON")
+        artist, title = fr.get("TPE1"), fr.get("TIT2")
     try:
         bpm_f = float(str(bpm).strip()) if bpm else None
     except ValueError:
         bpm_f = None
     if bpm_f is not None and not (20.0 <= bpm_f <= 400.0):
         bpm_f = None
-    return {"bpm": bpm_f, "key": (str(key).strip() or None) if key else None,
-            "genre": (str(gen).strip() or None) if gen else None}
+    def _txt(v):
+        v = (str(v).strip() if v else "")
+        return v or None
+
+    return {"bpm": bpm_f, "key": _txt(key), "genre": _txt(gen),
+            "artist": _txt(artist), "title": _txt(title)}
 
 
 def confirmed_bpm(detected: float | None, tag_bpm: float | None,

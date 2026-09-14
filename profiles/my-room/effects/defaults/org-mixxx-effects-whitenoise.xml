@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Effect>
+ <MetaParameterValue>0</MetaParameterValue>
+ <Id>org.mixxx.effects.whitenoise</Id>
+ <BackendType>Built-In</BackendType>
+ <Parameters>
+  <Parameter>
+   <Id>dry_wet</Id>
+   <Value>1</Value>
+   <LinkType>LINKED</LinkType>
+   <LinkInversion>0</LinkInversion>
+   <Hidden>0</Hidden>
+  </Parameter>
+ </Parameters>
+</Effect>

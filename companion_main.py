@@ -114,6 +114,75 @@ async def main() -> None:
         print(f"[companion] контрол: {live_control.describe(cmd)}")
         await live_control.apply(midi_out.send, cmd)
 
+    async def execute_load(msg: dict) -> dict:
+        """«Положи следующий трек сета на деку N и поставь CUE сюда».
+
+        Контрола «загрузи файл по пути» в Mixxx нет — проверено по
+        сборке, а не по документации. Единственное место, где Mixxx сам
+        кладёт трек на деку, это очередь Auto DJ: включили `enabled`,
+        Mixxx взял следующий трек очереди, выключили. Всё по SysEx, без
+        клавиатуры и фокуса — см. autodj_loader.py.
+
+        via="search" оставлен как запасной путь через поле поиска
+        (deck_loader.py). Он отбирает у диджея клавиатуру и работает
+        через раз, поэтому по умолчанию не используется."""
+        if (msg.get("via") or "autodj") == "search":
+            import deck_loader
+
+            return await deck_loader.load_track(
+                midi_out.send, store,
+                deck=msg.get("deck", "A"),
+                query=msg.get("query") or "",
+                cue_seconds=msg.get("cue_seconds"),
+                expect_duration=msg.get("expect_duration"),
+                play=bool(msg.get("play")),
+                log=print,
+            )
+
+        import autodj_loader
+
+        return await autodj_loader.load_next(
+            midi_out.send, store,
+            deck=msg.get("deck", "A"),
+            cue_seconds=msg.get("cue_seconds"),
+            expect_duration=msg.get("expect_duration"),
+            play=bool(msg.get("play")),
+            log=print,
+        )
+
+    async def execute_deck(msg: dict) -> dict:
+        """Транспорт одной деки без плана: play / stop / игла в секунду /
+        играть с CUE. Нужно автопилоту между переходами — там нет ни
+        техники, ни тайминга по долям, есть «заведи первый трек»."""
+        import midi_mapping as _mm
+
+        deck = (msg.get("deck") or "A").upper()
+        if deck not in _mm.DECK_NUMBER:
+            return {"ok": False, "error": f"нет деки {deck}"}
+        group = f"[Channel{_mm.DECK_NUMBER[deck]}]"
+        action = msg.get("action")
+
+        if action == "play":
+            midi_out.send(_mm.sysex_set(group, "play", 1))
+        elif action == "stop":
+            midi_out.send(_mm.sysex_set(group, "play", 0))
+        elif action == "cue_play":
+            midi_out.send(_mm.sysex_press(group, "cue_gotoandplay"))
+        elif action == "position":
+            st = store.get(deck)
+            duration = float(getattr(st, "duration", 0.0) or 0.0)
+            seconds = float(msg.get("seconds") or 0.0)
+            if duration <= 0:
+                return {"ok": False, "error": f"дека {deck}: неизвестна длительность трека"}
+            midi_out.send(_mm.sysex_set(group, "playposition",
+                                        max(0.0, min(1.0, seconds / duration))))
+        elif action == "cue_set":
+            midi_out.send(_mm.sysex_press(group, "cue_set"))
+        else:
+            return {"ok": False, "error": f"не знаю команды деки '{action}'"}
+        print(f"[companion] дека {deck}: {action}")
+        return {"ok": True}
+
     async def execute_command(action: str) -> None:
         # Составные команды по деке: «освободить деку» — это стоп, снятие
         # трека и возврат всех ручек в стандартное положение. Одной
@@ -202,6 +271,8 @@ async def main() -> None:
         args.ws_url, args.companion_id, store, execute_plan,
         execute_command=execute_command,
         execute_control=execute_control,
+        execute_load=execute_load,
+        execute_deck=execute_deck,
     )
     print(f"[companion] код комнаты: '{args.companion_id}' — этот же код диджей "
           f"вводит в браузерном чате на backend'е")

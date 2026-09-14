@@ -6,6 +6,12 @@ persistence.py — лёгкая персистентность backend'а пов
   - историю диалога с DJAgent (роль + текст), чтобы при рестарте backend
     ассистент "помнил" контекст текущего сета
   - последний отправленный MixPlan (для кнопки "повторить микс")
+  - последний ПОСТРОЕННЫЙ ПЛАН СЕТА (mix_strategist.plan_strategy). Раньше
+    он жил только в памяти комнаты как "дёшево пересчитать". Дёшево — по
+    процессору, но не по работе диджея: план несёт ПРАВКИ (техника, точки
+    ухода и входа, ползунки приёмов у конкретных переходов), а их
+    пересчёт не вернёт. Любой перезапуск backend'а — и час работы
+    выброшен. Теперь переживает и рестарт, и перезагрузку страницы.
   - загруженную библиотеку треков (track_analysis.py --upload) — ВАЖНО:
     комната (SessionRoom) удаляется из памяти, когда из неё уходят все
     (см. session.py::drop_if_empty), а следующее подключение с тем же
@@ -67,16 +73,18 @@ def init_db() -> None:
                 session_id TEXT PRIMARY KEY,
                 last_plan_json TEXT,
                 library_json TEXT,
+                strategy_json TEXT,
                 updated_at REAL NOT NULL
             )"""
         )
         # На случай апгрейда существующей базы без library_json (созданной
         # до этого поля) — ALTER TABLE ADD COLUMN безопасно падает, если
         # колонка уже есть, поэтому оборачиваем в try.
-        try:
-            cur.execute("ALTER TABLE rooms ADD COLUMN library_json TEXT")
-        except sqlite3.OperationalError:
-            pass
+        for column in ("library_json", "strategy_json"):
+            try:
+                cur.execute(f"ALTER TABLE rooms ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass
 
 
 def append_history(session_id: str, role: str, text: str, keep_last: int = 40) -> None:
@@ -147,3 +155,31 @@ def load_library(session_id: str) -> list[dict]:
         if row is None or row[0] is None:
             return []
         return json.loads(row[0])
+
+
+def save_strategy(session_id: str, strategy: dict | None) -> None:
+    """Последний построенный план сета.
+
+    Хранится целиком, вместе с правками переходов: план — это не
+    результат вычисления, а документ, над которым диджей работал."""
+    import time
+
+    with _cursor() as cur:
+        cur.execute(
+            """INSERT INTO rooms (session_id, strategy_json, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(session_id) DO UPDATE SET strategy_json = excluded.strategy_json,
+                                                       updated_at = excluded.updated_at""",
+            (session_id, json.dumps(strategy) if strategy is not None else None, time.time()),
+        )
+
+
+def load_strategy(session_id: str) -> dict | None:
+    with _cursor() as cur:
+        cur.execute("SELECT strategy_json FROM rooms WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
+        try:
+            return json.loads(row[0])
+        except (ValueError, TypeError):
+            return None

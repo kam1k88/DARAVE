@@ -158,6 +158,44 @@ def _norm(text: str | None) -> str:
 GENERIC_GENRES = {"other", "electronic"}
 
 
+# Что можно сказать о жанре по ОДНОМУ ТОЛЬКО ТЕМПУ.
+#
+# Прежде здесь была ровно одна полоса — 160-185 как драм-н-бейс, — а всё
+# остальное оставалось без жанра вовсе. Для библиотеки, где 42 трека из 66
+# это драм-н-бейс, работало; но у диджея есть ещё 11 треков на 135 и
+# четыре на 140, и им доставалось None. Дальше по цепочке None означал
+# «возьми настройки по умолчанию», то есть драм-н-бейсовые: чужая сетка
+# фраз и чужие приёмы. Он это и заметил: «под эти стили нужны другие фразы
+# и другие техники сведения».
+#
+# Но и врать нельзя. 135 BPM — это не один жанр, это СЕМЕЙСТВО: гэридж,
+# бэйслайн, спид-гэридж, брейкс. Поэтому полоса отдаёт семейство плюс
+# список кандидатов, а источником честно пишется "bpm": решение по темпу
+# слабее тега и слабее имени файла, и интерфейс вправе спросить.
+#
+# Полосы кончаются там, где темп перестаёт что-либо значить: 120-128 это
+# и хаус, и техно, и поп — гадать не о чем.
+BPM_FAMILIES: tuple[tuple[float, float, str, tuple[str, ...]], ...] = (
+    (160.0, 185.0, "dnb",      ("dnb", "liquid", "neurofunk", "jungle")),
+    (140.0, 152.0, "dubstep",  ("dubstep", "halftime", "techno")),
+    (128.0, 140.0, "garage",   ("garage", "bassline", "speed garage", "breaks")),
+    (85.0, 100.0,  "hiphop",   ("hiphop", "halftime dnb")),
+)
+
+
+def genre_from_bpm(bpm: float | None) -> dict:
+    """Семейство жанров по темпу, с кандидатами и честным источником."""
+    if not bpm:
+        return {"genre": None, "genre_source": None, "candidates": ()}
+    v = float(bpm)
+    for lo, hi, fam, cands in BPM_FAMILIES:
+        if lo <= v <= hi:
+            return {"genre": fam, "genre_source": "bpm",
+                    "raw": f"{v:.0f} BPM", "candidates": cands,
+                    "certain": len(cands) == 1 or fam == "dnb"}
+    return {"genre": None, "genre_source": None, "candidates": ()}
+
+
 def genre_from_tags(tag_genre: str | None, file_name: str | None = None,
                     bpm: float | None = None) -> dict:
     """Канонический жанр. Возвращает {'genre', 'genre_source', 'raw'}.
@@ -183,8 +221,11 @@ def genre_from_tags(tag_genre: str | None, file_name: str | None = None,
                 return hit
             fallback = fallback or hit
 
-    if bpm and 160.0 <= float(bpm) <= 185.0:
-        return {"genre": "dnb", "genre_source": "bpm", "raw": f"{bpm:.0f} BPM"}
+    by_bpm = genre_from_bpm(bpm)
+    if by_bpm.get("genre"):
+        # Общий тег («Dance», «Other») слабее темпа: он не врёт, но и не
+        # говорит ничего, а темп сужает хотя бы до семейства.
+        return by_bpm
     if fallback:
         return fallback
     if raw:
@@ -211,10 +252,24 @@ def subgenre_from_tags(tag_genre: str | None, file_name: str | None = None,
 
 
 def artist_title_from_name(file_name: str) -> tuple[str | None, str | None]:
-    """«Black Sun Empire - Arrakis.mp3» -> ('Black Sun Empire', 'Arrakis')."""
-    stem = re.sub(r"\.[a-z0-9]{2,5}$", "", file_name or "", flags=re.I)
-    stem = re.sub(r"^\s*\d+[\.\-)]\s*", "", stem)          # «02. » в начале
-    stem = re.sub(r"^\s*\[[^\]]+\]\s*", "", stem)          # «[DnB] » в начале
+    """«Black Sun Empire - Arrakis.mp3» -> ('Black Sun Empire', 'Arrakis').
+
+    Принимает и путь целиком: вызывающих мест несколько, и заставлять
+    каждое из них отрезать папку — это ровно тот случай, когда одно
+    забудет. Замерено: «/x/1. Bad Patterns - PERFECT STORM.mp3» давал
+    исполнителя «/x/1. Bad Patterns» — с папкой и номером дорожки.
+    """
+    stem = str(file_name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    stem = re.sub(r"\.[a-z0-9]{2,5}$", "", stem, flags=re.I)
+    # Номер дорожки и метка жанра в начале — в любом порядке и по
+    # нескольку раз: «[DnB] 03 - ...» встречается не реже, чем «03. [DnB] ...».
+    for _ in range(3):
+        before = stem
+        stem = re.sub(r"^\s*\d{1,3}\s*[\.\-–)_]\s*", "", stem)   # «02. », «10 - »
+        stem = re.sub(r"^\s*\[[^\]]*\]\s*", "", stem)             # «[DnB] »
+        stem = re.sub(r"^\s*\([^)]*\)\s*", "", stem)               # «(2021) »
+        if stem == before:
+            break
     if " - " in stem:
         a, t = stem.split(" - ", 1)
         return a.strip(), t.strip()

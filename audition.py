@@ -120,12 +120,41 @@ def pool(session_id: str) -> list[dict]:
     with _db() as conn:
         rows = conn.execute(
             """SELECT a_path, b_path, technique_id, pair_label, exit_seconds,
-                      entry_seconds, params_json, created_at
+                      entry_seconds, params_json, created_at, id
                FROM seams WHERE session_id = ? AND verdict = 'approved'
                ORDER BY created_at""", (session_id,)).fetchall()
     return [{"a_path": r[0], "b_path": r[1], "technique_id": r[2], "pair_label": r[3],
              "exit_seconds": r[4], "entry_seconds": r[5],
-             "params": json.loads(r[6] or "{}"), "created_at": r[7]} for r in rows]
+             "params": json.loads(r[6] or "{}"), "created_at": r[7],
+             "id": r[8]} for r in rows]
+
+
+def drop(session_id: str, seam_id: int) -> dict:
+    """Убрать один шов из пула.
+
+    Именно УДАЛИТЬ, а не переписать в отказ: отказ учится на причине, а
+    здесь причины нет — диджей просто передумал. Записать это отказом
+    значило бы испортить вкус выдуманной причиной."""
+    with _db() as conn:
+        cur = conn.execute("DELETE FROM seams WHERE id = ? AND session_id = ?",
+                           (int(seam_id), session_id))
+        conn.commit()
+    return {"ok": cur.rowcount > 0}
+
+
+def clear(session_id: str, what: str = "approved") -> dict:
+    """Очистить пул целиком.
+
+    what: approved — только одобренные (пул), rejected — только отказы
+    (вместе с ними уходит и выученный вкус), all — и то, и другое."""
+    where = {"approved": "AND verdict = 'approved'",
+             "rejected": "AND verdict = 'rejected'",
+             "all": ""}.get(str(what), "AND verdict = 'approved'")
+    with _db() as conn:
+        cur = conn.execute(f"DELETE FROM seams WHERE session_id = ? {where}",
+                           (session_id,))
+        conn.commit()
+    return {"ok": True, "removed": cur.rowcount, "what": what}
 
 
 def rejections(session_id: str) -> list[dict]:
@@ -385,14 +414,43 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 # 8 тактов — ничего, но стык «дроп в дроп» на 8 тактах
                 # всё равно обгонит «тело в тело» на 32.
                 long_bonus = 1.0 + min(float(opt["bars"]), 64.0) / 128.0
+                ga, sa = style.track_genre(a)
+                gb, sb = style.track_genre(b)
+                kd = camelot_distance(a.get("camelot"), b.get("camelot"))
+                stems_ok = style.has_stems(a) and style.has_stems(b)
+                # Темп у пары разный, и сводим мы его скоростью, а не
+                # растяжением — значит вместе с темпом уедет и высота.
+                # Считается один раз на пару, не на каждый приём.
+                detune = _pair_detune(a, b)
+                # Тональность влияет не только на выбор ПАРЫ (key_weight),
+                # но и на выбор ПРИЁМА: при разрыве длинное наложение
+                # тональных частей обнажает его, а рез или обмен низом —
+                # нет. Стемы смягчают: конфликтующий слой можно снять.
+                key_mult, key_why = style.key_technique_bias(tid, kd, stems_ok)
+                # Вокал с обеих сторон — отдельный конфликт, не сводимый
+                # к тональности: два голоса спорят даже в одной
+                # тональности, а приёмы против этого свои.
+                voc_mult, voc_why = style.vocal_technique_bias(
+                    tid, bool(opt["exit"].get("vocal")),
+                    bool(opt["entry"].get("vocal")), stems_ok)
+                # Подгонка темпа двигает высоту: метки Камелота этого не
+                # видят, а уши слышат (см. style.detune_technique_bias).
+                det_mult, det_why = style.detune_technique_bias(
+                    tid, detune["cents"], stems_ok)
+                # Где стоят точки по хронометражу: уход ближе к концу
+                # уходящего, вход ближе к началу входящего.
+                point_mult, point_why = style.point_bias(
+                    opt["exit"]["at"], a.get("duration_seconds"),
+                    opt["entry"]["at"], b.get("duration_seconds"))
                 w = (style.PAIR_INTEREST.get(opt["label"], 1.0)
                      * taste_weight(tm, tid, opt["label"])
                      * key_weight(a, b)
                      * long_bonus
+                     * key_mult
+                     * voc_mult
+                     * det_mult
+                     * point_mult
                      * (1.0 - 0.08 * k) + jitter)
-                ga, sa = style.track_genre(a)
-                gb, sb = style.track_genre(b)
-                kd = camelot_distance(a.get("camelot"), b.get("camelot"))
                 out.append({
                     "score": round(w, 3),
                     "a_path": a["path"], "a_name": a.get("name"),
@@ -412,6 +470,14 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                     "key_distance": kd,
                     "a_genre": sa or ga, "b_genre": sb or gb,
                     "a_stems": style.has_stems(a), "b_stems": style.has_stems(b),
+                    # Почему этот приём и эти точки: диджей должен видеть
+                    # не только «что», но и «на каком основании».
+                    "key_note": key_why, "point_note": point_why,
+                    "vocal_note": voc_why,
+                    "detune_cents": detune["cents"],
+                    "detune_note": det_why or detune["note"],
+                    "a_vocal_section": bool(opt["exit"].get("vocal")),
+                    "b_vocal_section": bool(opt["entry"].get("vocal")),
                     "why": f"стыкуются {opt['label']}, {opt['bars']} тактов; {t.name}",
                 })
     out.sort(key=lambda x: -x["score"])
@@ -419,6 +485,34 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
 
 
 # ------------------------------------------------- ручной выбор приёма
+
+_DETUNE_CACHE: dict[tuple, dict] = {}
+
+
+def _pair_detune(a: dict, b: dict, master_bpm: float | None = None) -> dict:
+    """Расхождение по высоте между деками после приведения к общему темпу.
+
+    Мастер-темп по умолчанию — СРЕДНЕЕ геометрическое двух: так каждый
+    трек уходит от своего оригинала вдвое меньше, чем если тянуть один к
+    другому. На расхождение МЕЖДУ деками выбор не влияет вовсе (оно равно
+    разнице темпов), но на то, насколько каждый трек звучит непохоже на
+    себя, — влияет, и среднее здесь честнее."""
+    import math
+
+    import tempo
+
+    ba, bb = float(a.get("bpm") or 0.0), float(b.get("bpm") or 0.0)
+    if ba <= 0 or bb <= 0:
+        return {"cents": 0.0, "verdict": "unknown", "note": "",
+                "semitones_a": 0.0, "semitones_b": 0.0}
+    master = master_bpm or math.sqrt(ba * tempo.nearest_octave(bb, ba))
+    key = (round(ba, 2), round(bb, 2), round(float(master), 2))
+    hit = _DETUNE_CACHE.get(key)
+    if hit is None:
+        hit = tempo.detune_between(ba, bb, master)
+        _DETUNE_CACHE[key] = hit
+    return hit
+
 
 def _best_for(technique_id: str) -> list[str]:
     """На каких стыках этот приём вообще рекомендован.
@@ -467,25 +561,243 @@ def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
             "needs_vocals": t.needs_vocals,
             "ok": not problem, "problem": problem,
         })
-    out.sort(key=lambda x: (not x["ok"], x["rank"], not x["recommended"],
-                            x["difficulty"], x["name"]))
+    # Порядок — ПО ТИПУ приёма, а не по названию: диджей ищет «тот, что
+    # по слоям», а не «тот, что на букву П». Внутри типа — по номеру.
+    # Рекомендованные для этого стыка выносим отдельной группой сверху,
+    # иначе они разбредаются по списку и подсказка пропадает.
+    def _key(x: dict) -> tuple:
+        pref, _, num = str(x["id"]).partition("-")
+        try:
+            n = int(num)
+        except ValueError:
+            n = 999
+        return (not x["ok"], pref, n)
+
+    out.sort(key=_key)
+    return out
+
+
+# --------------------------------------------------- «повезёт» и замена B
+
+def combo_key(seam: dict) -> str:
+    """Отпечаток КОМБИНАЦИИ: приём + стык + место ухода.
+
+    «Повезёт» обязано каждый раз давать другое, иначе кнопка мертва:
+    перебор детерминированный, лучшая комбинация всегда одна и та же, и
+    нажатие вторым разом возвращало ту же карточку. Ключ считается
+    одинаково на сервере и в браузере, поэтому браузер копит список уже
+    показанного и присылает его сюда."""
+    return "|".join((
+        str(seam.get("technique_id") or ""),
+        str(seam.get("pair_label") or ""),
+        str(round(float(seam.get("exit_seconds") or 0.0), 1)),
+    ))
+
+
+def lucky(session_id: str, tracks: list[dict], a_path: str, b_path: str,
+          limit: int = 1, exclude: list[str] | None = None) -> list[dict]:
+    """Перебрать ВСЁ для этой пары и отдать лучшее.
+
+    Обычный подбор бережёт вкус диджея: он не предлагает то, что уже
+    отвергнуто, и держит связки, которые тот одобрял. Здесь наоборот —
+    полный перебор всех стыковок на все подходящие приёмы. У пары обычно
+    5-15 содержательных стыковок и по 4-6 приёмов на каждую, то есть
+    полсотни-сотня комбинаций; из них и выбирается лучшая по той же
+    оценке, что и всегда.
+
+    Мёртвые комбинации (уже отвергнутые) при этом НЕ учитываются: смысл
+    кнопки в том, чтобы дать паре ещё один шанс, а не повторить отказ."""
+    import style
+    from techniques import TECHNIQUES
+
+    by_path = {t.get("path"): t for t in tracks if t.get("path")}
+    a, b = by_path.get(a_path), by_path.get(b_path)
+    if a is None or b is None:
+        return []
+    tm = taste(session_id)
+    vocal_ok = style.has_vocals(a) and style.has_vocals(b)
+    stems_ok = style.has_stems(a) and style.has_stems(b)
+    out: list[dict] = []
+    for opt in style.pair_options(a, b):
+        for k, tid in enumerate(opt["techniques"]):
+            t = TECHNIQUES.get(tid)
+            if t is None or t.requires_decks > 2:
+                continue
+            if t.needs_vocals and not vocal_ok:
+                continue
+            if t.requires_stems and not stems_ok:
+                continue
+            long_bonus = 1.0 + min(float(opt["bars"]), 64.0) / 128.0
+            voc_mult, _ = style.vocal_technique_bias(
+                tid, bool(opt["exit"].get("vocal")),
+                bool(opt["entry"].get("vocal")), stems_ok)
+            w = (style.PAIR_INTEREST.get(opt["label"], 1.0)
+                 * taste_weight(tm, tid, opt["label"])
+                 * key_weight(a, b) * long_bonus * voc_mult * (1.0 - 0.05 * k))
+            out.append(_seam_dict(a, b, t, tid, opt, round(w, 3)))
+    # При равном весе (а он совпадает часто — числа одни и те же) берём
+    # тот вариант, где переход длиннее и где уходящий успел отыграть
+    # больше: иначе «повезёт» выдавало уход на 26-й секунде трека.
+    out.sort(key=lambda x: (-x["score"], -float(x["bars"] or 0),
+                            -float(x["exit_seconds"] or 0)))
+    # Уже показанное уходит в конец, а не выбрасывается: когда перебор
+    # исчерпан, кнопка должна начать круг заново, а не ответить «нет
+    # содержательных стыковок» на паре, где их полсотни. А когда круг
+    # исчерпан ЦЕЛИКОМ, список прокручивается за последнюю показанную
+    # комбинацию — иначе кнопка навсегда застревала бы на лучшей.
+    order = list(exclude or ())
+    seen = set(order)
+    if seen:
+        fresh = [x for x in out if combo_key(x) not in seen]
+        if fresh:
+            out = fresh + [x for x in out if combo_key(x) in seen]
+        elif order:
+            keys = [combo_key(x) for x in out]
+            last = next((k for k in reversed(order) if k in keys), None)
+            if last is not None:
+                i = keys.index(last) + 1
+                out = out[i:] + out[:i]
+    return out[:max(1, limit)]
+
+
+def nearest_b(tracks: list[dict], a_path: str, b_path: str,
+              limit: int = 1, exclude: list[str] | None = None) -> list[dict]:
+    """Другой входящий, максимально близкий к A по темпу, тональности и
+    жанру.
+
+    Не «другой трек» вообще, а именно близкий: диджей просил заменить
+    деку B «на близкий по BPM, тональности и тем же жанром, что и A».
+    Считаем расстояние по трём осям и берём ближайший, исключая сам A и
+    нынешний B."""
+    import style
+
+    by_path = {t.get("path"): t for t in tracks if t.get("path")}
+    a = by_path.get(a_path)
+    if a is None:
+        return []
+    ga, sa = style.track_genre(a)
+    bpm_a = float(a.get("bpm") or 174.0)
+    # Треки, уже отобранные в пул, кандидатами быть не должны: диджей
+    # жаловался, что кнопка «подставляет тот, который уже в пуле». Пул
+    # — это то, что УЖЕ поставлено в сет; предлагать его второй раз
+    # значит предлагать повтор.
+    skip = {a_path, b_path} | set(exclude or ())
+    scored: list[tuple[float, dict]] = []
+    for p, t in by_path.items():
+        if p in skip:
+            continue
+        bpm = float(t.get("bpm") or 0.0)
+        if bpm <= 20:
+            continue
+        # темп: относительная разница, 3% — уже заметно
+        d_bpm = abs(bpm - bpm_a) / max(bpm_a, 1.0)
+        kd = camelot_distance(a.get("camelot"), t.get("camelot"))
+        d_key = 0.0 if kd is None else min(kd, 6) / 6.0
+        gb, sb = style.track_genre(t)
+        d_gen = 0.0 if (sb or gb) == (sa or ga) else (0.3 if gb == ga else 0.6)
+        d_stem = 0.0 if style.has_stems(t) == style.has_stems(a) else 0.15
+        # Темп весит больше всего, и это не вкус: 175 в 186 не сводится
+        # никаким приёмом, а «другой поджанр» — вопрос настроения. При
+        # весе 3.0 трек на 186 BPM обгонял трек на 173 только потому, что
+        # у него совпала тональность.
+        d_bpm = d_bpm * 8.0 + (1.0 if d_bpm > 0.06 else 0.0)
+        scored.append((d_bpm + d_key + d_gen + d_stem, t))
+    scored.sort(key=lambda x: x[0])
+    return [t for _d, t in scored[:max(1, limit)]]
+
+
+def techniques_ranked(a: dict, b: dict, seam: dict,
+                      session_id: str | None = None) -> list[str]:
+    """Подходящие приёмы В ПОРЯДКЕ ПРИГОДНОСТИ для этого шва.
+
+    `techniques_for` отдаёт список для ГЛАЗ: по типу приёма, чтобы в нём
+    можно было искать. Кнопке «↻ другой» нужен другой порядок — по тому,
+    насколько приём годится именно здесь, иначе она просто листает
+    каталог по алфавиту категорий и с третьего нажатия предлагает заведомо
+    неподходящее. Считаем тем же весом, что и обычный подбор: место в
+    таблице стыка, вкус диджея, поправка на тональность."""
+    import style
+
+    label = seam.get("pair_label") or ""
+    recommended = list(style.PAIR_TECHNIQUES.get(label, ()))
+    kd = seam.get("key_distance")
+    if kd is None:
+        kd = camelot_distance(a.get("camelot"), b.get("camelot"))
+    stems_ok = style.has_stems(a) and style.has_stems(b)
+    tm = taste(session_id) if session_id else {}
+
+    scored: list[tuple[float, str]] = []
+    for x in techniques_for(a, b, label):
+        if not x["ok"]:
+            continue
+        tid = x["id"]
+        # Рекомендованные для стыка идут первыми и в своём порядке; для
+        # остальных база ниже, но вкус и тональность могут их поднять.
+        base = 1.0 - 0.06 * recommended.index(tid) if tid in recommended else 0.55
+        key_mult, _ = style.key_technique_bias(tid, kd, stems_ok)
+        scored.append((base * taste_weight(tm, tid, label) * key_mult, tid))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [tid for _w, tid in scored]
+
+
+def other_pair(session_id: str, tracks: list[dict],
+               exclude: list[str] | None = None,
+               avoid: list[str] | None = None,
+               limit: int = 1) -> list[dict]:
+    """Другая пара ЦЕЛИКОМ: два трека из библиотеки и лучший их стык.
+
+    Кнопка «✕ Другая пара» раньше была обычным отказом: она писала
+    вердикт и просила общий подбор дать следующего кандидата. Подбор же
+    ранжирует всю библиотеку одинаково, поэтому следующим приходило
+    соседнее по рейтингу — почти то же самое. Диджей просил другого:
+    взять из библиотеки два трека и посмотреть, что выйдет.
+
+    «Случайно» здесь не значит «как попало». Первый трек берётся
+    случайно из того, что ещё не в пуле, — это и даёт неожиданность.
+    Второй ищется как ближайший к нему по темпу, тональности и жанру
+    (`nearest_b`), потому что случайная ВТОРАЯ половина пары — это не
+    смелость, а несводимая пара. Приём и точки считает `lucky`."""
+    import random
+
+    by_path = {t.get("path"): t for t in tracks if t.get("path")}
+    skip = set(exclude or ())
+    pool = [p for p in by_path if p not in skip
+            and float(by_path[p].get("bpm") or 0) > 20]
+    if len(pool) < 2:
+        pool = [p for p in by_path if float(by_path[p].get("bpm") or 0) > 20]
+    if len(pool) < 2:
+        return []
+    # Треки нынешней пары исключаем из ПЕРВОГО места, но не из второго:
+    # «другая пара» — это другая пара, а не изгнание треков из библиотеки.
+    first_pool = [p for p in pool if p not in set(avoid or ())] or pool
+
+    out: list[dict] = []
+    for a_path in random.sample(first_pool, min(len(first_pool), 6)):
+        near = nearest_b(tracks, a_path, "", limit=1, exclude=sorted(skip))
+        if not near:
+            continue
+        items = lucky(session_id, tracks, a_path, near[0].get("path"), limit=1)
+        if items:
+            out.append(items[0])
+        if len(out) >= max(1, limit):
+            break
     return out
 
 
 def swap_technique(seam: dict, a: dict, b: dict,
-                   technique_id: str | None = None) -> dict:
+                   technique_id: str | None = None,
+                   session_id: str | None = None) -> dict:
     """Тот же шов с другим приёмом. Треки и точки не трогаем.
 
-    Без явного technique_id берём СЛЕДУЮЩИЙ подходящий по кругу — это и
-    есть кнопка «другой приём». Прежняя кнопка «другая техника» была
-    отказом: она записывала вердикт и пересобирала шов целиком, поэтому
-    вместе с приёмом менялись и точки, а иногда и трек."""
+    Без явного technique_id берём следующий по ПРИГОДНОСТИ — это и есть
+    кнопка «другой приём». Прежняя кнопка «другая техника» была отказом:
+    она записывала вердикт и пересобирала шов целиком, поэтому вместе с
+    приёмом менялись и точки, а иногда и трек."""
     from techniques import TECHNIQUES
 
-    items = [x for x in techniques_for(a, b, seam.get("pair_label")) if x["ok"]]
-    if not items:
+    ids = techniques_ranked(a, b, seam, session_id)
+    if not ids:
         return dict(seam)
-    ids = [x["id"] for x in items]
     if technique_id and technique_id in TECHNIQUES:
         pick = technique_id
     else:
@@ -498,6 +810,32 @@ def swap_technique(seam: dict, a: dict, b: dict,
     out["why"] = (f"стыкуются {seam.get('pair_label')}, {seam.get('bars')} тактов; "
                   f"{t.name}")
     return out
+
+
+def _seam_dict(a: dict, b: dict, t, tid: str, opt: dict, score: float) -> dict:
+    """Карточка шва в том же виде, в каком её отдаёт candidates."""
+    import style
+
+    ga, sa = style.track_genre(a)
+    gb, sb = style.track_genre(b)
+    return {
+        "score": score,
+        "a_path": a["path"], "a_name": a.get("name"),
+        "b_path": b["path"], "b_name": b.get("name"),
+        "technique_id": tid, "technique": t.name,
+        "pair_label": opt["label"],
+        "exit_seconds": opt["exit"]["at"], "entry_seconds": opt["entry"]["at"],
+        "bars": opt["bars"],
+        "a_bpm": a.get("bpm"), "b_bpm": b.get("bpm"),
+        "a_key": a.get("camelot") or a.get("key"),
+        "b_key": b.get("camelot") or b.get("key"),
+        "key_distance": camelot_distance(a.get("camelot"), b.get("camelot")),
+        "a_genre": sa or ga, "b_genre": sb or gb,
+        "a_stems": style.has_stems(a), "b_stems": style.has_stems(b),
+        "a_vocal_section": bool(opt["exit"].get("vocal")),
+        "b_vocal_section": bool(opt["entry"].get("vocal")),
+        "why": f"стыкуются {opt['label']}, {opt['bars']} тактов; {t.name}",
+    }
 
 
 def next_seam(session_id: str, tracks: list[dict], **kw) -> dict | None:
@@ -573,6 +911,7 @@ def build_set(session_id: str, tracks: list[dict]) -> dict:
             "technique_id": e["technique_id"], "pair_label": e["pair_label"],
             "exit_seconds": e["exit_seconds"], "entry_seconds": e["entry_seconds"],
             "bars": (e.get("params") or {}).get("bars"),
+            "mix_profile": (e.get("params") or {}).get("mix_profile"),
         } for e in best],
         # Готовые правки для plan_strategy: ключ — пара имён, а не номер
         # перехода. Номер сдвинется, если планировщик выкинет трек, и
@@ -590,6 +929,9 @@ def build_set(session_id: str, tracks: list[dict]) -> dict:
                     "bars": (e.get("params") or {}).get("bars"),
                     "from_point_seconds": e["exit_seconds"],
                     "to_point_seconds": e["entry_seconds"],
+                    # Ручное ведение фейдеров — часть одобренного шва.
+                    # Без него сет из пула звучит не тем, что слушали.
+                    "mix_profile": (e.get("params") or {}).get("mix_profile"),
                 }.items() if v is not None
             } for e in best
         },

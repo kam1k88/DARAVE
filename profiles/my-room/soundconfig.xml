@@ -1,0 +1,9 @@
+<!DOCTYPE SoundManagerConfig>
+<SoundManagerConfig api="Windows DirectSound" deck_count="4" force_network_clock="1" latency="5" samplerate="44100" sync_buffers="2">
+ <SoundDevice deviceIndex="6" name="Первичный звуковой драйвер">
+  <output channel="0" channel_count="2" index="0" type="Headphones"/>
+ </SoundDevice>
+ <SoundDevice deviceIndex="7" name="Интерфейс SPDIF (2- FiiO USB DAC-E10)">
+  <output channel="0" channel_count="2" index="0" type="Master"/>
+ </SoundDevice>
+</SoundManagerConfig>

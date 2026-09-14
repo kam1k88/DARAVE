@@ -1,5 +1,7 @@
 # DARAVE
-![Uploading favicon.svg…]()
+<img width="119" height="118" alt="image" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
+
+
 **Digital Audio Rave — an environment for studying DJing and experimenting with mixes.**
 
 DARAVE is a research platform where tracks are not just blended but broken down into structured layers and controlled as a multidimensional system. It analyzes each track by a set of features and combines them into a unified mapping for building sets.

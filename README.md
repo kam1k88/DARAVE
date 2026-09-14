@@ -1,244 +1,1233 @@
 # DARAVE
-<img width="119" height="118" alt="image" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
 
+<img width="119" height="118" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
 
-**Digital Audio Rave — an environment for studying DJing and experimenting with mixes.**
+**Digital Audio Rave — an environment for studying DJing, analyzing music, and experimenting with algorithmic mixing.**
 
-DARAVE is a research platform where tracks are not just blended but broken down into structured layers and controlled as a multidimensional system. It analyzes each track by a set of features and combines them into a unified mapping for building sets.
+DARAVE is a research platform for exploring DJing as a **multidimensional audio-control problem**.
 
-### Track Analysis and Mapping
+Instead of treating a track as a single audio object, DARAVE decomposes it into structured musical layers and describes them through a unified mapping of:
 
-Each track goes through a custom analysis algorithm:
+* BPM
+* KEY
+* Energy
+* Genre / Style
+* Phrases
+* Cue points
+* Vocal presence
+* STEMS
 
-- **Duration**
-- **KEY**
-- **BPM**
-- **Energy**
-- **Genres / Styles / Phrases**
-- **Cues**
-- **Vox Detection**
-- **STEMS** — split into layers (drums, bass, vocals, other)
+The resulting mapping is used to plan, control, and eventually automate transitions between musical states.
 
-All of this is combined into a **single mapping** used to build the mix.
+The long-term goal of DARAVE is to move from traditional:
+
+```text
+Track → EQ → Transition
+```
+
+towards:
+
+```text
+Track
+  ↓
+Analysis
+  ↓
+STEMS + Musical Structure
+  ↓
+Unified Mapping
+  ↓
+Transition States
+  ↓
+Multidimensional Mixing
+  ↓
+DARAVE 4D
+```
 
 ---
 
+# Concept
 
-## Current Implementation
+Traditional DJing primarily operates on complete tracks and a relatively small set of controls.
 
-- **Sound engine:** [Mixxx](https://mixxx.org/) (open-source)
-- **Control:** virtual MIDI controller
-- **Transport:** `rtmidi` + `SysEX`
+DARAVE treats the mix as a system of independently controllable musical components.
 
-At this stage, DARAVE is a layer on top of Mixxx that provides non-standard mixing logic via MIDI.
+```text
+Traditional DJ
+──────────────
+
+TRACK A ────────────────┐
+                         ├── MIX
+TRACK B ────────────────┘
+
+
+DARAVE
+──────
+
+TRACK A
+ ├── Drums
+ ├── Bass
+ ├── Vocals
+ └── Other
+
+TRACK B
+ ├── Drums
+ ├── Bass
+ ├── Vocals
+ └── Other
+        │
+        ▼
+   STATE SPACE
+        │
+        ▼
+     MIXING
+```
+
+This makes it possible to transition between tracks **stem by stem**, generate combinations of material from different tracks, and eventually construct transitions automatically from musical analysis.
 
 ---
 
-## Roadmap
+# Track Analysis
 
-### 1. Own DAW with MIDI 2.0
+Every track is processed by the DARAVE analysis pipeline.
 
-Building a dedicated digital audio workstation with full **MIDI 2.0** support.
+The analysis produces a unified representation of the track:
 
-- DSP with ASIO support not on hardware but in the web  (Web Audio / WebAssembly)
-- Communication via **UMP** (Universal MIDI Packet)
-- 16 groups × 16 channels = **256 logical channels**
-
-### 2. HYPERSTEMS / 4D STEMS
-
-A unique mixing feature that extends standard STEMS into a four-dimensional system.
-
-**Formula:**
-
-```
-4 decks × 4 stems × 4 transitions × 4 loops = 4⁴ = 256
-```
-
-| Axis | Meaning |
-|------|---------|
-| 4 decks | D1, D2, D3, D4 — sound sources |
-| 4 stems | Drums, bass, vocals, other |
-| 4 transitions | 1→2, 2→3, 3→4, 4→1 |
-| 4 loops | The cycle repeats 4 times |
-
-**Result:**
-- **16 physical audio streams** (4 decks × 4 stems playing simultaneously)
-- **256 logical MIDI channels** (16 groups × 16 channels of MIDI 2.0)
-
-### 3. Autonomous Presets from Library (Auto-Sampling)
-
-Creating autonomous presets based on the existing track library.
-
-**Idea:** the system automatically assembles presets from library material — no manual sampling required.
-
-**What it provides:**
-
-- **Auto-sampling** — DARAVE slices fragments from library tracks by given rules (by phrases, by stems, by energy, by cue points).
-- **Autonomous presets** — ready-made sets of stems/loops/phrases collected from different tracks but sounding as a single whole.
-- **Analysis-driven** — presets are built with KEY, BPM, Energy, and genre in mind, so they are compatible in tonality and tempo.
-- **Library as source** — no need to search for individual samples: DARAVE finds suitable fragments in the existing collection.
-- **Live application** — presets are loaded into HYPERSTEMS and participate in 4D rotation alongside regular tracks.
-
-**Example:**
-
-```
-Preset "Warehouse 4AM"
-├── Drums   → fragment from track A (bpm 128, key Am)
-├── Bass    → fragment from track B (bpm 128, key Am)
-├── Vocals  → fragment from track C (bpm 128, key Am)
-└── Other   → fragment from track D (bpm 128, key Am)
+```text
+TRACK
+ │
+ ├── Duration
+ ├── BPM
+ ├── KEY
+ ├── Energy
+ ├── Genre
+ ├── Style
+ ├── Phrases
+ ├── Cue Points
+ ├── Vocal Detection
+ │
+ └── STEMS
+      ├── Drums
+      ├── Bass
+      ├── Vocals
+      └── Other
 ```
 
-All four stems come from different tracks but are compatible in key, tempo, and energy. The preset is ready for rotation in DARAVE 4D.
+This information is not treated as independent metadata.
 
-### 4. Auto-Mix Planning and Assembly
+It becomes part of a **single musical mapping** used by the mixing system.
 
-Planning and automatic assembly of a clean mix using dozens of adaptive techniques (EQ/FX/STEMS) selected based on the analysis of the tracks.
+### Analysis parameters
 
-**In development.**
+| Feature       | Purpose                                     |
+| ------------- | ------------------------------------------- |
+| Duration      | Track and section timing                    |
+| BPM           | Tempo compatibility                         |
+| KEY           | Harmonic compatibility                      |
+| Energy        | Energy progression and transition selection |
+| Genre         | Style compatibility                         |
+| Style         | More detailed musical classification        |
+| Phrases       | Musical structure and transition timing     |
+| Cues          | Important positions in the track            |
+| Vox Detection | Vocal presence and vocal-aware transitions  |
+| STEMS         | Independent musical layers                  |
 
 ---
 
-## DARAVE 4D
+# Current Architecture
 
-**DARAVE 4D** is an architecture where DJing moves from EQ and STEMS to multidimensional sound control.
+DARAVE currently operates as a control and research layer on top of Mixxx.
 
+```text
+┌──────────────────────────────┐
+│           DARAVE             │
+│                              │
+│ Analysis                     │
+│ Mapping                      │
+│ Mixing Logic                 │
+│ Transition Algorithms       │
+└──────────────┬───────────────┘
+               │
+             MIDI
+               │
+        rtmidi / SysEx
+               │
+               ▼
+┌──────────────────────────────┐
+│            MIXXX             │
+│                              │
+│ Audio Engine                 │
+│ Decks                        │
+│ Playback                     │
+│ Mixing                       │
+└──────────────────────────────┘
 ```
-EQ → STEMS → HYPERSTEMS → DARAVE 4D
- 3      4         16          256
-```
 
-- **EQ** — 3 bands
-- **STEMS** — 4 layers
-- **HYPERSTEMS** — 16 audio streams
-- **DARAVE 4D** — 256 states
+### Current stack
+
+* **Audio engine:** Mixxx
+* **Control:** Virtual MIDI controller
+* **Transport:** `rtmidi`
+* **Protocol:** MIDI / SysEx
+* **Analysis:** DARAVE analysis pipeline
+
+At the current stage, DARAVE is intentionally implemented as a layer above an existing DJ engine.
+
+The purpose is to develop and test the mixing logic before moving to a dedicated audio environment.
 
 ---
 
-## Stem Rotation Algorithm
+# DARAVE Mixing Model
 
-### Circular Shift
+The fundamental abstraction in DARAVE is the **musical state**.
 
-Decks form a ring:
+A state is not simply:
 
-```
-D1 → D2 → D3 → D4 → D1
-```
-
-Stems move around the ring step by step.
-
-### Step-by-Step Transition (Recommended)
-
-Step = 1 bar. Only **one stem** moves per step.
-
-```
-Step 1: Drums   D1 → D2
-Step 2: Bass    D1 → D2
-Step 3: Vocals  D1 → D2
-Step 4: Other   D1 → D2
+```text
+Track A
 ```
 
-In 4 steps, all stems shift by one deck. This creates a smooth, musically coherent morph.
+It can contain:
 
-### Transition Modes
+```text
+Track A
+ ├── Drums
+ ├── Bass
+ ├── Vocals
+ └── Other
 
-| Mode | Description | Character |
-|------|-------------|-----------|
-| All 4 at once | Sharp shift | Drop, section change |
-| One by one | Smooth shift | Hypnotic morph |
-| Two by two | Compromise | Fast but not abrupt |
-| Probabilistic | Random choice | Generative, live performance |
++
+Track B
+ ├── Drums
+ ├── Bass
+ ├── Vocals
+ └── Other
+```
+
+The system can therefore transform:
+
+```text
+STATE A
+   ↓
+stem transition
+   ↓
+STATE B
+```
+
+instead of performing a conventional full-track crossfade.
 
 ---
 
-## Track Replacement
+# STEMS
 
-In a ring of 4 decks, there are never empty slots. Track replacement is done **stem by stem**.
+DARAVE uses four primary stem categories:
 
-### Method 1: 5th Deck as Buffer
-
+```text
+S1 = Drums
+S2 = Bass
+S3 = Vocals
+S4 = Other
 ```
-ring = [D1, D2, D3, D4]
+
+This produces four independently controllable layers per deck.
+
+With four decks:
+
+```text
+4 decks × 4 stems = 16 physical audio streams
+```
+
+```text
+D1 ── S1 S2 S3 S4
+D2 ── S1 S2 S3 S4
+D3 ── S1 S2 S3 S4
+D4 ── S1 S2 S3 S4
+```
+
+The important distinction is:
+
+> **16 physical audio streams do not mean 16 independent tracks.**
+
+They are the physical audio representation of a larger logical control system.
+
+---
+
+# HYPERSTEMS
+
+**HYPERSTEMS** extend the conventional four-stem model into a multidimensional transition system.
+
+The architecture is based on:
+
+```text
+4 decks
+×
+4 stems
+×
+4 transitions
+×
+4 loops
+=
+4⁴
+=
+256
+```
+
+The four dimensions are:
+
+| Dimension  | Meaning                     |
+| ---------- | --------------------------- |
+| Deck       | D1, D2, D3, D4              |
+| Stem       | Drums, Bass, Vocals, Other  |
+| Transition | Transition path             |
+| Loop       | Repetition / cycle position |
+
+This produces:
+
+```text
+256 logical states
+```
+
+while maintaining:
+
+```text
+16 physical audio streams
+```
+
+The distinction is fundamental:
+
+```text
+PHYSICAL AUDIO
+4 decks × 4 stems
+= 16 streams
+
+LOGICAL CONTROL
+4 decks × 4 stems × 4 transitions × 4 loops
+= 256 states
+```
+
+HYPERSTEMS therefore describe a **control space**, not 256 simultaneous audio channels.
+
+---
+
+# DARAVE 4D
+
+DARAVE 4D is the long-term architecture in which DJing becomes multidimensional sound control.
+
+```text
+EQ
+ ↓
+STEMS
+ ↓
+HYPERSTEMS
+ ↓
+DARAVE 4D
+```
+
+Conceptually:
+
+```text
+EQ          → 3-band control
+STEMS       → 4 musical layers
+HYPERSTEMS  → 16 physical streams
+DARAVE 4D   → 256 logical states
+```
+
+The number 256 is not the objective by itself.
+
+The objective is to create a system where a relatively small physical controller can navigate a much larger musical state space.
+
+```text
+             DARAVE 4D
+                 │
+        ┌────────┼────────┐
+        │        │        │
+      Scenes   Macros  Automation
+        │        │        │
+        └────────┼────────┘
+                 │
+                 ▼
+           Audio States
+```
+
+---
+
+# Stem Rotation
+
+One of the core DARAVE transition mechanisms is **Stem Rotation**.
+
+The four decks form a circular topology:
+
+```text
+D1 → D2 → D3 → D4
+↑                 ↓
+└─────────────────┘
+```
+
+Instead of replacing an entire track at once, individual stems move through the ring.
+
+---
+
+## Step-by-Step Rotation
+
+The recommended transition step is **one bar**.
+
+Only one stem changes at each step.
+
+```text
+Step 1
+Drums   D1 → D2
+
+Step 2
+Bass    D1 → D2
+
+Step 3
+Vocals  D1 → D2
+
+Step 4
+Other   D1 → D2
+```
+
+After four steps, all four stems have moved one deck position.
+
+```text
+D1
+ ↓
+D2
+ ↓
+D3
+ ↓
+D4
+ ↓
+D1
+```
+
+This creates a gradual musical morph instead of an abrupt track replacement.
+
+---
+
+# Transition Modes
+
+DARAVE supports several conceptual transition modes.
+
+| Mode          | Description                           | Character             |
+| ------------- | ------------------------------------- | --------------------- |
+| All 4 at once | All stems transition simultaneously   | Drop / section change |
+| One by one    | One stem per step                     | Smooth / hypnotic     |
+| Two by two    | Two stems per step                    | Fast but controlled   |
+| Probabilistic | Stem selection determined dynamically | Generative / live     |
+
+The transition mode can eventually be selected automatically based on the musical context.
+
+For example:
+
+```text
+LOW ENERGY DIFFERENCE
+        ↓
+one-by-one
+        ↓
+smooth morph
+
+
+HIGH ENERGY DIFFERENCE
+        ↓
+all-at-once
+        ↓
+strong section change
+```
+
+---
+
+# Track Replacement
+
+A four-deck ring normally has no empty position.
+
+Therefore, replacing a track is performed **stem by stem**.
+
+The old track gradually leaves the ring while the new track enters it.
+
+---
+
+## Method 1 — Buffer Deck
+
+A fifth deck can act as a temporary buffer.
+
+```text
+ring   = [D1, D2, D3, D4]
 buffer = D5
+```
 
+The conceptual algorithm:
+
+```text
 for stem in [Drums, Bass, Vocals, Other]:
-    wait until old_stem is on ring[3]
-    crossfade(old_stem @ ring[3] → new_stem @ buffer)
+
+    wait until old_stem reaches ring[3]
+
+    crossfade(
+        old_stem @ ring[3]
+        →
+        new_stem @ buffer
+    )
+
     ring[3], buffer = buffer, ring[3]
 ```
 
-In 4 steps the track is fully replaced without stopping.
+After four transitions, the original track has been completely replaced.
 
-### Method 2: A/B Layers (for MIDI 2.0)
-
-Each stem slot has two layers: **A (old)** and **B (new)**. At the swap point, a crossfade A → B is performed. 4 decks are sufficient.
+The ring never needs to become empty.
 
 ---
 
-## MIDI 2.0 Map (Draft)
+## Method 2 — A/B Layers
 
-**16 groups × 16 channels = 256 addresses.**
+For the future MIDI 2.0 architecture, each stem slot can contain two logical layers:
 
-Groups = 4 decks × 4 stems:
+```text
+Stem Slot
 
-```
-D1.S1  D1.S2  D1.S3  D1.S4
-D2.S1  D2.S2  D2.S3  D2.S4
-D3.S1  D3.S2  D3.S3  D3.S4
-D4.S1  D4.S2  D4.S3  D4.S4
+A = old material
+B = new material
 ```
 
-Channels within a group = 4 transitions × 4 loops:
+At the replacement point:
 
+```text
+A ────────────╲
+               ╲
+                ╲
+                 ╲
+B ────────────────╱
 ```
+
+The system performs a controlled:
+
+```text
+A → B
+```
+
+crossfade.
+
+This allows the four-deck architecture to perform replacement without requiring a permanent fifth physical deck.
+
+---
+
+# Autonomous Presets
+
+DARAVE is designed to eventually generate presets directly from the user's existing music library.
+
+This removes the need to manually search for individual samples.
+
+The library becomes a source of musical building blocks.
+
+```text
+LIBRARY
+   │
+   ▼
+ANALYSIS
+   │
+   ├── BPM
+   ├── KEY
+   ├── ENERGY
+   ├── PHRASES
+   ├── STEMS
+   └── CUES
+        │
+        ▼
+  FRAGMENT SELECTION
+        │
+        ▼
+ AUTONOMOUS PRESET
+```
+
+---
+
+# Auto-Sampling
+
+DARAVE can select fragments according to analysis-driven rules.
+
+Possible selection criteria include:
+
+* phrases
+* stems
+* energy
+* cue points
+* BPM
+* KEY
+* genre
+* style
+
+The objective is not simply to extract random samples.
+
+The system searches for fragments that are musically compatible.
+
+---
+
+# Autonomous Presets
+
+A preset can be assembled from material belonging to several different tracks.
+
+Example:
+
+```text
+Preset: "Warehouse 4AM"
+
+Drums
+  ← Track A
+
+Bass
+  ← Track B
+
+Vocals
+  ← Track C
+
+Other
+  ← Track D
+```
+
+Example compatibility:
+
+```text
+Track A
+128 BPM
+Am
+
+Track B
+128 BPM
+Am
+
+Track C
+128 BPM
+Am
+
+Track D
+128 BPM
+Am
+```
+
+The result is a new composite musical object:
+
+```text
+             PRESET
+                │
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+     Track A  Track B  Track C  Track D
+       │        │        │        │
+     Drums     Bass     Vox      Other
+       └────────┼────────┘
+                ▼
+         HYPERSTEMS
+```
+
+These presets can participate in the same rotation system as conventional tracks.
+
+---
+
+# Auto-Mix Planning
+
+The next level is automatic transition planning.
+
+DARAVE analyzes the available musical material and determines how a transition should be constructed.
+
+Conceptually:
+
+```text
+TRACK A
+   │
+   ▼
+ANALYSIS
+   │
+   ▼
+CANDIDATE TRANSITIONS
+   │
+   ▼
+TRANSITION SCORING
+   │
+   ├── KEY
+   ├── BPM
+   ├── ENERGY
+   ├── PHRASE
+   ├── VOCALS
+   ├── STEM RELATION
+   └── STYLE
+        │
+        ▼
+TECHNIQUE SELECTION
+        │
+        ├── EQ
+        ├── STEM
+        ├── FX
+        ├── LOOP
+        ├── CROSSFADE
+        └── ROTATION
+             │
+             ▼
+          MIX PLAN
+             │
+             ▼
+        MIX ASSEMBLY
+```
+
+The system should eventually determine not only:
+
+> **Which track comes next?**
+
+but also:
+
+> **Which parts of that track should enter, when should they enter, and which transition technique should be used?**
+
+---
+
+# Adaptive Mixing
+
+DARAVE's long-term mixing engine is based on adaptive transition techniques.
+
+Instead of applying the same transition template to every pair of tracks, the system evaluates the musical context.
+
+Possible parameters include:
+
+```text
+KEY
+BPM
+ENERGY
+PHRASE
+VOCAL ACTIVITY
+STEM DENSITY
+TRACK STRUCTURE
+GENRE
+STYLE
+```
+
+The transition engine can then select an appropriate strategy.
+
+For example:
+
+```text
+compatible key
++
+similar BPM
++
+similar energy
++
+phrase boundary
+        ↓
+smooth stem rotation
+```
+
+while:
+
+```text
+large energy difference
++
+section boundary
+        ↓
+short transition
++
+FX
++
+simultaneous stem replacement
+```
+
+This is the direction of DARAVE's adaptive DJing research.
+
+---
+
+# MIDI 2.0 Architecture
+
+The planned dedicated DARAVE environment will use **MIDI 2.0** and **UMP (Universal MIDI Packet)** as the primary control architecture.
+
+The logical control space is organized as:
+
+```text
+16 groups × 16 channels
+=
+256 logical addresses
+```
+
+The first level maps the deck and stem:
+
+```text
+D1.S1   D1.S2   D1.S3   D1.S4
+D2.S1   D2.S2   D2.S3   D2.S4
+D3.S1   D3.S2   D3.S3   D3.S4
+D4.S1   D4.S2   D4.S3   D4.S4
+```
+
+Where:
+
+```text
+S1 = Drums
+S2 = Bass
+S3 = Vocals
+S4 = Other
+```
+
+Each group contains 16 logical channels representing:
+
+```text
 P1K1  P1K2  P1K3  P1K4
 P2K1  P2K2  P2K3  P2K4
 P3K1  P3K2  P3K3  P3K4
 P4K1  P4K2  P4K3  P4K4
 ```
 
-Each address is a point in 4D space:
+Where:
 
+```text
+P = transition position
+K = loop position
 ```
+
+Thus every logical address can be represented as:
+
+```text
 (deck, stem, transition, loop)
 ```
 
----
+or:
 
-## Philosophy
-
-- Before: 2 channels + EQ
-- Then: STEMS — 4 layers
-- Now: HYPERSTEMS — 256 states in 4D
-
-The controller can be small. The hypercube unfolds through scenes, macros, and automation.
-4 dimensions, 16 physically channels, 256 states, one rave.
+```text
+(D, S, P, K)
+```
 
 ---
 
-## Status
+# 4D State Space
 
-| Component | Status |
-|-----------|--------|
-| Mixxx + rtmidi + SysEX | Working |
-| Track analysis (KEY, BPM, Energy, STEMS) | **Done** |
-| Auto-mix planning and assembly | **Done** |
-| Adaptive technicians in mix clipping and djing theory research | in drafting |
-| MIDI 2.0 / UMP | Planned 2026 Q4 |
-| Own DAW | Planned 2027 Q1 |
-| Autonomous presets (auto-sampling) | Planned 2027 Q1 |
-| HYPERSTEMS / 4D STEMS | Planned 2027 |
+The DARAVE 4D state can therefore be represented as:
 
+```text
+State = (Deck, Stem, Transition, Loop)
+```
 
+with:
+
+```text
+Deck       ∈ {1,2,3,4}
+Stem       ∈ {1,2,3,4}
+Transition ∈ {1,2,3,4}
+Loop       ∈ {1,2,3,4}
+```
+
+Total state space:
+
+```text
+|S| = 4 × 4 × 4 × 4
+    = 256
+```
+
+The physical system remains:
+
+```text
+16 audio streams
+```
+
+while the control layer can navigate:
+
+```text
+256 logical states
+```
+
+This separation between **audio topology** and **control topology** is one of the central ideas of DARAVE.
 
 ---
 
-## License
+# From Controller to State Machine
+
+A conventional DJ controller exposes physical parameters:
+
+```text
+Faders
+EQ
+Knobs
+Pads
+Jog wheels
+```
+
+DARAVE can instead expose higher-level operations:
+
+```text
+SCENE
+MACRO
+ROTATE
+MORPH
+REPLACE
+LOOP
+TRANSITION
+ENERGY
+```
+
+The controller becomes an interface to the underlying state machine.
+
+```text
+Physical Controller
+        │
+        ▼
+     MIDI 2.0
+        │
+        ▼
+  DARAVE State Model
+        │
+        ▼
+   HYPERSTEMS
+        │
+        ▼
+      AUDIO
+```
+
+A small controller can therefore control a much larger virtual space.
+
+---
+
+# Architecture Roadmap
+
+## Phase 1 — Mixxx Integration
+
+Current foundation:
+
+```text
+DARAVE
+   ↓
+rtmidi / SysEx
+   ↓
+Mixxx
+```
+
+Purpose:
+
+* validate analysis
+* test stem control
+* develop transition algorithms
+* experiment with rotation
+* test automatic mixing logic
+
+---
+
+## Phase 2 — MIDI 2.0
+
+Planned:
+
+* MIDI 2.0
+* UMP
+* 16 groups
+* 16 channels per group
+* 256 logical addresses
+* higher-level controller abstraction
+
+Target:
+
+**2026 Q4**
+
+---
+
+## Phase 3 — Dedicated DAW
+
+DARAVE will eventually move from a Mixxx-based control layer to its own audio environment.
+
+Target:
+
+**2027 Q1**
+
+The planned architecture is based on:
+
+* Web Audio
+* WebAssembly
+* browser-based DSP
+* ASIO-oriented integration where applicable
+* MIDI 2.0 / UMP
+
+The objective is to create an audio engine designed around DARAVE's multidimensional mixing model rather than adapting a conventional DJ application.
+
+---
+
+## Phase 4 — Autonomous Presets
+
+Target:
+
+**2027 Q1**
+
+Development of:
+
+* library-driven auto-sampling
+* autonomous presets
+* phrase-aware fragment selection
+* stem compatibility analysis
+* KEY/BPM/Energy matching
+* automatic preset generation
+
+---
+
+## Phase 5 — HYPERSTEMS / DARAVE 4D
+
+Target:
+
+**2027**
+
+Development of:
+
+* four-deck stem topology
+* stem rotation
+* multidimensional transitions
+* 256 logical states
+* scenes
+* macros
+* automation
+* autonomous preset integration
+
+---
+
+# Research Direction
+
+DARAVE is not intended to be only another DJ application.
+
+The project investigates whether DJ mixing can be represented as a structured computational problem.
+
+Instead of:
+
+```text
+DJ
+ ↓
+manually selects track
+ ↓
+manually mixes track
+```
+
+DARAVE explores:
+
+```text
+Music Library
+      ↓
+Analysis
+      ↓
+Musical Representation
+      ↓
+Candidate States
+      ↓
+Transition Search
+      ↓
+Transition Scoring
+      ↓
+Technique Selection
+      ↓
+Mix Generation
+```
+
+The research questions include:
+
+* How can musical compatibility be represented computationally?
+* How should KEY, BPM and ENERGY influence transition selection?
+* How can phrase structure be incorporated into automatic mixing?
+* How should STEMS be combined without destroying musical coherence?
+* How can transitions be represented as state changes?
+* How can a controller navigate a multidimensional state space?
+* How can existing tracks become autonomous musical building blocks?
+* How far can DJ mixing be automated while preserving musical intent?
+
+---
+
+# Architecture Overview
+
+The complete long-term DARAVE architecture can be summarized as:
+
+```text
+                    DARAVE
+                       │
+              ┌────────┴────────┐
+              │                 │
+          ANALYSIS          LIBRARY
+              │                 │
+              └────────┬────────┘
+                       │
+                       ▼
+               UNIFIED MAPPING
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+        TRACKS       STEMS       PRESETS
+          │            │            │
+          └────────────┼────────────┘
+                       │
+                       ▼
+                MIXING ENGINE
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+       ROTATION      MORPH       REPLACE
+          │            │            │
+          └────────────┼────────────┘
+                       │
+                       ▼
+                  HYPERSTEMS
+                       │
+                       ▼
+                  DARAVE 4D
+                       │
+                       ▼
+              256 LOGICAL STATES
+                       │
+                       ▼
+                MIDI 2.0 / UMP
+                       │
+                       ▼
+                    AUDIO
+```
+
+---
+
+# Philosophy
+
+DARAVE evolves DJing through several abstraction levels:
+
+```text
+2 channels + EQ
+        ↓
+4 STEMS
+        ↓
+16 physical audio streams
+        ↓
+256 logical states
+        ↓
+DARAVE 4D
+```
+
+The important transition is not simply:
+
+```text
+more channels
+```
+
+but:
+
+```text
+more dimensions of control
+```
+
+The physical interface can remain small.
+
+The complexity exists inside the software model.
+
+```text
+Small Controller
+      ↓
+Scenes
+      ↓
+Macros
+      ↓
+Automation
+      ↓
+4D State Space
+      ↓
+Musical Transformation
+```
+
+**Four dimensions.
+Sixteen physical streams.
+Two hundred fifty-six logical states.
+One rave.**
+
+---
+
+# Status
+
+| Component                               | Status                |
+| --------------------------------------- | --------------------- |
+| Mixxx + rtmidi + SysEx                  | **Working**           |
+| Track analysis — KEY                    | **Done**              |
+| Track analysis — BPM                    | **Done**              |
+| Track analysis — Energy                 | **Done**              |
+| STEMS analysis / separation             | **Done**              |
+| Auto-mix planning and assembly          | **Done**              |
+| Adaptive mixing / DJing theory research | **In development**    |
+| MIDI 2.0 / UMP                          | **Planned — 2026 Q4** |
+| Own DAW                                 | **Planned — 2027 Q1** |
+| Autonomous presets / auto-sampling      | **Planned — 2027 Q1** |
+| HYPERSTEMS / DARAVE 4D                  | **Planned — 2027**    |
+
+---
+
+# Current vs. Target Architecture
+
+```text
+CURRENT
+───────
+
+Music Library
+     ↓
+DARAVE Analysis
+     ↓
+DARAVE Logic
+     ↓
+MIDI / SysEx
+     ↓
+rtmidi
+     ↓
+Mixxx
+     ↓
+Audio
+
+
+TARGET
+──────
+
+Music Library
+     ↓
+DARAVE Analysis
+     ↓
+Unified Musical Mapping
+     ↓
+Mix Planning
+     ↓
+HYPERSTEMS
+     ↓
+DARAVE 4D State Machine
+     ↓
+MIDI 2.0 / UMP
+     ↓
+DARAVE Audio Engine
+     ↓
+Web Audio / WebAssembly
+     ↓
+Audio
+```
+
+---
+
+# Project Status
+
+DARAVE is currently a **research and development project**.
+
+The existing Mixxx implementation provides a working environment for validating the core concepts.
+
+The long-term objective is a dedicated system where:
+
+```text
+analysis
++
+musical structure
++
+STEMS
++
+transition logic
++
+automation
++
+MIDI 2.0
++
+audio processing
+```
+
+form one integrated architecture.
+
+---
+
+# License
 
 TBD
 
-## Links
+---
 
-- [Mixxx](https://mixxx.org/)
-- [MIDI 2.0 Specification](https://midi.org/midi-2-0)
-- [rtmidi](https://github.com/thestk/rtmidi)
+# Links
+
+* [Mixxx](https://mixxx.org/)
+* [MIDI 2.0](https://midi.org/midi-2-0)
+* [rtmidi](https://github.com/thestk/rtmidi)
+

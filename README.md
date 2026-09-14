@@ -1,5 +1,5 @@
 # DARAVE
-
+![Uploading favicon.svg…]()
 **Digital Audio Rave — an environment for studying DJing and experimenting with mixes.**
 
 DARAVE is a research platform where tracks are not just blended but broken down into structured layers and controlled as a multidimensional system. It analyzes each track by a set of features and combines them into a unified mapping for building sets.
@@ -20,6 +20,7 @@ Each track goes through a custom analysis algorithm:
 All of this is combined into a **single mapping** used to build the mix.
 
 ---
+
 
 ## Current Implementation
 
@@ -204,18 +205,12 @@ Each address is a point in 4D space:
 
 ## Philosophy
 
-
 - Before: 2 channels + EQ
 - Then: STEMS — 4 layers
 - Now: HYPERSTEMS — 256 states in 4D
 
 The controller can be small. The hypercube unfolds through scenes, macros, and automation.
-
----
-
-## Slogan
-
-> **DARAVE  — 4 dimensions, 16 physically channels, 256 states, one rave.**
+4 dimensions, 16 physically channels, 256 states, one rave.
 
 ---
 

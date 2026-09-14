@@ -204,7 +204,6 @@ Each address is a point in 4D space:
 
 ## Philosophy
 
-DARAVE is not "more channels". It is a **paradigm shift in DJing**.
 
 - Before: 2 channels + EQ
 - Then: STEMS — 4 layers
@@ -216,7 +215,7 @@ The controller can be small. The hypercube unfolds through scenes, macros, and a
 
 ## Slogan
 
-> **DARAVE 4D — 4 dimensions, 256 states, one rave.**
+> **DARAVE  — 4 dimensions, 16 physically channels, 256 states, one rave.**
 
 ---
 
@@ -226,11 +225,14 @@ The controller can be small. The hypercube unfolds through scenes, macros, and a
 |-----------|--------|
 | Mixxx + rtmidi + SysEX | Working |
 | Track analysis (KEY, BPM, Energy, STEMS) | **Done** |
-| Own DAW | Planned |
-| MIDI 2.0 / UMP | Planned |
-| HYPERSTEMS / 4D STEMS | Planned |
-| Autonomous presets (auto-sampling) | Planned |
-| Auto-mix planning and assembly | In development |
+| Auto-mix planning and assembly | **Done** |
+| Adaptive-technicians in mix clipping  tracks | in drafting |
+| MIDI 2.0 / UMP | Planned 2026 Q4 |
+| Own DAW | Planned 2027 Q1 |
+| Autonomous presets (auto-sampling) | Planned 2027 Q1 |
+| HYPERSTEMS / 4D STEMS | Planned 2027 |
+
+
 
 ---
 

@@ -40,7 +40,7 @@ At this stage, DARAVE is a layer on top of Mixxx that provides non-standard mixi
 
 Building a dedicated digital audio workstation with full **MIDI 2.0** support.
 
-- DSP not on hardware but in the web (Web Audio / WebAssembly)
+- DSP with ASIO support not on hardware but in the web  (Web Audio / WebAssembly)
 - Communication via **UMP** (Universal MIDI Packet)
 - 16 groups × 16 channels = **256 logical channels**
 

@@ -223,7 +223,7 @@ The controller can be small. The hypercube unfolds through scenes, macros, and a
 | Mixxx + rtmidi + SysEX | Working |
 | Track analysis (KEY, BPM, Energy, STEMS) | **Done** |
 | Auto-mix planning and assembly | **Done** |
-| Adaptive-technicians in mix clipping  tracks | in drafting |
+| Adaptive technicians in mix clipping and djing theory research | in drafting |
 | MIDI 2.0 / UMP | Planned 2026 Q4 |
 | Own DAW | Planned 2027 Q1 |
 | Autonomous presets (auto-sampling) | Planned 2027 Q1 |

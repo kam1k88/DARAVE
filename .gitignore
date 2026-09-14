@@ -85,3 +85,4 @@ stem_shift_report*.json
 # истории его уже не убрать, только перевыпускать.
 darave_secrets.json
 *secrets.json
+stems/

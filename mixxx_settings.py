@@ -33,7 +33,6 @@ DARAVE считает переход офлайн и он же исполняе�
 """
 from __future__ import annotations
 
-import re
 import shutil
 import time
 from pathlib import Path

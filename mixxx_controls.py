@@ -24,7 +24,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 DECKS = ("A", "B", "C", "D")
 DECK_CHANNEL = {"A": 0, "B": 1, "C": 2, "D": 3}

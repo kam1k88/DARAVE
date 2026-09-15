@@ -283,7 +283,6 @@ def band_for_genre(genre_text: str | None, file_name: str | None = None) -> tupl
 
 def bpm_for_file(path: str, detected: float | None) -> dict | None:
     """Всё вместе: прочитать теги файла и примирить их с измерением."""
-    import os
 
     tags = read_tags(path)
     # ПОЛНЫЙ путь, а не только имя файла: иначе папка «Phonk» не видна.

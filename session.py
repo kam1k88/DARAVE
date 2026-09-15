@@ -121,6 +121,21 @@ class SessionManager:
         self._provider = provider
         self._rooms: dict[str, SessionRoom] = {}
 
+    @property
+    def provider(self) -> LLMProvider:
+        return self._provider
+
+    def set_provider(self, provider: LLMProvider) -> None:
+        """Подменить провайдера у менеджера И у уже открытых комнат.
+
+        Ключ вставляют, когда программа уже запущена и комната уже
+        создана: без второй половины диджей сохранил бы ключ, увидел
+        «ассистент подключён» — и продолжил получать в чат заглушку,
+        потому что его собственная комната родилась раньше."""
+        self._provider = provider
+        for room in self._rooms.values():
+            room.agent._provider = provider
+
     def get_or_create(self, session_id: str) -> SessionRoom:
         room = self._rooms.get(session_id)
         if room is None:

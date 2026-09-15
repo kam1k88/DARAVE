@@ -41,6 +41,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 # MusicBrainz требует User-Agent с контактом и банит за его отсутствие.
 # Версия и адрес — не украшение, а условие доступа.
@@ -94,6 +95,35 @@ def _get_json(url: str, headers: dict | None = None) -> dict:
 SECRETS_FILE = "darave_secrets.json"
 
 
+def _secrets_paths() -> list:
+    """Где искать файл с ключами.
+
+    Из исходников он лежит рядом с кодом. У установленной версии рядом с
+    кодом — Program Files, куда пользователь свой ключ не положит; там
+    файл живёт в папке данных. Проверяем оба места, папку данных первой:
+    если человек правил ключ, он правил именно её."""
+    out = []
+    try:
+        import paths as _p
+        out.append(_p.data_dir() / SECRETS_FILE)
+    except Exception:
+        pass
+    out.append(Path(__file__).resolve().parent / SECRETS_FILE)
+    return out
+
+
+def _read_secret(field: str) -> str | None:
+    for f in _secrets_paths():
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        v = data.get(field)
+        if v and str(v).strip():
+            return str(v).strip()
+    return None
+
+
 def resolve_discogs_token(explicit: str | None = None) -> str | None:
     """Токен Discogs: аргумент -> переменная окружения -> локальный файл.
 
@@ -101,20 +131,13 @@ def resolve_discogs_token(explicit: str | None = None) -> str | None:
     работает MusicBrainz, а стилей просто не будет — и об этом скажут
     вслух, а не молча отдадут пустоту."""
     import os
-    from pathlib import Path
 
     if explicit:
         return str(explicit).strip() or None
     env = os.environ.get("DISCOGS_TOKEN")
     if env:
         return env.strip() or None
-    f = Path(__file__).resolve().parent / SECRETS_FILE
-    try:
-        data = json.loads(f.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    v = data.get("discogs_token")
-    return str(v).strip() or None if v else None
+    return _read_secret("discogs_token")
 
 
 # --------------------------------------------------- нормализация имён
@@ -448,7 +471,6 @@ def search_catalog(query: str, kind: str = "release", limit: int = 10,
 
 def main() -> int:
     import argparse
-    import os
 
     ap = argparse.ArgumentParser(
         description="DARAVE — исполнитель, название и стиль из MusicBrainz и Discogs")

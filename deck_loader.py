@@ -347,7 +347,6 @@ async def load_track(midi_send, store, deck: str, query: str,
     global _focus_choice
     duration: float | None = None
     tried = 0
-    used = None
     # Запомненный способ пробуем первым, но не держимся за него: Mixxx
     # мог перезапуститься с другой раскладкой виджетов, и тогда честнее
     # перебрать заново, чем каждый раз грузить не тот трек.
@@ -358,7 +357,6 @@ async def load_track(midi_send, store, deck: str, query: str,
             return {"ok": False, "error": "Windows не отдал фокус окну Mixxx"}
 
         for strategy in strategies:
-            used = strategy
             duration, tried = await _search_and_load(
                 midi_send, store, deck, group, query, strategy,
                 expect_duration, have_duration, before_duration, log)

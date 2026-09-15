@@ -385,7 +385,6 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
         raise ValueError("В плане нет переходов — нечего рендерить.")
 
     by_name = {t["name"]: t for t in tracks}
-    master = set_master_bpm(strategy)
     pieces: list = []
     bar_ns: list[int] = []
     solos: list[float] = []
@@ -635,7 +634,6 @@ def _level_p90(m, sr: int) -> float:
 
 
 def _mono_of(y):
-    import numpy as np
 
     return (y.mean(axis=1) if getattr(y, "ndim", 1) > 1 else y).astype("float64")
 
@@ -655,7 +653,6 @@ def _solo_level(y, sr: int, solo_seconds: float | None) -> float:
     константой их срезало бы на 9 dB, то есть в сет добавилась бы дырка
     ровно там, где мы её и чинили, только с другой стороны.
     """
-    import numpy as np
 
     if not solo_seconds or solo_seconds <= 0.2:
         return 0.0

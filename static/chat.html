@@ -272,6 +272,34 @@
   }
   #composer button:disabled { opacity: .5; cursor: default; }
 
+  /* ===== баннер «ассистент не подключён» ===== */
+  .llm-banner {
+    margin: 12px 12px 0; padding: 12px 14px; border-radius: 10px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .llm-banner-head { display: flex; flex-direction: column; gap: 3px; }
+  .llm-banner-head b { font-size: 13.5px; }
+  .llm-banner-head span { font-size: 12.5px; color: var(--muted); }
+  .llm-banner-row { display: flex; gap: 8px; }
+  .llm-banner-row input {
+    flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none;
+  }
+  .llm-banner-row input:focus { border-color: var(--accent); }
+  .llm-banner-row button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0 16px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .llm-banner-row button:disabled { opacity: .5; cursor: default; }
+  .llm-banner-note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .llm-banner-note code {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 5px; font-size: 11.5px;
+  }
+  .llm-banner.ok { border-left-color: var(--ok, #2fbf9b); }
+
   /* ===== общие элементы для Library / ControlC / Technician ===== */
   .browser-view { flex: 1; display: flex; min-width: 0; }
   .list-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -880,6 +908,27 @@
         <div id="deck-list"><div class="empty">телеметрии пока нет</div></div>
       </div>
       <div id="chat-col">
+        <!-- Ассистент без ключа. Раньше отсутствие ключа роняло весь
+             backend при старте, и увидеть это было негде. Теперь
+             программа работает, а чат честно говорит, что выключен он
+             один — и даёт вставить ключ прямо здесь, потому что у
+             установленной версии нет ни консоли, ни переменных
+             окружения, куда его можно было бы положить. -->
+        <div id="llm-banner" class="llm-banner" hidden>
+          <div class="llm-banner-head">
+            <b>Ассистент не подключён</b>
+            <span>Библиотека, техники, отбор и сборка сета работают без него.</span>
+          </div>
+          <div class="llm-banner-row">
+            <input id="llm-key-input" type="password" autocomplete="off"
+                   placeholder="Ключ Gemini — бесплатный, aistudio.google.com">
+            <button id="llm-key-save">Подключить</button>
+          </div>
+          <div class="llm-banner-note" id="llm-banner-note">
+            Или поднимите Ollama на этом компьютере: <code>ollama serve</code>,
+            затем <code>ollama pull llama3.1</code>.
+          </div>
+        </div>
         <div id="log"></div>
         <div id="toolbar">
           <button id="replay-btn" title="Проиграть последний отправленный микс заново">🔁 Повторить микс</button>
@@ -2733,6 +2782,70 @@
   msgInput.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
   replayBtn.addEventListener("click", function () { sendCommand("replay_last_mix"); });
   recordBtn.addEventListener("click", function () { sendCommand("recording_toggle"); });
+
+  // ===================== ассистент: ключ =====================
+  //
+  // Программа поднимается и работает без ключа — выключен только чат.
+  // Но у установленной версии нет ни консоли, ни переменных окружения,
+  // поэтому единственное место, где ключ можно задать, — вот это поле.
+  const llmBanner = document.getElementById("llm-banner");
+  const llmKeyInput = document.getElementById("llm-key-input");
+  const llmKeySave = document.getElementById("llm-key-save");
+  const llmNote = document.getElementById("llm-banner-note");
+  const LLM_NOTE_DEFAULT = llmNote ? llmNote.innerHTML : "";
+
+  async function refreshLlmStatus() {
+    if (!llmBanner) return;
+    try {
+      const r = await fetch("/api/llm");
+      if (!r.ok) return;
+      const st = await r.json();
+      llmBanner.hidden = !!st.active;
+      if (st.active) {
+        msgInput.placeholder = "Напишите ассистенту...";
+      } else {
+        msgInput.placeholder = "Ассистент не подключён — вставьте ключ выше";
+      }
+    } catch (e) {
+      // Backend не отвечает — это покажет ws-точка, баннер тут ни при чём.
+    }
+  }
+
+  if (llmKeySave) {
+    llmKeySave.addEventListener("click", async function () {
+      const key = (llmKeyInput.value || "").trim();
+      if (!key) { llmKeyInput.focus(); return; }
+      llmKeySave.disabled = true;
+      llmKeySave.textContent = "Проверяю…";
+      try {
+        const r = await fetch("/api/llm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gemini_api_key: key }),
+        });
+        const st = await r.json().catch(function () { return {}; });
+        if (r.ok && st.active) {
+          llmKeyInput.value = "";
+          llmBanner.hidden = true;
+          msgInput.placeholder = "Напишите ассистенту...";
+          addMessage("Ассистент подключён — " + (st.provider || "") +
+                     (st.model ? " (" + st.model + ")" : "") + ".", "system");
+        } else {
+          llmNote.textContent = st.note || st.detail ||
+            "Ключ сохранён, но провайдер не поднялся. Проверьте, что ключ вставлен целиком.";
+        }
+      } catch (e) {
+        llmNote.textContent = "Не достучался до backend: " + e;
+      } finally {
+        llmKeySave.disabled = false;
+        llmKeySave.textContent = "Подключить";
+        setTimeout(function () { if (llmNote) llmNote.innerHTML = LLM_NOTE_DEFAULT; }, 8000);
+      }
+    });
+    llmKeyInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") llmKeySave.click();
+    });
+  }
 
   // ===================== Библиотека =====================
 
@@ -5383,6 +5496,7 @@
       // это косметика (запоминание комнаты в адресной строке), не критично.
     }
     connect(room);
+    refreshLlmStatus();
     // Стартовая вкладка теперь «Библиотека» (чат убран), и её содержимое
     // надо загрузить сразу: раньше оно грузилось по клику на вкладку.
     loadLibrary();

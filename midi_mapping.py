@@ -23,8 +23,7 @@ from mixxx_controls import (
     DECK_CHANNEL,
     MASTER_CHANNEL,
     NOTE_NUMBER,
-    nearest_loop_size,
-    variant_note,
+        variant_note,
 )
 
 # --- совместимость со старым API (техники, scheduler, тесты) ---

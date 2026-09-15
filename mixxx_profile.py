@@ -96,7 +96,7 @@ def _sanitize(text: str, name: str, settings_dir: Path) -> str:
     C:/Users/<имя>/AppData/Local/Mixxx/controllers/... — на другой машине
     такого пути нет, и контроллер молча не подключится."""
     for tag in SECRET_TAGS:
-        text = re.sub(rf"(<{tag}>)(.*?)(</{tag}>)", rf"\1\3", text,
+        text = re.sub(rf"(<{tag}>)(.*?)(</{tag}>)", r"\1\3", text,
                       flags=re.S | re.I)
     for form in {str(settings_dir), str(settings_dir).replace("\\", "/")}:
         if form:

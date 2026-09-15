@@ -41,6 +41,35 @@ from pathlib import Path
 
 JAMENDO_ROOT = "https://api.jamendo.com/v3.0"
 SECRETS_FILE = "darave_secrets.json"
+
+
+def _secrets_paths() -> list:
+    """Где искать файл с ключами.
+
+    Из исходников он лежит рядом с кодом. У установленной версии рядом с
+    кодом — Program Files, куда пользователь свой ключ не положит; там
+    файл живёт в папке данных. Проверяем оба места, папку данных первой:
+    если человек правил ключ, он правил именно её."""
+    out = []
+    try:
+        import paths as _p
+        out.append(_p.data_dir() / SECRETS_FILE)
+    except Exception:
+        pass
+    out.append(Path(__file__).resolve().parent / SECRETS_FILE)
+    return out
+
+
+def _read_secret(field: str) -> str | None:
+    for f in _secrets_paths():
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        v = data.get(field)
+        if v and str(v).strip():
+            return str(v).strip()
+    return None
 USER_AGENT = "DARAVE/1.0 (DJ library tool)"
 
 # Jamendo отдаёт быстро, но это чужой бесплатный сервис — не долбим.
@@ -72,13 +101,7 @@ def resolve_client_id(explicit: str | None = None) -> str | None:
     env = os.environ.get("JAMENDO_CLIENT_ID")
     if env:
         return env.strip() or None
-    f = Path(__file__).resolve().parent / SECRETS_FILE
-    try:
-        data = json.loads(f.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    v = data.get("jamendo_client_id")
-    return str(v).strip() or None if v else None
+    return _read_secret("jamendo_client_id")
 
 
 # ------------------------------------------------- жанры и темп наружу

@@ -93,8 +93,6 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
 
     tag_bpm — темп из тега, когда согласия нет: тогда он идёт одной
     дополнительной гипотезой, а решает контраст сетки."""
-    import numpy as np
-
     import beatgrid
 
     if y is None:

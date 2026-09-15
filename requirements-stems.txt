@@ -1,49 +1,13 @@
-# Разделение трека на четыре слоя (drums/bass/other/vocals) — stems.py.
+# Пакет слоёв. Ставится ОТДЕЛЬНО и в установщик не входит: torch с CUDA —
+# это 2,5-3 ГБ, а слои нужны примерно одному диджею из трёх (техники на
+# EQ и фильтре работают без них).
 #
-# ВАЖНО про версию Python. demucs и torch тянут скомпилированные колёса, и
-# на самых свежих версиях Python их просто нет: на 3.14 установка падает
-# на сборке зависимостей из исходников. Рабочий диапазон — 3.10-3.12, и он
-# же нужен companion'у (у python-rtmidi колёс новее 3.12 тоже нет).
-# Разбираться в этом руками не нужно: запустите setup_stems.ps1 из папки
-# DARAVE — он найдёт подходящий Python, поставит туда всё, включая torch
-# под вашу видеокарту, и скажет, что получилось.
-#
-# Здесь СОЗНАТЕЛЬНО только demucs. audio-separator (роформеры на вокал)
-# ставится отдельной командой, потому что одна его зависимость
-# (diffq-fixed) собирается из исходников и на новых Python падает — а pip
-# при этом отменяет ВЕСЬ файл требований, и вместе с ней не ставится
-# ничего, включая demucs. Ровно это и произошло.
-#
-#   pip install -r requirements-stems.txt
-#   # роформер на вокал — необязательно, но ставится НЕ обычной командой:
-#   pip install audio-separator --no-deps
-#   pip install "beartype==0.18.5" einops julius librosa ml_collections numpy \
-#       onnx onnx2torch-py313 pydub pyyaml requests resampy samplerate scipy \
-#       six soundfile tqdm rotary-embedding-torch audioop-lts
-#   pip install onnxruntime-gpu
-#
-# ПОЧЕМУ --no-deps. `pip install audio-separator` тянет diffq-fixed, а она
-# собирается из исходников и на Python 3.13+ падает: её setup.py зовёт
-# Cython на bitpack.pyx, которого в архиве нет («'bitpack.pyx' doesn't
-# match any files»), колёс под новые Python тоже нет. Проверено по PyPI:
-# из всех зависимостей audio-separator ТОЛЬКО у diffq-fixed нет колеса под
-# 3.14/Windows — остальные либо чистый python, либо с колёсами.
-#
-# И главное: роформеру diffq не нужен. В audio-separator он импортируется
-# только внутри вложенного кода demucs (uvr_lib_v5/demucs/states.py),
-# а архитектуры выбираются лениво по имени класса — роформер идёт веткой
-# MDXC и этот модуль не загружает вовсе. Своя demucs у нас стоит отдельно
-# и от вложенной копии не зависит.
-#
-# demucs даёт четыре слоя моделью htdemucs_ft (дообученная htdemucs:
-# заметно лучше базовой, считает вчетверо дольше).
-demucs>=4.0.1
-
-# ВНИМАНИЕ: для .stem.mp4 (живые стемы в Mixxx) нужен ffmpeg — не пакет
-# Python, а программа. Пять аудиодорожек в одном mp4 не соберёт ни один
-# питоновский кодировщик. Ставится одной командой:
-#
-#   winget install Gyan.FFmpeg
-#
-# После установки — новое окно терминала (PATH обновляется при запуске).
-# Проверить: python stems.py --info  -> поле "live_stems": true
+# ВАЖНО про CUDA. С обычного PyPI под Windows приезжает torch без CUDA, и
+# никакие драйверы его не оживят: трек считается 20-40 минут вместо 2-4,
+# то есть библиотека на 48 треков — сутки вместо часа. Поэтому индекс
+# указан явно:
+#   pip install -r requirements-stems.txt --index-url https://download.pytorch.org/whl/cu124
+torch>=2.1
+torchaudio>=2.1
+demucs>=4.0
+audio-separator>=0.47   # роформер на вокал; без него вокал берётся у htdemucs_ft

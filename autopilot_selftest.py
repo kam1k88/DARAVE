@@ -580,7 +580,6 @@ def run_vocal_flag() -> bool:
     неверен («в моей библиотеке вокал — почти всегда зацикленный сэмпл»),
     и детектор ловил не голос. Секция теперь всегда groove, вокал — флаг,
     а детектор проверяет уровень, спектр и длительность."""
-    import json
     import pathlib
     import tempfile
 
@@ -1107,7 +1106,6 @@ def run_metadata() -> bool:
 
     # --- где живёт секрет
     import os
-    import pathlib as _pl
 
     ok &= check("явный токен сильнее всего",
                 MD.resolve_discogs_token("EXPLICIT") == "EXPLICIT")
@@ -1123,7 +1121,10 @@ def run_metadata() -> bool:
     ok &= check("файл с секретом занесён в .gitignore",
                 _gitignored(MD.SECRETS_FILE),
                 "папка под git: один `git add -A` отправил бы токен в историю")
-    res = MD.lookup.__doc__ is not None
+    ok &= check("у объединённого поиска описано, что он делает",
+                (MD.lookup.__doc__ or "").strip() != "",
+                "значение здесь вычислялось и НЕ проверялось — проверка была "
+                "потеряна при правке, и раздел молча стал на один тест короче")
     ok &= check("у поиска есть оговорка про темп и тональность",
                 "темп" in MD.search_catalog.__doc__.lower(),
                 "по BPM в этих каталогах искать нельзя, и это сказано")

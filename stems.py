@@ -132,6 +132,25 @@ _PY_CANDIDATES = (
 )
 _demucs_py_cache: list | None = None
 
+# Пакет слоёв: отдельный переносной Python с torch и demucs внутри.
+# Он НЕ входит в установщик — это 2-3 ГБ против 200 МБ всего остального,
+# и большинству диджеев слои не нужны вовсе (EQ- и фильтровые техники
+# работают без них). Программа докачивает пакет по кнопке и распаковывает
+# сюда, рядом со своими настройками, а не в Program Files: туда без прав
+# администратора не записать.
+def stems_pack_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return Path(base) / "DARAVE" / "stems-python"
+
+
+def stems_pack_python() -> str | None:
+    """python.exe из докачанного пакета слоёв, если он распакован."""
+    for rel in ("python.exe", "bin/python3", "bin/python"):
+        cand = stems_pack_dir() / rel
+        if cand.exists():
+            return str(cand)
+    return None
+
 
 def _python_has(exe: str, module: str, timeout: float = 25.0) -> bool:
     try:
@@ -153,10 +172,14 @@ def demucs_python() -> str | None:
     if _demucs_py_cache is not None:
         return _demucs_py_cache[0]
     found = None
-    if has_module("demucs"):
+    # В собранной сборке sys.executable — это DARAVE.exe, а не Python:
+    # `DARAVE.exe -m demucs` не заработает никогда. torch туда и не
+    # кладётся, так что has_module тут всё равно ответил бы False, но
+    # полагаться на это не стоит — спрашиваем явно.
+    if not getattr(sys, "frozen", False) and has_module("demucs"):
         found = sys.executable
     else:
-        cands = list(_PY_CANDIDATES)
+        cands = [stems_pack_python() or "", *_PY_CANDIDATES]
         for name in ("python3.12", "python3.11", "python3.10", "python3", "python"):
             w = shutil.which(name)
             if w:
@@ -333,7 +356,9 @@ def backend_problem(backend: str) -> str | None:
         return None
     if not demucs_python():
         return ("demucs не установлен ни в одном найденном Python. "
-                "Поставьте его: запустите setup_stems.ps1 из папки DARAVE — "
+                "В установленной версии DARAVE нажмите «Скачать пакет слоёв» "
+                "(≈2,5 ГБ, ставится сам, права администратора не нужны). "
+                "Из исходников: запустите setup_stems.ps1 из папки DARAVE — "
                 "он найдёт подходящий Python и поставит всё сам. "
                 "Быстрый способ посмотреть без модели: --backend hpss.")
     if backend == "roformer":
@@ -571,27 +596,6 @@ VOCALS_DB_FLOOR = -40.0
 
 _mp4_cache: dict[str, tuple[float, object]] = {}
 _vocdb_cache: dict[tuple[str, float], float] = {}
-
-
-def stem_mp4_for(track_path: str) -> Path | None:
-    """Путь .stem.mp4 этого трека, если он собран.
-
-    Манифест здесь НЕ читается сознательно: read_manifest() поднимает
-    файл целиком, а этот вызов идёт на каждый трек при отрисовке
-    библиотеки - на 64 файлах это два гигабайта чтения ради галочки.
-    Проверяем существование и осмысленный размер; манифест проверяется
-    там, где слой реально читают.
-    """
-    if not track_path:
-        return None
-    try:
-        import stem_mp4 as _sm
-
-        sp = _sm.stem_mp4_path(track_path)
-        st = sp.stat()
-    except (OSError, ValueError):
-        return None
-    return sp if st.st_size > 1_000_000 else None
 
 
 def has_stems(track_path: str) -> bool:
@@ -940,7 +944,7 @@ def _write_part(dest: Path, part: str, buf, sr: int, fmt: str) -> None:
 # ------------------------------------------------------- разделение: hpss
 
 def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0,
-                  fmt: str = "flac") -> dict:
+                  fmt: str = "flac", rebuild: bool = False) -> dict:
     """Быстрое разделение без модели: гармоника против ударных.
 
     Даёт три слоя из четырёх и честно кладёт пустой вокал: HPSS вокал не
@@ -952,7 +956,6 @@ def separate_hpss(track_path: str, sr: int = 44100, margin: float = 4.0,
     """
     import librosa
     import numpy as np
-    import soundfile as sf
     from scipy.signal import butter, sosfiltfilt
 
     dest = stem_dir_for(track_path)
@@ -1470,16 +1473,38 @@ def _swap_in_roformer_vocals(dest: Path, track_path: str, voc, fmt: str,
 
 # ------------------------------------------------- живой формат: stem.mp4
 
+# Размер, ниже которого .stem.mp4 считается битым. Четыре слоя даже
+# короткого трека весят мегабайты; файл меньше — это оборванная сборка,
+# и отдавать его как готовый значит уронить технику на чтении слоя.
+MIN_STEM_MP4_BYTES = 1_000_000
+
+
 def stem_mp4_for(track_path: str) -> Path | None:
-    """Готовый .stem.mp4 рядом с треком, если он есть и не устарел."""
-    if stem_mp4 is None:
-        return None
-    out = stem_mp4.stem_mp4_path(track_path)
-    if not out.exists():
+    """Готовый .stem.mp4 рядом с треком: есть, не устарел и не оборван.
+
+    Функция была объявлена ДВАЖДЫ, с разными проверками, и вторая молча
+    затирала первую. Побеждала та, что сверяет дату; проверка размера из
+    первой не работала вовсе. Обе нужны и ловят разное:
+
+      * дата — трек заменили, а слои остались от старого;
+      * размер — сборка оборвалась, файл есть, но читать в нём нечего.
+
+    Манифест здесь НЕ читается сознательно: read_manifest() поднимает
+    файл целиком, а этот вызов идёт на каждый трек при отрисовке
+    библиотеки — на 143 файлах это гигабайты чтения ради галочки.
+    Манифест проверяется там, где слой реально читают."""
+    if stem_mp4 is None or not track_path:
         return None
     try:
-        if out.stat().st_mtime < os.path.getmtime(track_path):
-            return None  # трек заменили — стем устарел
+        out = stem_mp4.stem_mp4_path(track_path)
+        st = out.stat()
+    except (OSError, ValueError):
+        return None
+    if st.st_size < MIN_STEM_MP4_BYTES:
+        return None
+    try:
+        if st.st_mtime < os.path.getmtime(track_path):
+            return None                      # трек заменили — стем устарел
     except OSError:
         return None
     return out

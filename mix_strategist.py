@@ -455,7 +455,6 @@ def _blend_bars(a: dict, b: dict, want_exit: float | None, slot_seconds: float |
     bar_b = 60.0 / float(b.get("bpm") or 174.0) * 4
     bars = default
 
-    emap_b = (b.get("structure") or {}).get("energy_map") or {}
     dmap_b = (b.get("structure") or {}).get("drum_map") or {}
     intro_bars_b = float(dmap_b.get("drums_start") or 0.0) / bar_b if bar_b else 0.0
 
@@ -1470,7 +1469,6 @@ def _pick_point_pair(a: dict, b: dict, from_points: list[dict], to_points: list[
 
     da = ((a.get("structure") or {}).get("drum_map")) or {}
     db = ((b.get("structure") or {}).get("drum_map")) or {}
-    bar_a = 60.0 / float(a.get("bpm") or 174.0) * 4
 
     best = None
     for fp in from_points[:4]:

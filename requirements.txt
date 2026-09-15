@@ -1,12 +1,21 @@
-python-rtmidi>=1.5.0
-websockets>=13.0
-fastapi>=0.115.0
-uvicorn>=0.30.0
-google-genai>=1.0.0
-python-multipart>=0.0.9
-httpx>=0.27.0
+# Ядро DARAVE: бэкенд, анализ, рендер сета. Всё, что здесь, попадает в
+# установщик и весит вместе около 200 МБ. Torch и demucs здесь НЕТ
+# намеренно — см. requirements-stems.txt.
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12.0
+httpx>=0.27
 
-# Нужен, только если DARAVE_LLM_PROVIDER=ollama (локальная LLM вместо
-# облачного Gemini — см. README "LLM-провайдеры"). Если используете
-# только Gemini, эту зависимость можно не ставить.
-ollama>=0.4.0
+# Анализ и рендер. scipy тянет за собой половину веса сборки, но без него
+# не работают ни ресемплинг, ни фильтры EQ.
+numpy>=1.26,<3
+scipy>=1.11
+librosa>=0.10.1
+soundfile>=0.12
+
+# Теги и экспорт.
+mutagen>=1.47
+lameenc>=1.7          # честные 320 кбит/с без ffmpeg; при отсутствии — падаем на ffmpeg
+
+# Разговорная часть.
+google-genai>=0.3     # Gemini; альтернатива — ollama, ставится отдельно

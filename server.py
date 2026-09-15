@@ -83,6 +83,7 @@ except ImportError:
     # ошибку вместо падения ВСЕГО backend'а при импорте.
     demo_render = None
 import full_catalog
+from child import child_cmd
 import library_analysis as _la
 import live_control
 import mix_strategist
@@ -94,6 +95,7 @@ try:
     import fix_library_bpm
 except Exception:  # без numpy/librosa — просто нет автопочинки темпа
     fix_library_bpm = None
+import llm_providers
 from llm_providers import make_provider
 from session import SessionManager
 from techniques import TECHNIQUES, build_plan
@@ -102,13 +104,15 @@ from techniques import TECHNIQUES, build_plan
 # чтобы разобрать ошибку, диджею приходилось делать скриншот этого окна
 # (или терять вывод вовсе, если окно уже закрыто). Теперь дублируем в файл
 # рядом со скриптом — можно просто прислать/прочитать darave_backend.log.
+import paths as _paths
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(Path(__file__).parent / "darave_backend.log", encoding="utf-8"),
+        logging.FileHandler(_paths.data_dir() / "darave_backend.log", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("darave")
@@ -218,9 +222,8 @@ _llm_provider = make_provider()
 sessions = SessionManager(_llm_provider)
 persistence.init_db()
 
-CHAT_HTML_PATH = Path(__file__).parent / "static" / "chat.html"
-RECORDINGS_DIR = Path(__file__).parent / "recordings"
-RECORDINGS_DIR.mkdir(exist_ok=True)
+CHAT_HTML_PATH = _paths.resource_dir() / "static" / "chat.html"
+RECORDINGS_DIR = _paths.data_subdir("recordings")
 
 # Локальное сканирование библиотеки прямо из веб-UI (кнопка "Сканировать" во
 # вкладке "Библиотека") — см. POST .../library/scan ниже. Работает, только
@@ -230,8 +233,7 @@ RECORDINGS_DIR.mkdir(exist_ok=True)
 # не поможет — там по-прежнему нужен CLI track_analysis.py --upload на
 # машине диджея (см. README).
 DEFAULT_SET_MINUTES = 90.0  # длительность сета, если диджей не задал свою
-SCAN_DB_DIR = Path(__file__).parent / "scan_dbs"
-SCAN_DB_DIR.mkdir(exist_ok=True)
+SCAN_DB_DIR = _paths.data_subdir("scan_dbs")
 _scan_processes: dict[str, "subprocess.Popen"] = {}  # обычный Popen, см. start_library_scan
 _scan_status: dict[str, dict] = {}
 
@@ -240,12 +242,10 @@ _scan_status: dict[str, dict] = {}
 # WAV сюда; отдаётся обратно через GET .../techniques/demo/{filename}.
 # Требует requirements-analysis.txt в том же Python, что и backend (та же
 # оговорка, что у сканирования — см. execute_technique/library/scan).
-DEMOS_DIR = Path(__file__).parent / "demos"
-DEMOS_DIR.mkdir(exist_ok=True)
+DEMOS_DIR = _paths.data_subdir("demos")
 
 # Выгрузка готового сета: плейлист для Mixxx, раскладка и рендер микса.
-SETS_DIR = Path(__file__).parent / "sets"
-SETS_DIR.mkdir(exist_ok=True)
+SETS_DIR = _paths.data_subdir("sets")
 
 
 @app.get("/")
@@ -614,6 +614,81 @@ async def get_technique_demo(session_id: str, filename: str) -> FileResponse:
     # прошлых прогонов продолжали открываться.
     return FileResponse(path, media_type="audio/mpeg" if path.suffix.lower() == ".mp3"
                         else "audio/wav")
+
+
+@app.get("/api/llm")
+async def llm_status() -> JSONResponse:
+    """Состояние разговорного ассистента для UI.
+
+    Нужен потому, что отсутствие ключа больше не роняет программу (см.
+    llm_providers.NoProvider): раз она поднимается и работает, диджей
+    должен где-то увидеть, что именно выключено и почему."""
+    st = llm_providers.provider_status()
+    st["active"] = type(sessions.provider).__name__ != "NoProvider"
+    return JSONResponse(st)
+
+
+@app.post("/api/llm")
+async def set_llm_key(body: dict) -> JSONResponse:
+    """Вставить ключ Gemini (или адрес Ollama) прямо из браузера.
+
+    У установленной версии нет ни переменных окружения, ни консоли —
+    просить диджея «задайте GEMINI_API_KEY» бессмысленно. Ключ пишется в
+    darave_secrets.json папки данных, провайдер пересоздаётся на месте,
+    перезапуск не нужен.
+
+    Ключ ПРОВЕРЯЕТСЯ настоящим запросом, и нерабочий не сохраняется:
+    иначе кнопка «Подключить» гасила бы баннер, а первое же сообщение в
+    чат падало бы с API_KEY_INVALID — и виноватой выглядела бы программа."""
+    body = body or {}
+    key = str(body.get("gemini_api_key") or "").strip()
+    host = str(body.get("ollama_host") or "").strip()
+    if not key and not host:
+        raise HTTPException(status_code=400, detail="Нужен ключ Gemini или адрес Ollama")
+
+    # Что было до нас — чтобы вернуть, если новое не заработало.
+    prev_key = llm_providers.secret("gemini_api_key")
+    prev_host = llm_providers.secret("ollama_host")
+    try:
+        if key:
+            llm_providers.save_secret("gemini_api_key", key)
+        if host:
+            llm_providers.save_secret("ollama_host", host)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Не смог сохранить ключ: {exc}") from exc
+
+    def _build_and_check() -> tuple[object, bool, str]:
+        prov = make_provider()
+        ok, why = llm_providers.verify(prov)
+        return prov, ok, why
+
+    try:
+        provider, ok, why = await asyncio.to_thread(_build_and_check)
+    except Exception as exc:
+        provider, ok, why = None, False, str(exc)[:200]
+
+    if not ok:
+        # Откатываем, чтобы следующий запуск не подхватил заведомо
+        # нерабочий ключ и не выглядел сломанным уже без объяснений.
+        try:
+            llm_providers.save_secret("gemini_api_key", prev_key or "")
+            llm_providers.save_secret("ollama_host", prev_host or "")
+        except OSError:
+            pass
+        # Ответ-заглушка для чата здесь не годится: диджей только что
+        # вставил ключ и ждёт вердикт по НЕМУ, а не общую справку.
+        if key and (not why or why == llm_providers.NO_PROVIDER_REPLY):
+            why = ("Ключ сохранить получилось, а подключиться — нет. "
+                   "Чаще всего это либо неполный ключ, либо отсутствующий "
+                   "пакет google-genai в сборке.")
+        return JSONResponse({"ok": False, "active": False,
+                             "note": why or "Провайдер не поднялся."},
+                            status_code=200)
+
+    sessions.set_provider(provider)
+    st = llm_providers.provider_status()
+    st["active"] = True
+    return JSONResponse(st)
 
 
 @app.get("/api/controls")
@@ -1014,7 +1089,6 @@ async def _refine_room_bpm(session_id: str, force: bool = False) -> None:
                 ". Пара минут, планом пока можно пользоваться.",
     })
 
-    loop = asyncio.get_running_loop()
 
     def _progress(done: int, total: int) -> None:
         _bpm_refine_status[session_id] = {"running": True, "done": done, "total": total}
@@ -1212,7 +1286,6 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
     if not Path(path).exists():
         raise HTTPException(status_code=400, detail=f"Папка не найдена на диске backend'а: {path}")
 
-    script = str(Path(__file__).parent / "track_analysis.py")
     db_path = str(SCAN_DB_DIR / f"{session_id}.db")
 
     # НЕ передаём --upload: сканер и backend на одной машине и делят один
@@ -1233,9 +1306,9 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
 
     try:
         proc = _sp.Popen(
-            [sys.executable, script, "--scan", path, "--db", db_path],
+            child_cmd("track_analysis", "--scan", path, "--db", db_path),
             stdout=_sp.PIPE, stderr=_sp.STDOUT,
-            cwd=str(Path(__file__).parent),
+            cwd=str(_paths.data_dir()),
             creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0),
         )
     except OSError as exc:
@@ -1434,7 +1507,7 @@ async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
     loop = asyncio.get_running_loop()
     try:
         proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                         cwd=str(Path(__file__).parent),
+                         cwd=str(_paths.data_dir()),
                          creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         return {"state": "fail", "note": f"не смог запустить: {exc}"}
@@ -1538,8 +1611,7 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
         if not Path(path).exists():
             return {"state": "fail", "note": f"папка не найдена: {path}"}
         started = time.time()
-        cmd = [sys.executable, str(Path(__file__).parent / "track_analysis.py"),
-               "--scan", path, "--db", db_path]
+        cmd = child_cmd("track_analysis", "--scan", path, "--db", db_path)
         if force:
             cmd.append("--rescan-all")
         res = await _run_subprocess_step(session_id, key, cmd)
@@ -1584,8 +1656,7 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
         root = path or _la.common_root(paths)
         if not root:
             return {"state": "fail", "note": "не понял, какую папку считать"}
-        cmd = [sys.executable, str(Path(__file__).parent / "stems.py"),
-               "--dir", root, "--backend", backend, "--all"]
+        cmd = child_cmd("stems", "--dir", root, "--backend", backend, "--all")
         res = await _run_subprocess_step(session_id, key, cmd,
                                          parse=_la.parse_progress_line)
         cov = _stems.library_coverage(paths)
@@ -1856,8 +1927,7 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
     # роформерный вокал к трекам, у которых слои уже посчитаны (обычный
     # проход считает их готовыми и молча пропустил бы), потом досчитать
     # остальные; .stem.mp4 собирается сам в обоих этапах.
-    cmd = [sys.executable, str(Path(__file__).parent / "stems.py"),
-           "--dir", path, "--backend", backend]
+    cmd = child_cmd("stems", "--dir", path, "--backend", backend)
     if body.get("only_live"):
         cmd.append("--only-live")
     elif body.get("mode", "all") == "all":
@@ -1867,7 +1937,7 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
 
     try:
         proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                         cwd=str(Path(__file__).parent),
+                         cwd=str(_paths.data_dir()),
                          creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Не смог запустить stems.py: {exc}") from exc
@@ -2532,7 +2602,7 @@ async def audition_other_pair(session_id: str, body: dict) -> JSONResponse:
 
 
 @app.get("/api/rooms/{session_id}/track-sections")
-async def track_sections(session_id: str, path: str) -> JSONResponse:
+async def track_sections_short(session_id: str, path: str) -> JSONResponse:
     """Секции трека — чтобы точку входа можно было переставить не на
     «плюс четыре такта», а на «второй куплет»."""
     import cue_points
@@ -3323,7 +3393,6 @@ async def autopilot_start(session_id: str, body: dict | None = None) -> JSONResp
     # Значит порядок в ней обязан совпадать с планом начиная с текущего
     # перехода, иначе на деку приедет чужой трек. Проверяем ДО старта, а
     # не ловим по длительности на третьем переходе.
-    import mixxx_autodj
 
     paths = _strategy_paths(room, index)
     exe = None
@@ -3439,7 +3508,7 @@ async def chat_endpoint(websocket: WebSocket, session_id: str) -> None:
                     continue
                 try:
                     reply_text, plan, controls = await room.agent.handle_message(text, room.latest_telemetry)
-                except Exception as exc:  # ошибка LLM не должна ронять WS-соединение
+                except Exception:  # ошибка LLM не должна ронять WS-соединение
                     logger.exception(f"ошибка DJAgent в комнате '{session_id}'")
                     await room.broadcast_to_chat({
                         "type": "agent_reply",

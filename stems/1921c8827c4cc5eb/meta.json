@@ -1,0 +1,19 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\29. INTROLMMORTAL - LIGHT 暗闇で.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 15.6,
+ "complete": true,
+ "vocal_map": [],
+ "vocal_share": 0.147,
+ "vocal_track": false
+}

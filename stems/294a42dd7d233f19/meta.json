@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\54. Kaito Shoma - Boo!.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 21.2,
+ "complete": true,
+ "vocal_map": [
+  [
+   28.0,
+   47.5
+  ],
+  [
+   78.0,
+   99.5
+  ]
+ ],
+ "vocal_share": 0.427,
+ "vocal_track": true
+}

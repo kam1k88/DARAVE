@@ -1,0 +1,32 @@
+{
+ "source": "C:\\Users\\kam1k88\\Music\\++\\11. Zulan - Forever (Extended Mix).mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 28.9,
+ "complete": true,
+ "vocal_map": [
+  [
+   49.0,
+   71.5
+  ],
+  [
+   83.5,
+   106.5
+  ],
+  [
+   142.5,
+   173.5
+  ]
+ ],
+ "vocal_share": 0.528,
+ "vocal_track": true
+}

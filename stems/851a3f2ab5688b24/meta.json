@@ -1,0 +1,32 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\53. BonGo Music - Miami Massacre 1989.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 17.1,
+ "complete": true,
+ "vocal_map": [
+  [
+   0.0,
+   17.5
+  ],
+  [
+   21.5,
+   29.5
+  ],
+  [
+   71.0,
+   89.5
+  ]
+ ],
+ "vocal_share": 0.406,
+ "vocal_track": true
+}

@@ -1,0 +1,19 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\25. INTROLMMORTAL - VDRXNVLINX (𝔖𝔥𝔞𝔡𝔢 𝔪𝔲𝔯𝔡𝔢𝔯).mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 14.9,
+ "complete": true,
+ "vocal_map": [],
+ "vocal_share": 0.027,
+ "vocal_track": false
+}

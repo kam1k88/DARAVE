@@ -1208,6 +1208,87 @@
 (function () {
   "use strict";
 
+  // ===================== доступ =====================
+  //
+  // Интерфейс открывается со страницы входа на darave.ru: она проверяет
+  // учётную запись, спаривает браузер с этой программой и приводит сюда
+  // с токеном в адресе. Дальше токен нужен КАЖДОМУ запросу — иначе
+  // бэкенд отвечает 401 (см. require_account в server.py).
+  //
+  // Подменяем window.fetch, а не правим семьдесят вызовов по одному:
+  // семьдесят мест — это семьдесят возможностей забыть один, и забытый
+  // проявится не здесь, а через неделю у пользователя.
+  const TOKEN_KEY = "darave_local_token";
+
+  function token(v) {
+    try {
+      if (v === undefined) return sessionStorage.getItem(TOKEN_KEY) || "";
+      if (v === null) sessionStorage.removeItem(TOKEN_KEY);
+      else sessionStorage.setItem(TOKEN_KEY, v);
+    } catch (e) { /* приватный режим */ }
+    return v || "";
+  }
+
+  (function pickUpToken() {
+    let fromUrl = "";
+    try {
+      const u = new URL(location.href);
+      fromUrl = u.searchParams.get("token") || "";
+      if (fromUrl) {
+        token(fromUrl);
+        // Убираем токен из адресной строки: он остаётся в истории
+        // браузера, в закладках и в заголовке Referer при переходе на
+        // любую внешнюю ссылку.
+        u.searchParams.delete("token");
+        history.replaceState(null, "", u.toString());
+      }
+    } catch (e) { /* about:srcdoc и прочие песочницы */ }
+  })();
+
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    init = init || {};
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const sameOrigin = url.startsWith("/") ||
+                       url.startsWith(location.origin);
+    const tok = token();
+    if (sameOrigin && tok) {
+      const h = new Headers(init.headers || (typeof input === "object" && input.headers) || {});
+      if (!h.has("Authorization")) h.set("Authorization", "Bearer " + tok);
+      init = Object.assign({}, init, { headers: h });
+    }
+    return rawFetch(input, init).then(function (r) {
+      if (r.status === 401 && sameOrigin) needLogin();
+      return r;
+    });
+  };
+
+  let loginNotified = false;
+  function needLogin() {
+    if (loginNotified) return;
+    loginNotified = true;
+    token(null);
+    const box = document.createElement("div");
+    box.style.cssText =
+      "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;" +
+      "justify-content:center;background:rgba(0,10,14,.92);padding:24px";
+    box.innerHTML =
+      '<div style="max-width:420px;text-align:center;font:15px/1.6 system-ui,sans-serif;color:#e6f0f3">' +
+      '<div style="font-size:18px;font-weight:600;margin-bottom:10px">Нужно войти заново</div>' +
+      '<div style="color:#7fa0ab;margin-bottom:18px">Проверка входа устарела. ' +
+      'Это бывает раз в месяц и занимает одно нажатие — пароль спрашивать не будут.</div>' +
+      '<a href="https://darave.ru/app/" style="display:inline-block;background:#f75700;' +
+      'color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:9px">' +
+      'Открыть darave.ru</a></div>';
+    document.body.appendChild(box);
+  }
+
+  // WebSocket заголовков не принимает — токен уходит параметром.
+  function wsToken() {
+    const t = token();
+    return t ? "?token=" + encodeURIComponent(t) : "";
+  }
+
   const joinScreen = document.getElementById("join-screen");
   const app = document.getElementById("app");
   const roomInput = document.getElementById("room-input");
@@ -2694,7 +2775,7 @@
 
   function connect(room) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const url = proto + "//" + location.host + "/ws/chat/" + encodeURIComponent(room);
+    const url = proto + "//" + location.host + "/ws/chat/" + encodeURIComponent(room) + wsToken();
     setWsStatus(false, "соединение...");
     ws = new WebSocket(url);
 

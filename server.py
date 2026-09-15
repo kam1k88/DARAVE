@@ -73,6 +73,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 try:
@@ -214,6 +216,109 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=_lifespan)
+
+# ---------------------------------------------------------------- доступ
+#
+# Интерфейс живёт на darave.ru, а работа идёт здесь, на 127.0.0.1.
+# Значит браузер шлёт сюда кросс-доменные запросы, и без этих двух
+# прослоек получается либо «ничего не работает», либо «работает у кого
+# угодно».
+#
+# CORS: список origin'ов закрытый. Со звёздочкой браузер не отдаёт
+# учётные данные, и вход просто не заработает, — а заодно любая открытая
+# в соседней вкладке страница смогла бы читать чужую фонотеку.
+#
+# Токен: без него сосед по кафейному Wi-Fi, знающий про порт 8765,
+# управлял бы вашим DARAVE. Раньше это было неважно (сервер слушал
+# 127.0.0.1 и UI лежал рядом), теперь — важно.
+import cloud_auth
+
+# Версия программы. Одна строка на всё: её печатает /health, её видит
+# сайт при спаривании, и по ней же будет решаться, предлагать ли
+# обновление.
+APP_VERSION = "1.0.0"
+
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
+    "DARAVE_ALLOWED_ORIGINS",
+    "https://darave.ru,https://www.darave.ru").split(",") if o.strip()]
+
+# Что открыто без входа. Ровно три вещи: поздороваться (страница должна
+# уметь понять, запущена ли программа), войти и выйти.
+OPEN_PATHS = {"/health", "/pair", "/unpair", "/account"}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+
+@app.middleware("http")
+async def require_account(request: "Request", call_next):
+    """Пускать дальше только со свежим токеном из darave.ru."""
+    path = request.url.path
+    if (request.method == "OPTIONS" or path in OPEN_PATHS
+            or path == "/" or path.startswith("/static/")):
+        return await call_next(request)
+
+    if os.environ.get("DARAVE_NO_AUTH") == "1":
+        # Режим разработки: запускаем без сайта. Намеренно НЕ включается
+        # сам по себе — только явной переменной, иначе однажды уедет в
+        # сборку и откроет всё всем.
+        return await call_next(request)
+
+    auth = request.headers.get("authorization", "")
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not cloud_auth.token_ok(token):
+        st = cloud_auth.status()
+        if st.get("signed_in") is False and st.get("email"):
+            detail = ("Проверка входа устарела — откройте darave.ru и войдите снова. "
+                      "Это бывает раз в месяц.")
+        else:
+            detail = "Войдите на darave.ru — оттуда и открывается DARAVE."
+        return JSONResponse({"detail": detail, "need_login": True}, status_code=401)
+    return await call_next(request)
+
+
+@app.get("/health")
+async def health() -> JSONResponse:
+    """Коротко: «я здесь». Открыт без входа — страница на darave.ru должна уметь
+    отличить «программа не запущена» от «программа отказала»."""
+    return JSONResponse({
+        "app": "DARAVE",
+        "version": APP_VERSION,
+        "account": cloud_auth.status(),
+    })
+
+
+@app.get("/account")
+async def account_status() -> JSONResponse:
+    return JSONResponse(cloud_auth.status())
+
+
+@app.post("/pair")
+async def pair_with_cloud(body: dict) -> JSONResponse:
+    """Принять код спаривания от страницы и проверить его на darave.ru."""
+    token = str((body or {}).get("pair_token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Нет кода спаривания")
+    try:
+        res = await asyncio.to_thread(cloud_auth.pair, token, APP_VERSION)
+    except cloud_auth.PairError as exc:
+        # Текст пришёл с сервера и объясняет, что делать. Подменять его
+        # общим «ошибка входа» — значит отправить человека гадать.
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    logger.info(f"вход: {res.get('email')}, тариф {res.get('tier')}")
+    return JSONResponse(res)
+
+
+@app.post("/unpair")
+async def unpair() -> JSONResponse:
+    cloud_auth.clear_state()
+    return JSONResponse({"ok": True})
+
 
 # Один провайдер на весь процесс — общий пул соединений для всех комнат, а
 # не по клиенту на комнату. gemini/ollama выбирается DARAVE_LLM_PROVIDER,
@@ -3430,8 +3535,43 @@ async def autopilot_status(session_id: str) -> JSONResponse:
     return JSONResponse(room.autopilot.status())
 
 
+async def ws_allowed(websocket: "WebSocket") -> bool:
+    """Пустить ли WebSocket. Закрывает дыру, которую HTTP-прослойка не видит.
+
+    `@app.middleware("http")` на WebSocket не распространяется вовсе: там
+    другой протокол и другой жизненный цикл. То есть весь HTTP был закрыт
+    токеном, а /ws/chat оставался открытым настежь — и через него можно
+    было и читать телеметрию, и слать команды.
+
+    Токен приходит подпротоколом (заголовки WebSocket из браузера не
+    задать) либо параметром запроса. Origin проверяем отдельно: браузеры
+    НЕ применяют к WebSocket правила CORS, так что список разрешённых
+    сайтов здесь приходится держать своими руками.
+    """
+    if os.environ.get("DARAVE_NO_AUTH") == "1":
+        return True
+    origin = websocket.headers.get("origin")
+    if origin and origin not in ALLOWED_ORIGINS:
+        return False
+    token = websocket.query_params.get("token", "")
+    if not token:
+        proto = websocket.headers.get("sec-websocket-protocol", "")
+        for part in proto.split(","):
+            part = part.strip()
+            if part.startswith("darave."):
+                token = part[len("darave."):]
+                break
+    return cloud_auth.token_ok(token)
+
+
 @app.websocket("/ws/companion/{session_id}")
 async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
+    if not await ws_allowed(websocket):
+        # 1008 — policy violation. Закрываем ДО accept(): принятое и
+        # тут же закрытое соединение браузер показывает как разрыв
+        # сети, и человек идёт чинить роутер вместо того, чтобы войти.
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     room = sessions.get_or_create(session_id)
     room.companion_ws = websocket
@@ -3487,6 +3627,12 @@ async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
 
 @app.websocket("/ws/chat/{session_id}")
 async def chat_endpoint(websocket: WebSocket, session_id: str) -> None:
+    if not await ws_allowed(websocket):
+        # 1008 — policy violation. Закрываем ДО accept(): принятое и
+        # тут же закрытое соединение браузер показывает как разрыв
+        # сети, и человек идёт чинить роутер вместо того, чтобы войти.
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     room = sessions.get_or_create(session_id)
     room.chat_websockets.add(websocket)

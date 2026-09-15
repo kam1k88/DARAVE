@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\47. FLXWEROFF - self harm.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 24.1,
+ "complete": true,
+ "vocal_map": [
+  [
+   21.0,
+   61.5
+  ],
+  [
+   101.0,
+   128.0
+  ]
+ ],
+ "vocal_share": 0.433,
+ "vocal_track": true
+}

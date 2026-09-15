@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\20. Etxrnxtx - Say Hello to Da Devil.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 19.4,
+ "complete": true,
+ "vocal_map": [
+  [
+   22.5,
+   62.0
+  ],
+  [
+   83.0,
+   108.0
+  ]
+ ],
+ "vocal_share": 0.458,
+ "vocal_track": true
+}

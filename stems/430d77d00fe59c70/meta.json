@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\14. KARTER DARK, WEEDMANE feat. noCPR - Straight Outta Darkness.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 20.8,
+ "complete": true,
+ "vocal_map": [
+  [
+   37.5,
+   56.5
+  ],
+  [
+   84.0,
+   118.5
+  ]
+ ],
+ "vocal_share": 0.385,
+ "vocal_track": true
+}

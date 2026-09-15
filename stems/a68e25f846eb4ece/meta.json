@@ -1,0 +1,40 @@
+{
+ "source": "C:\\Users\\kam1k88\\Music\\Calibre - Addict.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 46.7,
+ "complete": true,
+ "vocal_map": [
+  [
+   48.0,
+   59.5
+  ],
+  [
+   150.0,
+   165.0
+  ],
+  [
+   170.0,
+   185.0
+  ],
+  [
+   192.5,
+   207.0
+  ],
+  [
+   233.5,
+   244.5
+  ]
+ ],
+ "vocal_share": 0.19,
+ "vocal_track": true
+}

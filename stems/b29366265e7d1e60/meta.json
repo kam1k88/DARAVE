@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\02. ZODIVK, Bearded Legend - The Wayfarer.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 26.8,
+ "complete": true,
+ "vocal_map": [
+  [
+   9.0,
+   48.5
+  ],
+  [
+   71.0,
+   126.0
+  ]
+ ],
+ "vocal_share": 0.494,
+ "vocal_track": true
+}

@@ -1,0 +1,40 @@
+{
+ "source": "C:\\Users\\kam1k88\\Music\\++\\19. Jessi Lowkey - Jealous Girl (Extended Mix).mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 69.6,
+ "complete": true,
+ "vocal_map": [
+  [
+   30.0,
+   56.5
+  ],
+  [
+   69.0,
+   94.0
+  ],
+  [
+   107.5,
+   156.0
+  ],
+  [
+   176.0,
+   197.0
+  ],
+  [
+   207.0,
+   226.5
+  ]
+ ],
+ "vocal_share": 0.627,
+ "vocal_track": true
+}

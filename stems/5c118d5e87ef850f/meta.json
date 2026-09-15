@@ -1,0 +1,24 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\33. akiaura, LONOWN - youth.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 26.0,
+ "complete": true,
+ "vocal_map": [
+  [
+   78.5,
+   102.5
+  ]
+ ],
+ "vocal_share": 0.276,
+ "vocal_track": true
+}

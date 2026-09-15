@@ -1,0 +1,36 @@
+{
+ "source": "C:\\Users\\kam1k88\\Music\\Royalston feat. Jaynee - Won't Go.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 38.7,
+ "complete": true,
+ "vocal_map": [
+  [
+   67.5,
+   90.5
+  ],
+  [
+   134.0,
+   152.5
+  ],
+  [
+   165.5,
+   177.5
+  ],
+  [
+   216.5,
+   240.5
+  ]
+ ],
+ "vocal_share": 0.395,
+ "vocal_track": true
+}

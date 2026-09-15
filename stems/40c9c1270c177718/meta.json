@@ -1,0 +1,36 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\37. HXVRMXN - HEAT.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 22.6,
+ "complete": true,
+ "vocal_map": [
+  [
+   6.5,
+   19.5
+  ],
+  [
+   37.5,
+   60.0
+  ],
+  [
+   70.0,
+   110.0
+  ],
+  [
+   120.0,
+   139.5
+  ]
+ ],
+ "vocal_share": 0.569,
+ "vocal_track": true
+}

@@ -1,0 +1,24 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\21. Hikora - Anxietas Pt.2.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 18.8,
+ "complete": true,
+ "vocal_map": [
+  [
+   58.0,
+   130.0
+  ]
+ ],
+ "vocal_share": 0.441,
+ "vocal_track": true
+}

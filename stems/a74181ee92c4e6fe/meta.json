@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\16. LXST CXNTURY - Flystyler.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 24.7,
+ "complete": true,
+ "vocal_map": [
+  [
+   20.5,
+   96.0
+  ],
+  [
+   103.0,
+   113.0
+  ]
+ ],
+ "vocal_share": 0.512,
+ "vocal_track": true
+}

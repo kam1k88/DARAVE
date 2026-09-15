@@ -1,0 +1,44 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\23. HEARSE.T - Da Intro  [cos].mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 38.3,
+ "complete": true,
+ "vocal_map": [
+  [
+   0.0,
+   27.5
+  ],
+  [
+   40.5,
+   125.5
+  ],
+  [
+   132.5,
+   171.5
+  ],
+  [
+   204.5,
+   215.5
+  ],
+  [
+   232.0,
+   240.5
+  ],
+  [
+   247.0,
+   304.5
+  ]
+ ],
+ "vocal_share": 0.784,
+ "vocal_track": true
+}

@@ -1,0 +1,32 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\63. Aggrxssor - Kerosene Phonk.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 30.1,
+ "complete": true,
+ "vocal_map": [
+  [
+   32.5,
+   56.0
+  ],
+  [
+   60.0,
+   68.5
+  ],
+  [
+   99.5,
+   121.5
+  ]
+ ],
+ "vocal_share": 0.332,
+ "vocal_track": true
+}

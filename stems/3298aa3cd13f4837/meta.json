@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\32. KEIJIN - DESTINY [6SIX].mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 23.1,
+ "complete": true,
+ "vocal_map": [
+  [
+   43.5,
+   65.0
+  ],
+  [
+   68.5,
+   118.0
+  ]
+ ],
+ "vocal_share": 0.536,
+ "vocal_track": true
+}

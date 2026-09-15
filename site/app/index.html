@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>DARAVE — вход</title>
+<style>
+  /* Палитра та же, что на витрине: человек приходит сюда с главной, и
+     смена оформления на входе читается как «меня куда-то не туда
+     занесло». Оранжевый — только действие. */
+  :root {
+    --ink:#001b24; --panel:#002936; --panel-2:#04323f; --line:#10505f;
+    --text:#e6f0f3; --muted:#7fa0ab; --flame:#f75700; --ok:#2fbf9b; --warn:#f0a83c;
+    --body:"Golos Text",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    background:var(--ink); color:var(--text); font:16px/1.6 var(--body);
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding:24px 16px; -webkit-font-smoothing:antialiased;
+  }
+  .card {
+    width:100%; max-width:460px; background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; padding:28px;
+  }
+  .brand {
+    display:flex; align-items:center; gap:9px; font-weight:800;
+    letter-spacing:.08em; font-size:17px; margin-bottom:22px;
+  }
+  .brand i { width:9px; height:9px; background:var(--flame); border-radius:2px; }
+  h1 { font-size:20px; margin:0 0 8px; letter-spacing:-.01em; }
+  p  { margin:0 0 14px; color:var(--muted); font-size:14.5px; }
+  p.tight { margin-bottom:8px; }
+  label { display:block; font-size:12.5px; color:var(--muted); margin:14px 0 6px; }
+  input {
+    width:100%; background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); border-radius:9px; padding:11px 13px; font:inherit;
+    font-size:14.5px; outline:none;
+  }
+  input:focus { border-color:var(--flame); }
+  button {
+    width:100%; margin-top:18px; background:var(--flame); color:#fff;
+    border:1px solid var(--flame); border-radius:9px; padding:12px 18px;
+    font:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
+  }
+  button:hover:not(:disabled) { background:#ff7328; border-color:#ff7328; }
+  button:disabled { opacity:.55; cursor:default; }
+  button.quiet { background:transparent; color:var(--text); border-color:var(--line); }
+  button.quiet:hover:not(:disabled) { background:var(--panel-2); border-color:var(--muted); }
+  .row { display:flex; gap:10px; }
+  .row button { flex:1; }
+  .switch {
+    margin-top:16px; text-align:center; font-size:13.5px; color:var(--muted);
+  }
+  .switch a { color:var(--text); cursor:pointer; text-decoration:underline; }
+  .note {
+    margin-top:16px; padding:13px 15px; border-radius:9px;
+    background:var(--panel-2); border:1px solid var(--line);
+    border-left:3px solid var(--warn); font-size:13px; color:var(--muted);
+  }
+  .note.bad  { border-left-color:var(--flame); color:var(--text); }
+  .note.good { border-left-color:var(--ok); }
+  .note b { color:var(--text); font-weight:600; }
+  .note code {
+    font-family:var(--mono); font-size:11.5px; background:var(--panel);
+    border:1px solid var(--line); border-radius:4px; padding:1px 5px;
+  }
+  .who {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:13px; color:var(--muted); margin-bottom:18px;
+    padding-bottom:14px; border-bottom:1px solid var(--line);
+  }
+  .who b { color:var(--text); font-weight:500; }
+  .who a { color:var(--muted); cursor:pointer; text-decoration:underline; }
+  .spin { display:inline-block; animation:sp 1s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation:none; } }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><i></i>DARAVE</div>
+
+  <!-- ─────────── вход / регистрация ─────────── -->
+  <section id="auth">
+    <h1 id="auth-title">Вход</h1>
+    <p id="auth-lede">Интерфейс живёт здесь, а считает всё программа на вашем компьютере.</p>
+    <form id="auth-form" autocomplete="on">
+      <label for="email">Почта</label>
+      <input id="email" name="email" type="email" autocomplete="username" required>
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p id="pass-hint" class="tight" hidden style="margin-top:6px;font-size:12.5px">
+        От 10 символов. Три случайных слова надёжнее, чем «Qwerty1!».
+      </p>
+      <button id="auth-btn" type="submit">Войти</button>
+    </form>
+    <div class="switch">
+      <span id="switch-text">Ещё нет учётной записи?</span>
+      <a id="switch-link">Зарегистрироваться</a>
+    </div>
+    <div id="auth-error" class="note bad" hidden></div>
+  </section>
+
+  <!-- ─────────── поиск программы ─────────── -->
+  <section id="connect" hidden>
+    <div class="who">
+      <span>Вы вошли как <b id="who-email"></b></span>
+      <a id="logout">Выйти</a>
+    </div>
+    <div id="connect-body"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Локальный клиент. Порт фиксированный — тот же, что слушает DARAVE.exe.
+  var LOCAL = "http://127.0.0.1:8765";
+  var TOKEN_KEY = "darave_local_token";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var mode = "login";              // login | register
+
+  // Токен к локальной программе держим в sessionStorage, а не в
+  // localStorage: он даёт полный доступ к чужой фонотеке, и жить ему
+  // ровно столько, сколько открыта вкладка, вполне достаточно —
+  // повторное спаривание проходит молча, пароль не спрашивается.
+  function localToken(v) {
+    try {
+      if (v === undefined) return sessionStorage.getItem(TOKEN_KEY) || "";
+      if (v === null) sessionStorage.removeItem(TOKEN_KEY);
+      else sessionStorage.setItem(TOKEN_KEY, v);
+    } catch (e) { /* приватный режим — переспросим при следующем действии */ }
+    return v || "";
+  }
+
+  function api(path, body) {
+    return fetch("/api/" + path, {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "include",          // без этого кука сессии не поедет
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (j) { return { status: r.status, data: j }; });
+    });
+  }
+
+  // Запрос к локальной программе с таймаутом: если её нет, порт обычно
+  // отвечает отказом мгновенно, но в редких случаях (файрвол «тихо
+  // дропает») соединение висит, и без таймаута страница замирает.
+  function local(path, opts) {
+    opts = opts || {};
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, opts.timeout || 4000);
+    var headers = { "Content-Type": "application/json" };
+    var tok = localToken();
+    if (tok && !opts.open) headers["Authorization"] = "Bearer " + tok;
+    return fetch(LOCAL + path, {
+      method: opts.body === undefined ? "GET" : "POST",
+      headers: headers,
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      signal: ctl.signal
+    }).then(function (r) {
+      clearTimeout(timer);
+      return r.json().catch(function () { return {}; })
+        .then(function (j) { return { status: r.status, data: j }; });
+    }).catch(function (e) {
+      clearTimeout(timer);
+      throw e;
+    });
+  }
+
+  // ─────────── вход ───────────
+
+  function setMode(next) {
+    mode = next;
+    var reg = next === "register";
+    $("auth-title").textContent = reg ? "Регистрация" : "Вход";
+    $("auth-lede").textContent = reg
+      ? "Учётная запись нужна, чтобы открыть DARAVE и хранить лицензию. Больше ни для чего."
+      : "Интерфейс живёт здесь, а считает всё программа на вашем компьютере.";
+    $("auth-btn").textContent = reg ? "Создать" : "Войти";
+    $("password").setAttribute("autocomplete", reg ? "new-password" : "current-password");
+    $("pass-hint").hidden = !reg;
+    $("switch-text").textContent = reg ? "Уже есть учётная запись?" : "Ещё нет учётной записи?";
+    $("switch-link").textContent = reg ? "Войти" : "Зарегистрироваться";
+    $("auth-error").hidden = true;
+  }
+
+  $("switch-link").addEventListener("click", function () {
+    setMode(mode === "login" ? "register" : "login");
+  });
+
+  $("auth-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = $("auth-btn");
+    var err = $("auth-error");
+    err.hidden = true;
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Минуту…";
+
+    api(mode === "login" ? "login.php" : "register.php", {
+      email: $("email").value.trim(),
+      password: $("password").value
+    }).then(function (r) {
+      if (r.status >= 200 && r.status < 300 && r.data.ok) {
+        showConnect(r.data.user);
+        return;
+      }
+      err.textContent = r.data.error || "Не получилось. Попробуйте ещё раз.";
+      err.hidden = false;
+    }).catch(function () {
+      err.textContent = "Сайт не отвечает. Проверьте интернет.";
+      err.hidden = false;
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
+  });
+
+  $("logout").addEventListener("click", function () {
+    localToken(null);
+    api("logout.php", {}).then(function () { location.reload(); });
+  });
+
+  // ─────────── поиск и спаривание ───────────
+
+  function showConnect(user) {
+    $("auth").hidden = true;
+    $("connect").hidden = false;
+    $("who-email").textContent = user.email;
+    findClient();
+  }
+
+  function body(html) { $("connect-body").innerHTML = html; }
+
+  function findClient() {
+    body('<h1>Ищу DARAVE на этом компьютере</h1>' +
+         '<p><span class="spin">◐</span> Секунду…</p>');
+
+    local("/health", { open: true, timeout: 4000 }).then(function (r) {
+      if (r.status !== 200 || !r.data || r.data.app !== "DARAVE") {
+        return notFound("По адресу 127.0.0.1:8765 отвечает что-то другое.");
+      }
+      // Программа на месте. Если она уже помнит вход — заходим сразу.
+      if (r.data.account && r.data.account.signed_in && localToken()) {
+        return ready(r.data);
+      }
+      pairNow(r.data);
+    }).catch(function (e) {
+      if (e && e.name === "AbortError") {
+        return notFound("Программа не ответила за отведённое время.");
+      }
+      notFound(null);
+    });
+  }
+
+  function notFound(why) {
+    body(
+      '<h1>Не нахожу программу</h1>' +
+      '<p>' + (why ? why + ' ' : '') +
+      'DARAVE считает и сводит на вашем компьютере, поэтому она должна быть ' +
+      'запущена — сайт сам по себе музыку не обработает.</p>' +
+      '<div class="note"><b>Что проверить</b><br>' +
+      '1. Запущен ли DARAVE. Значок в трее или окно программы.<br>' +
+      '2. Если браузер спросил <b>«разрешить доступ к устройствам в локальной сети»</b> — ' +
+      'нажмите «Разрешить». Без этого страница не может достучаться до программы ' +
+      'на вашем же компьютере.<br>' +
+      '3. Если программа не установлена — <a href="/#get" style="color:var(--text)">скачайте её</a>.' +
+      '</div>' +
+      '<button id="retry">Искать снова</button>' +
+      '<button id="unpair-hint" class="quiet" style="margin-top:10px">Скачать DARAVE</button>'
+    );
+    $("retry").addEventListener("click", findClient);
+    $("unpair-hint").addEventListener("click", function () { location.href = "/#get"; });
+  }
+
+  function pairNow(health) {
+    body('<h1>Подключаю этот компьютер</h1>' +
+         '<p><span class="spin">◐</span> Сверяю учётную запись…</p>');
+
+    // Сайт выдаёт одноразовую бумажку, программа сама идёт её проверять.
+    // Браузер в этой цепочке ничего не решает — он только курьер.
+    api("pair.php", {}).then(function (r) {
+      if (!r.data.pair_token) {
+        throw new Error(r.data.error || "Сайт не выдал код подключения");
+      }
+      return local("/pair", { body: { pair_token: r.data.pair_token }, open: true, timeout: 15000 });
+    }).then(function (r) {
+      if (r.status !== 200 || !r.data.token) {
+        return pairFailed(r.data.detail || r.data.error || "Программа не приняла подключение");
+      }
+      localToken(r.data.token);
+      return local("/health", { open: true }).then(function (h) { ready(h.data); });
+    }).catch(function (e) {
+      pairFailed(String(e && e.message ? e.message : e));
+    });
+  }
+
+  function pairFailed(msg) {
+    body(
+      '<h1>Не удалось подключить</h1>' +
+      '<div class="note bad">' + escapeHtml(msg) + '</div>' +
+      '<button id="retry">Попробовать снова</button>'
+    );
+    $("retry").addEventListener("click", findClient);
+  }
+
+  function ready(health) {
+    var acc = (health && health.account) || {};
+    var tier = { free: "Бесплатная", personal: "Личная", workshop: "Мастерская" }[acc.tier] || acc.tier;
+    body(
+      '<h1>Готово</h1>' +
+      '<p>DARAVE ' + escapeHtml(health.version || "") + ' на связи.</p>' +
+      '<div class="note good"><b>Тариф:</b> ' + escapeHtml(tier) +
+      (acc.expired_tier ? ' — срок истёк, работает бесплатный режим' : '') +
+      '<br><b>Проверка входа:</b> ещё ' + (acc.days_left || 0) + ' дн.</div>' +
+      '<button id="go">Открыть DARAVE</button>'
+    );
+    $("go").addEventListener("click", function () {
+      // Рабочий интерфейс отдаёт сама программа: она рядом, и гонять
+      // через сайт мегабайты разметки и демо-аудио незачем.
+      location.href = LOCAL + "/?token=" + encodeURIComponent(localToken());
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // ─────────── старт ───────────
+
+  setMode("login");
+  api("me.php").then(function (r) {
+    if (r.data && r.data.authenticated) showConnect(r.data.user);
+  }).catch(function () { /* сайт не отвечает — покажем форму, она объяснит */ });
+})();
+</script>
+</body>
+</html>

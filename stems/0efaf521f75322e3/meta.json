@@ -1,0 +1,24 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\49. ZEEPO, 7vvch - LVST MXMENT.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 22.0,
+ "complete": true,
+ "vocal_map": [
+  [
+   19.0,
+   40.0
+  ]
+ ],
+ "vocal_share": 0.185,
+ "vocal_track": true
+}

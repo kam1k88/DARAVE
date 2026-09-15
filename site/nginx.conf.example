@@ -1,0 +1,49 @@
+# Если хостинг на nginx — эквивалент .htaccess. Вставляется в конфиг
+# сайта; на панельных хостингах для этого обычно есть поле
+# «дополнительные директивы nginx».
+
+server {
+    listen 443 ssl http2;
+    server_name darave.ru;
+
+    root /var/www/darave.ru;
+    index index.html;
+
+    ssl_certificate     /etc/letsencrypt/live/darave.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/darave.ru/privkey.pem;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Страница — короткий кэш, установщик — длинный: имя файла версионное.
+    location = / {
+        add_header Cache-Control "public, max-age=600";
+    }
+
+    location /download/ {
+        # Докачка. 173 МБ на мобильном рвутся регулярно, и без этого
+        # человек начинает с нуля.
+        add_header Accept-Ranges bytes;
+        add_header Content-Disposition "attachment";
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        types { application/octet-stream exe; }
+        gzip off;
+    }
+
+    gzip on;
+    gzip_types text/css application/javascript image/svg+xml;
+}
+
+server {
+    listen 80;
+    server_name darave.ru www.darave.ru;
+    return 301 https://darave.ru$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name www.darave.ru;
+    ssl_certificate     /etc/letsencrypt/live/darave.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/darave.ru/privkey.pem;
+    return 301 https://darave.ru$request_uri;
+}

@@ -1,0 +1,36 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\60. DARKWOLE - ATMO.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 21.9,
+ "complete": true,
+ "vocal_map": [
+  [
+   24.0,
+   36.5
+  ],
+  [
+   48.0,
+   60.5
+  ],
+  [
+   79.0,
+   116.0
+  ],
+  [
+   123.5,
+   132.0
+  ]
+ ],
+ "vocal_share": 0.627,
+ "vocal_track": true
+}

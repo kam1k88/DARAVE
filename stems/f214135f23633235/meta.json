@@ -1,0 +1,28 @@
+{
+ "source": "C:\\Users\\kam1k88\\music\\Phonk\\06. KEIJIN X DJ HOLLOWPOINT - SCREAMING THROUGH THE VOID.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 20.5,
+ "complete": true,
+ "vocal_map": [
+  [
+   37.0,
+   53.5
+  ],
+  [
+   64.0,
+   92.5
+  ]
+ ],
+ "vocal_share": 0.418,
+ "vocal_track": true
+}

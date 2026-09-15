@@ -1,0 +1,40 @@
+{
+ "source": "C:\\Users\\kam1k88\\Music\\++\\2. Ashdunn - Injure The Mic.mp3",
+ "backend": "demucs",
+ "model": "htdemucs_ft",
+ "vocals_model": "htdemucs_ft",
+ "format": "flac",
+ "parts": [
+  "drums",
+  "bass",
+  "other",
+  "vocals"
+ ],
+ "device": "cuda",
+ "seconds": 37.4,
+ "complete": true,
+ "vocal_map": [
+  [
+   6.5,
+   15.0
+  ],
+  [
+   40.0,
+   49.0
+  ],
+  [
+   53.0,
+   82.5
+  ],
+  [
+   122.0,
+   131.5
+  ],
+  [
+   135.5,
+   163.5
+  ]
+ ],
+ "vocal_share": 0.582,
+ "vocal_track": true
+}

@@ -63,6 +63,21 @@ try:
 except Exception as _exc:      # пакет не установлен в окружении сборки
     print(f"[spec] google-genai не найден ({_exc}) — чат-ассистент в сборке работать не будет")
 
+# --- python-multipart: имя пакета и имя модуля не совпадают ---
+# Ставится как python-multipart, импортируется как multipart (в свежих
+# версиях ещё и как python_multipart). FastAPI ищет его по имени внутри
+# декоратора маршрута, поэтому промах ломает не загрузку файла, а импорт
+# server.py целиком.
+hiddenimports += ["multipart", "multipart.multipart", "python_multipart"]
+for _name in ("multipart", "python_multipart"):
+    try:
+        _m_datas, _m_binaries, _m_hidden = collect_all(_name)
+        datas += _m_datas
+        binaries += _m_binaries
+        hiddenimports += _m_hidden
+    except Exception:
+        pass
+
 # --- uvicorn грузит свои реализации по строковому имени ---
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += [

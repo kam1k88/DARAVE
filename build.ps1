@@ -140,7 +140,20 @@ Say "проверяю сборку"
 $exe = Join-Path $distDir "DARAVE.exe"
 & $exe --selftest
 if ($LASTEXITCODE -ne 0) {
-    Fail "собранный exe не прошёл проверку (см. вывод выше). Чаще всего это значит, что в .spec пропала строка collect_data_files('librosa') или collect_all('scipy')."
+    Fail @"
+собранный exe не прошёл проверку (см. вывод выше).
+
+Три обычные причины:
+  - в .spec пропала строка collect_data_files('librosa') или collect_all('scipy');
+  - пакета нет в requirements.txt, и в чистом окружении сборки его не оказалось
+    (так было с python-multipart: FastAPI требует его для приёма файлов и
+    проверяет это в декораторе маршрута, поэтому падал импорт server.py целиком);
+  - пакет ставится под одним именем, а импортируется под другим, и PyInstaller
+    его не увидел — тогда нужен hiddenimports в .spec.
+
+Проверка 'бэкенд собирается целиком' ловит вторую и третью: она реально строит
+приложение FastAPI, а не просто импортирует библиотеки.
+"@
 }
 & $exe --child stems --info 2>&1 | Out-Null
 if ($LASTEXITCODE -gt 1) {
@@ -163,7 +176,7 @@ if ($SkipInstaller) {
 }
 
 $iscc = $null
-foreach ($c in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+foreach ($c in @("$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
                  "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
     if (Test-Path $c) { $iscc = $c; break }
 }

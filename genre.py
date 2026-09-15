@@ -196,6 +196,61 @@ def genre_from_bpm(bpm: float | None) -> dict:
     return {"genre": None, "genre_source": None, "candidates": ()}
 
 
+# Жанр по ПАПКЕ. Диджей раскладывает музыку руками, и папка «Phonk» —
+# это его собственная разметка, самая надёжная из всех доступных: тег
+# ставил кто-то чужой, имя файла пишет релиз-группа, а папку делал он.
+#
+# Игнорировать её было прямой ошибкой. Из-за неё фонк на 165 BPM
+# подписывался как драм-н-бейс (полоса 160-185 в BPM_FAMILIES), а фонк на
+# 155 и 190 не подписывался вовсе — и то и другое диджей увидел сразу:
+# «новые треки в папке Phonk не определяют стиль».
+FOLDER_HINTS: tuple[tuple[str, str], ...] = (
+    ("phonk", "phonk"),
+    ("drift", "phonk"),
+    ("neurofunk", "dnb"),
+    ("liquid", "dnb"),
+    ("jungle", "dnb"),
+    ("dnb", "dnb"),
+    ("drum and bass", "dnb"),
+    ("drum n bass", "dnb"),
+    ("dubstep", "dubstep"),
+    ("halftime", "dubstep"),
+    ("garage", "garage"),
+    ("ukg", "garage"),
+    ("bassline", "garage"),
+    ("breaks", "breaks"),
+    ("techno", "techno"),
+    ("trance", "trance"),
+    ("house", "house"),
+    ("hiphop", "hiphop"),
+    ("hip-hop", "hiphop"),
+    ("trap", "trap"),
+)
+
+# Папки, которые ничего не говорят о жанре: по ним подписывать нельзя.
+FOLDER_IGNORE = frozenset({
+    "music", "музыка", "tracks", "треки", "new", "новое", "downloads",
+    "загрузки", "mp3", "flac", "wav", "audio", "library", "медиатека",
+    "++", "misc", "разное", "temp", "tmp", "sets", "demos",
+})
+
+
+def genre_from_folder(path: str | None) -> dict:
+    """Жанр по имени папки. Ближняя папка сильнее дальней.
+
+    Ближняя — потому что «Music/DnB/Liquid» означает ликвид, а не просто
+    драм-н-бейс, и «Music/Phonk/2024» — всё ещё фонк."""
+    parts = [x for x in str(path or "").replace("\\", "/").split("/") if x][:-1]
+    for part in reversed(parts):
+        low = part.strip().lower()
+        if not low or low in FOLDER_IGNORE:
+            continue
+        for needle, canon in FOLDER_HINTS:
+            if needle in low:
+                return {"genre": canon, "genre_source": "folder", "raw": part}
+    return {"genre": None, "genre_source": None, "raw": None}
+
+
 def genre_from_tags(tag_genre: str | None, file_name: str | None = None,
                     bpm: float | None = None) -> dict:
     """Канонический жанр. Возвращает {'genre', 'genre_source', 'raw'}.
@@ -212,6 +267,11 @@ def genre_from_tags(tag_genre: str | None, file_name: str | None = None,
             if canon not in GENERIC_GENRES:
                 return hit
             fallback = fallback or hit
+
+    # Папка — разметка самого диджея, и она сильнее имени файла и темпа.
+    by_folder = genre_from_folder(file_name)
+    if by_folder.get("genre"):
+        return by_folder
 
     name = _norm(file_name)
     for needle, canon in TAG_MAP:

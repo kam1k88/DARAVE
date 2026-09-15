@@ -3176,6 +3176,133 @@ _register(Technique(
 ), _build_custom)
 
 
+# --- обмен басами и возврат ручек в нейтраль ---------------------------
+#
+# Две правки, которые сделаны ЗДЕСЬ, а не в каждом приёме по отдельности.
+# Приёмов с обменом басами десять, и когда одно и то же правило живёт в
+# десяти местах, оно в десяти местах и расходится: замер показал возврат
+# низа то за 2 доли, то за 4, а в DNB-24 — вообще раньше снятия.
+
+# Сколько длится обмен низом. Было 2-4 доли (жёстко в каждом приёме) —
+# на фонковых темпах это меньше секунды, и диджей слышит это как рывок:
+# «басы слишком резкие на входящей деке». Два такта — это уже обмен, а
+# не переключение, и его слышно как решение, а не как щелчок.
+BASS_SWAP_BEATS = 8.0
+
+# Ручки, которые ОБЯЗАНЫ вернуться в нейтраль на деке, которая продолжает
+# играть. Уходящей деки это не касается: её и должно унести закрытой.
+_RESTORE_KNOBS = ("filter_sweep", "eq_low", "eq_mid", "eq_high", "gain_ramp")
+_RESTORE_BEATS = 4.0
+
+
+def _plan_end(events: list[dict]) -> float:
+    return max((e.get("beat_offset", 0.0) + e.get("duration_beats", 0.0)
+                for e in events), default=0.0)
+
+
+def _stretch_bass_swap(events: list[dict], source: str, beats: float) -> list[dict]:
+    """Растянуть ЗАВЕРШАЮЩИЙ обмен низом до `beats` долей.
+
+    Замер на приёмах диджея: низ приходил на входящую деку за 2-4 доли,
+    то есть на фонковых темпах меньше чем за секунду. Слышно это как
+    рывок, а не как обмен — «басы слишком резкие на входящей деке».
+
+    Растягивается ТОЛЬКО последнее плечо, то самое, которым переход
+    заканчивается, и парное ему на уходящей деке. Промежуточные резы не
+    трогаются: в Bar Switch низ скачет туда-обратно каждый такт НАРОЧНО,
+    это и есть приём, и растянутый рез его убивает — первая версия этой
+    функции растянула всё подряд и развела плечи на 16 долей, то есть
+    3.2 секунды вообще без низа. Замер поймал.
+
+    Плечи ЛИНЕЙНЫЕ, и это тоже замер, а не вкус. Сперва стояли встречные
+    кривые (ease_out на уход, ease_in на приход) — рассуждение было про
+    кашу из двух басов. Сумма низа по ходу обмена:
+
+        линейные:    1.00 1.00 1.00 1.00 1.00 1.00 1.00
+        встречные:   1.00 0.78 0.62 0.53 0.50 0.53 0.62 0.78 1.00
+
+    Встречные дают ПРОВАЛ НА 6 dB ровно в середине — дырку вместо каши.
+    Линейные складываются в единицу точно: ручка EQ линейна по
+    параметру, сколько ушло у одного, столько пришло другому."""
+    if beats <= 0:
+        return events
+    ramps = [e for e in events
+             if e.get("kind") == "ramp" and e.get("action") == "eq_low"
+             and e.get("value_from") is not None and e.get("value_to") is not None]
+    rising = [e for e in ramps
+              if e.get("deck") != source and float(e["value_to"]) > float(e["value_from"])]
+    if not rising:
+        return events
+    # Завершающее плечо — самое позднее по концу окна.
+    last = max(rising, key=lambda e: e["beat_offset"] + e.get("duration_beats", 0.0))
+    end = last["beat_offset"] + last.get("duration_beats", 0.0)
+    # Парное плечо на уходящей: низ уходит примерно тогда же. Полдоли
+    # допуска — приёмы ставят их на одну долю, но не бит в бит.
+    mate = None
+    for e in ramps:
+        if e.get("deck") != source or float(e["value_from"]) <= float(e["value_to"]):
+            continue
+        if abs((e["beat_offset"] + e.get("duration_beats", 0.0)) - end) <= 0.5:
+            mate = e
+            break
+    # Приём, который меняет низ РЕЗОМ (CUT_BEATS = 0.03 доли), не должен
+    # вдруг получить восьмидольный бленд на выходе: рез — это и есть его
+    # звук. Растягиваем только то, что уже было блендом.
+    if last.get("duration_beats", 0.0) < 1.0:
+        return events
+    for e in (last, mate):
+        if e is None:
+            continue
+        new_start = max(0.0, end - beats)
+        e["beat_offset"] = new_start
+        e["duration_beats"] = end - new_start
+        e["curve"] = "linear"
+    return events
+
+
+def _restore_neutral(events: list[dict], source: str, beats: float = _RESTORE_BEATS) -> list[dict]:
+    """Вернуть в нейтраль всё, что приём оставил закрытым на ИГРАЮЩЕЙ деке.
+
+    Зачем это здесь, а не заплаткой в приёме. Рендер держит последнее
+    значение рампы до конца куска (см. demo_render._piecewise_ramp:
+    «после последнего — его value_to»). Значит ручка, оставленная
+    закрытой, глушит деку не до конца приёма, а до конца ВСЕГО куска —
+    и следующий трек играет под ней же.
+
+    Замер на реальном сете диджея: DNB-20 оставлял фильтр входящей деки
+    на 1.0, и в сведённом сете это дало 37.8 секунды с верхом на -45 dB.
+    Снаружи это слышно как «где-то вообще тишина».
+
+    Одна забытая строка в одном приёме из тридцати — это не повод
+    проверять глазами тридцать приёмов. Поэтому правило общее: что
+    закрылось на играющей деке, то открывается."""
+    if not events:
+        return events
+    end = _plan_end(events)
+    last: dict[tuple, dict] = {}
+    for e in events:
+        if e.get("kind") != "ramp" or e.get("action") not in _RESTORE_KNOBS:
+            continue
+        if e.get("deck") == source:
+            continue                     # уходящую унесёт, её ручки не важны
+        k = (e["deck"], e["action"])
+        prev = last.get(k)
+        e_end = e.get("beat_offset", 0.0) + e.get("duration_beats", 0.0)
+        if prev is None or e_end >= prev["beat_offset"] + prev.get("duration_beats", 0.0):
+            last[k] = e
+    added = []
+    for (deck, action), e in sorted(last.items()):
+        neutral = _CONTROLS[action].neutral
+        vt = e.get("value_to")
+        if vt is None or abs(float(vt) - float(neutral)) < 1e-6:
+            continue
+        e_end = e.get("beat_offset", 0.0) + e.get("duration_beats", 0.0)
+        start = max(e_end, end - beats)
+        added.append(_ramp(start, action, deck, max(beats, end - start),
+                           float(vt), float(neutral), "ease_out"))
+    return events + added
+
+
 def build_plan(technique_id: str, plan_id: str, source: str, target: str, bpm: float,
                 overrides: dict | None = None, third: str | None = None) -> dict:
     """third — третья дека для приёмов с requires_decks=3.
@@ -3189,6 +3316,12 @@ def build_plan(technique_id: str, plan_id: str, source: str, target: str, bpm: f
     params = technique.param_defaults()
     if overrides:
         params.update({k: v for k, v in overrides.items() if k in params})
+        # Длительность обмена низом принимается всегда, а не только у тех
+        # приёмов, что объявили её сами: правило общее (см.
+        # _stretch_bass_swap), и заставлять тридцать приёмов повторять
+        # одну и ту же строку значит снова развести её по тридцати местам.
+        if "bass_swap_beats" in overrides:
+            params["bass_swap_beats"] = float(overrides["bass_swap_beats"])
     if technique.requires_decks >= 3:
         if not third:
             raise ValueError(
@@ -3199,9 +3332,47 @@ def build_plan(technique_id: str, plan_id: str, source: str, target: str, bpm: f
             raise ValueError(f"Третья дека не может совпадать с {source} или {target}")
         params["third_deck"] = third
     events = _BUILDERS[technique_id](source, target, bpm, params)
+    # Обмен низом и возврат ручек — общие правила, а не забота каждого
+    # приёма. См. _stretch_bass_swap и _restore_neutral.
+    events = _stretch_bass_swap(events, source,
+                                float(params.get("bass_swap_beats", BASS_SWAP_BEATS)))
+    events = _restore_neutral(events, source)
     return {
         "plan_id": plan_id,
         "bpm": bpm,
         "anchor_lead_seconds": 1.0,
         "events": events,
     }
+
+
+# --- ползунок «обмен басами» там, где обмен есть -----------------------
+#
+# Список приёмов с обменом низом считается, а не пишется руками: приём,
+# добавленный завтра, получит ползунок сам, а не будет молча игнорировать
+# настройку, потому что автор про неё не знал. Проверка дешёвая — сборка
+# плана это построение словарей, без звука.
+
+def _has_bass_swap(tid: str) -> bool:
+    t = TECHNIQUES[tid]
+    try:
+        events = _BUILDERS[tid](
+            "A", "B", 150.0,
+            dict(t.param_defaults(), **({"third_deck": "C"} if t.requires_decks >= 3 else {})))
+    except Exception:                                # noqa: BLE001
+        return False
+    for e in events:
+        if (e.get("kind") == "ramp" and e.get("action") == "eq_low"
+                and e.get("deck") != "A" and e.get("value_from") is not None
+                and e.get("value_to") is not None
+                and float(e["value_to"]) > float(e["value_from"])
+                and e.get("duration_beats", 0.0) >= 1.0):
+            return True                              # рез (<1 доли) — не обмен
+    return False
+
+
+for _tid in list(TECHNIQUES):
+    if any(prm.key == "bass_swap_beats" for prm in TECHNIQUES[_tid].params):
+        continue
+    if _has_bass_swap(_tid):
+        TECHNIQUES[_tid].params.append(TechniqueParam(
+            "bass_swap_beats", "Обмен басами", BASS_SWAP_BEATS, 1, 32, "долей"))

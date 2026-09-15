@@ -241,16 +241,43 @@ GENRE_BANDS = (
     (("драм", "drum", "dnb", "d&b", "jungle", "neuro", "liquid", "jump"), (160.0, 190.0)),
     (("hardcore", "хардкор", "gabber"), (160.0, 200.0)),
     (("dubstep", "дабстеп", "halftime"), (130.0, 150.0)),
+    # Фонк. Полоса широкая, потому что стиль и правда широкий: мемфис
+    # живёт около 130-140, дрифт-фонк 140-170. Замерено на 13 треках
+    # диджея — измеренные значения легли в 129..172, ровно сюда.
+    #
+    # Полоса здесь нужна не для красоты, а как ЕДИНСТВЕННЫЙ надёжный
+    # ограничитель: контраст гребёнки на фонке почти плоский (1.04..1.37
+    # у всех кандидатов), и без полосы октавный перебор выбирает наугад.
+    (("phonk", "фонк", "drift"), (125.0, 180.0)),
+    (("garage", "гэридж", "bassline", "2-step"), (128.0, 140.0)),
+    (("techno", "техно", "trance", "транс"), (125.0, 145.0)),
+    (("house", "хаус"), (118.0, 132.0)),
 )
 
 
 def band_for_genre(genre_text: str | None, file_name: str | None = None) -> tuple[float, float] | None:
-    """Полоса темпа по жанровому тегу (и по имени файла — «[DnB]» в
-    названии встречается чаще, чем правильный TCON)."""
+    """Полоса темпа по жанру: тег, ПАПКА, имя файла.
+
+    Папка добавлена последней по времени и первой по надёжности: диджей
+    раскладывает музыку руками, и «Music/Phonk» — его собственная
+    разметка. Без неё фонк оставался без полосы, октавный перебор работал
+    на шуме, и 103 BPM превращались в 155, а 136 в 101."""
     hay = f"{genre_text or ''} {file_name or ''}".lower()
     for words, band in GENRE_BANDS:
         if any(w in hay for w in words):
             return band
+    # Папка — отдельным проходом: в неё нужно заглянуть даже тогда, когда
+    # в имени файла и теге нет ни одного жанрового слова.
+    try:
+        import genre as _genre
+
+        fam = _genre.genre_from_folder(file_name).get("genre")
+    except Exception:                                # noqa: BLE001
+        fam = None
+    if fam:
+        for words, band in GENRE_BANDS:
+            if any(w in fam for w in words) or fam in words:
+                return band
     return None
 
 
@@ -259,7 +286,8 @@ def bpm_for_file(path: str, detected: float | None) -> dict | None:
     import os
 
     tags = read_tags(path)
-    band = band_for_genre(tags.get("genre"), os.path.basename(path))
+    # ПОЛНЫЙ путь, а не только имя файла: иначе папка «Phonk» не видна.
+    band = band_for_genre(tags.get("genre"), path)
     got = confirmed_bpm(detected, tags.get("bpm"), band)
     if got:
         got["tag_bpm"] = tags.get("bpm")

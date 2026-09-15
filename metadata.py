@@ -357,11 +357,18 @@ def enrich_track(track: dict, discogs_token: str | None = None) -> dict:
 
 
 def enrich_library(tracks: list[dict], discogs_token: str | None = None,
-                   only_missing: bool = True, log=print) -> dict:
+                   only_missing: bool = True, log=print, progress=None) -> dict:
     """Проход по библиотеке. Медленный по построению — один запрос в
-    секунду, — поэтому запускается отдельно, а не внутри сканирования."""
+    секунду, — поэтому запускается отдельно, а не внутри сканирования.
+
+    progress(i, total) зовётся на каждом треке, а не только на найденных:
+    именно из-за секунды на запрос этот шаг и надо показывать полосой.
+    Через log это не сделать — он молчит на треках, которых в каталогах
+    нет, а таких как раз большинство, и полоса стояла бы на месте."""
     done = found = skipped = 0
     for i, t in enumerate(tracks, 1):
+        if progress:
+            progress(i, len(tracks))
         if only_missing and (t.get("meta") or {}).get("sources"):
             skipped += 1
             continue

@@ -186,6 +186,24 @@ def analyze_track(path: str) -> dict:
         # beatgrid.drums_signal).
         offset = beatgrid.bar_offset_for(y, sr, bpm)
         drums = beatgrid.drums_signal(path, sr)
+        if drums is None:
+            # Слоя ударных ещё нет — скан идёт ДО разделения на стемы.
+            # Берём перкуссивную часть микса: это не стем, но для поиска
+            # дропа её хватает, а без неё карта энергии ищет дроп как
+            # «возврат баса» — и в фонке, где бас звучит непрерывно, не
+            # находит НИ ОДНОГО.
+            #
+            # Замер на треке диджея (фонк 2:16): по басу — 0 дропов, с
+            # перкуссивной частью — 0:23 и 1:26, ровно там, где их
+            # показывает интерфейс. Ноль дропов заставлял mix_points
+            # откатываться на дропы structure-анализа, а это 13 точек
+            # ровно через 4 такта с уверенностью на уровне шума.
+            try:
+                import librosa as _lb
+
+                drums = _lb.effects.percussive(y, margin=3.0)
+            except Exception:                        # noqa: BLE001
+                drums = None
         structure["drum_map"] = beatgrid.drum_map(y, sr, bpm, offset=offset,
                                                   drums=drums)
         structure["chroma_map"] = beatgrid.chroma_map(y, sr, bpm)
@@ -407,103 +425,169 @@ def normalize_bpm(bpm: float, low: float = 100.0, high: float = 200.0) -> float:
     return bpm
 
 
-def detect_structure(y, sr: int, bpm: float) -> dict:
-    """Эвристический поиск "мест для сведения" — НЕ нейросетевая структурная
-    сегментация (это отдельная, более тяжёлая задача), а анализ огибающей
-    энергии: резкий скачок энергии, удержанный N+ тактов = "drop"; устойчиво
-    тихий участок N+ тактов = "breakdown"/яма. Плюс равномерная сетка
-    "фразовых" точек (каждые 8/16 тактов от первой доли) — для техник вроде
-    Phrase Match, которым не нужен именно дроп, просто чистая граница фразы.
+# --- поиск мест для сведения ------------------------------------------
+#
+# Дроп и брейкдаун ищутся ПО ТАКТАМ, а не по кадрам огибающей. Разница не
+# косметическая, и вот замер, из-за которого всё переписано.
+#
+# Было: сглаженная RMS в дБ, «громко» = 90-й перцентиль минус 3 dB, и
+# дропом считался КАЖДЫЙ переход снизу вверх через этот порог. На
+# фонк-треке диджея (2:16, 153 BPM):
+#
+#     порог «громко»                      -4.9 dB
+#     доля времени выше порога              43%
+#     пересечений порога снизу вверх          36
+#     из них прошло проверку на удержание     13
+#     промежутки между ними        4.0, 4.0, 4.0, 4.0 такта
+#
+# Сорок три процента — это не событие, это половина трека; порог
+# пересекался туда-сюда постоянно. А ровные четыре такта между «дропами»
+# брались не из музыки, а из строки `i += min_sustain_frames`: найдя
+# один, перебор перескакивал ровно на окно удержания и находил следующий.
+#
+# Хуже другое, и это касалось ВСЕЙ библиотеки, а не только фонка.
+# «Уверенность» считалась как разница двух СОСЕДНИХ кадров:
+#
+#     шаг между соседними кадрами: медиана 0.101 dB, 99-й перцентиль 0.93
+#
+# После сглаживания окном в секунду соседние кадры отличаются на
+# десятые доли децибела ВСЕГДА. То есть уверенность по построению не
+# могла быть больше единицы и не значила ничего — отсюда «дропы с
+# уверенностью 0.14-0.26» во всех отчётах.
+#
+# Стало: уровень усредняется ПО ТАКТУ (такт — наименьшая единица, в
+# которой музыка вообще меняется), дроп — это скачок между СРЕДНИМ
+# уровнем нескольких тактов до и нескольких после, и он обязан быть
+# заметным на слух. Уверенность — величина этого скачка в децибелах,
+# то есть то самое число, которое диджей и назвал бы «насколько резко».
 
-    Возвращает {drops, breakdowns, phrase_boundaries} — время в секундах +
-    номер такта (bar_index, от начала трека, 4/4 по умолчанию)."""
+# Насколько должен подняться уровень, чтобы это был дроп. Три децибела —
+# это вдвое по мощности, порог различимости для уха на музыкальном
+# материале.
+DROP_MIN_STEP_DB = 3.0
+# Сколько тактов смотрим до и после границы. Четыре — фраза: короче
+# окно ловит отдельные удары, длиннее размазывает сам момент входа.
+DROP_WINDOW_BARS = 4
+# Два дропа ближе этого расстояния — это один дроп; оставляем сильнейший.
+DROP_MIN_GAP_BARS = 8
+# Насколько ниже «громкого» уровня трека должно быть, чтобы считать это
+# ямой. Шесть децибел — вчетверо по мощности: барабаны действительно ушли.
+BREAKDOWN_DROP_DB = 6.0
+BREAKDOWN_MIN_BARS = 4
+
+
+def _bar_levels(y, sr: int, bpm: float) -> tuple:
+    """Средний уровень каждого такта в дБ. Возвращает (уровни, время начала)."""
     import librosa
     import numpy as np
 
-    hop_length = 512
-    rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
-    times = librosa.frames_to_time(range(len(rms)), sr=sr, hop_length=hop_length)
-    if len(rms) < 8 or bpm <= 0:
-        return {"drops": [], "breakdowns": [], "phrase_boundaries": []}
+    hop = 512
+    rms = librosa.feature.rms(y=y, hop_length=hop)[0]
+    if len(rms) < 4 or bpm <= 0:
+        return np.array([]), np.array([])
+    frame_sec = hop / sr
+    bar_sec = 4 * 60.0 / bpm
+    n_bars = int(len(rms) * frame_sec / bar_sec)
+    if n_bars < 4:
+        return np.array([]), np.array([])
+    per = max(1, int(round(bar_sec / frame_sec)))
+    levels, starts = [], []
+    for b in range(n_bars):
+        seg = rms[b * per:(b + 1) * per]
+        if not len(seg):
+            break
+        # Медиана, а не среднее: один удар в тихом такте не должен
+        # объявлять его громким.
+        levels.append(float(np.median(seg)))
+        starts.append(b * bar_sec)
+    lv = np.asarray(levels, dtype="float64")
+    db = 20.0 * np.log10(lv / (lv.max() + 1e-12) + 1e-6)
+    return db, np.asarray(starts, dtype="float64")
 
-    # Сглаживание — простое скользящее среднее на ~1 секунду, чтобы не ловить
-    # отдельные удары как "дропы".
-    win = max(1, int(sr / hop_length))
-    kernel = np.ones(win) / win
-    smoothed = np.convolve(rms, kernel, mode="same")
-    norm = smoothed / (smoothed.max() + 1e-9)
+
+def detect_structure(y, sr: int, bpm: float) -> dict:
+    """Места для сведения: дропы, ямы и сетка фраз.
+
+    Не нейросетевая сегментация, а разбор огибающей — но ПО ТАКТАМ и по
+    величине скачка, а не по пересечению порога. Почему именно так —
+    замер в комментарии выше.
+
+    Возвращает {drops, breakdowns, phrase_boundaries}: время в секундах и
+    номер такта. У дропа `confidence` — величина скачка уровня в
+    децибелах, нормированная к 0..1 по двенадцати децибелам (это уже
+    очень резкий вход)."""
+    import numpy as np
+
+    db, starts = _bar_levels(y, sr, bpm)
+    if not len(db):
+        return {"drops": [], "breakdowns": [], "phrase_boundaries": []}
 
     beat_seconds = 60.0 / bpm
     bar_seconds = beat_seconds * 4
-    min_sustain_bars = 4
-    min_sustain_frames = max(1, int(min_sustain_bars * bar_seconds / (hop_length / sr)))
-
-    # Пороги — в ДЕЦИБЕЛАХ и ОТНОСИТЕЛЬНО громких мест самого трека.
-    #
-    # Почему не линейно (было 0.65/0.25 от пика): мастеринг подтягивает тихие
-    # места вверх, и брейкдаун, задуманный как -10 dB, после компрессии
-    # оказывается на -8 dB, то есть линейно 0.38 — выше порога 0.25. Порог
-    # не срабатывал никогда, отсюда "Брейкдаунов: 0" у каждого трека.
-    #
-    # Почему относительно трека, а не абсолютные -6/-9: у сжатого в кашу
-    # мастеринга и у динамичного трека разный размах, один и тот же
-    # абсолютный порог для обоих не годится. За "громко" берём 90-й
-    # перцентиль уровня, дальше: дроп — не ниже -3 dB от него, брейкдаун —
-    # ниже -6 dB (перцептивно это и есть "барабаны ушли").
-    db = 20.0 * np.log10(norm + 1e-6)
+    w = DROP_WINDOW_BARS
     loud_ref = float(np.percentile(db, 90))
-    high_thresh = loud_ref - 3.0
-    low_thresh = loud_ref - 6.0
-    norm = db  # дальше все сравнения идут в dB
 
-    def bar_index(t: float) -> int:
-        return int(t / bar_seconds)
+    # --- дропы: скачок среднего уровня между окном до и окном после ---
+    cand = []
+    for b in range(w, len(db) - w):
+        before = float(np.median(db[b - w:b]))
+        after = float(np.median(db[b:b + w]))
+        step = after - before
+        if step < DROP_MIN_STEP_DB:
+            continue
+        # Подняться мало — надо подняться ДО громкого. Иначе дропом
+        # считается любой выход из тишины в середину.
+        if after < loud_ref - DROP_MIN_STEP_DB:
+            continue
+        cand.append({"bar": b, "step": step, "after": after})
 
-    drops, breakdowns = [], []
-    i = 1
-    while i < len(norm):
-        # Drop: переход из "тихо" в "громко", удержанный min_sustain_frames.
-        if norm[i] >= high_thresh and norm[i - 1] < high_thresh:
-            if i + min_sustain_frames < len(norm) and np.mean(norm[i:i + min_sustain_frames]) >= high_thresh - 2.0:
-                drops.append({
-                    "time_seconds": round(float(times[i]), 2),
-                    "bar_index": bar_index(times[i]),
-                    "confidence": round(float(norm[i] - norm[i - 1]), 3),
-                })
-                i += min_sustain_frames
-                continue
-        i += 1
+    # Подавление соседей: из двух близких оставляем тот, где скачок
+    # больше. Раньше вместо этого стоял слепой перескок на окно
+    # удержания — он и раскладывал «дропы» ровно через четыре такта.
+    cand.sort(key=lambda c: -c["step"])
+    taken: list[dict] = []
+    for c in cand:
+        if all(abs(c["bar"] - t["bar"]) >= DROP_MIN_GAP_BARS for t in taken):
+            taken.append(c)
+    taken.sort(key=lambda c: c["bar"])
+    drops = [{
+        "time_seconds": round(float(starts[c["bar"]]), 2),
+        "bar_index": int(c["bar"]),
+        "step_db": round(c["step"], 1),
+        "confidence": round(min(1.0, c["step"] / 12.0), 3),
+    } for c in taken]
 
-    i = 1
-    in_breakdown = False
-    breakdown_start = 0.0
-    while i < len(norm):
-        if norm[i] < low_thresh and not in_breakdown:
-            in_breakdown = True
-            breakdown_start = times[i]
-        elif norm[i] >= low_thresh and in_breakdown:
-            in_breakdown = False
-            if times[i] - breakdown_start >= min_sustain_bars * bar_seconds:
-                breakdowns.append({
-                    "start_seconds": round(float(breakdown_start), 2),
-                    "end_seconds": round(float(times[i]), 2),
-                    "bar_index": bar_index(breakdown_start),
-                })
-        i += 1
-    # Брейкдаун может тянуться до самого конца трека (аутро) — цикл выше
-    # фиксирует его только при переходе обратно наверх, здесь дописываем
-    # "хвостовой" случай.
-    if in_breakdown and (times[-1] - breakdown_start) >= min_sustain_bars * bar_seconds:
-        breakdowns.append({
-            "start_seconds": round(float(breakdown_start), 2),
-            "end_seconds": round(float(times[-1]), 2),
-            "bar_index": bar_index(breakdown_start),
-        })
+    # --- ямы: подряд идущие такты заметно ниже громкого уровня ---
+    low = db < (loud_ref - BREAKDOWN_DROP_DB)
+    breakdowns = []
+    b = 0
+    while b < len(low):
+        if not low[b]:
+            b += 1
+            continue
+        e = b
+        while e < len(low) and low[e]:
+            e += 1
+        if e - b >= BREAKDOWN_MIN_BARS:
+            end_t = starts[e] if e < len(starts) else starts[-1] + bar_seconds
+            breakdowns.append({
+                "start_seconds": round(float(starts[b]), 2),
+                "end_seconds": round(float(end_t), 2),
+                "bar_index": int(b),
+                "depth_db": round(loud_ref - float(np.median(db[b:e])), 1),
+            })
+        b = e
 
-    duration = float(times[-1]) if len(times) else 0.0
+    # --- сетка фраз: каждые 16 тактов от начала ---
+    #
+    # Нужна приёмам вроде Phrase Match, которым не важен именно дроп —
+    # важна чистая граница фразы. Считается от первой доли, а не от
+    # найденных дропов: дроп может быть один на весь трек, а сводиться
+    # надо и без него.
+    duration = float(starts[-1] + bar_seconds) if len(starts) else 0.0
     phrase_boundaries = [
         round(b * bar_seconds, 2)
-        for b in range(0, bar_index(duration) + 1, 16)
+        for b in range(0, int(duration / bar_seconds) + 1, 16)
         if b * bar_seconds <= duration
     ]
 
@@ -583,6 +667,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
             danceability REAL, duration_seconds REAL,
             structure_json TEXT, tags_json TEXT,
             artist TEXT, title TEXT, meta_json TEXT,
+            file_mtime REAL, file_size INTEGER,
             scanned_at REAL
         )"""
     )
@@ -590,7 +675,8 @@ def init_db(db_path: str) -> sqlite3.Connection:
     # Миграция уже существующих баз. Колонки добавляются по одной и молча:
     # у диджея база живёт с первого дня проекта, пересканировать 70 треков
     # ради трёх полей — час работы на ровном месте.
-    for col, decl in (("artist", "TEXT"), ("title", "TEXT"), ("meta_json", "TEXT")):
+    for col, decl in (("artist", "TEXT"), ("title", "TEXT"), ("meta_json", "TEXT"),
+                      ("file_mtime", "REAL"), ("file_size", "INTEGER")):
         try:
             conn.execute(f"ALTER TABLE tracks ADD COLUMN {col} {decl}")
             conn.commit()
@@ -761,20 +847,22 @@ def _upsert_track(conn: sqlite3.Connection, path: Path, info: dict, tags: dict |
             conn.execute(
                 """INSERT INTO tracks (path, bpm, key, camelot, energy, brightness, danceability,
                                         duration_seconds, structure_json, tags_json,
-                                        artist, title, scanned_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        artist, title, file_mtime, file_size, scanned_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
                        bpm=excluded.bpm, key=excluded.key, camelot=excluded.camelot,
                        energy=excluded.energy, brightness=excluded.brightness,
                        danceability=excluded.danceability, duration_seconds=excluded.duration_seconds,
                        structure_json=excluded.structure_json, tags_json=excluded.tags_json,
                        artist=excluded.artist, title=excluded.title,
+                       file_mtime=excluded.file_mtime, file_size=excluded.file_size,
                        scanned_at=excluded.scanned_at""",
                 (
                     canon_track_path(path), info["bpm"], info["key"], info["camelot"], info["energy"],
                     info["brightness"], info["danceability"], info["duration_seconds"],
                     json.dumps(info["structure"]), json.dumps(tags) if tags else None,
-                    info.get("artist"), info.get("title"), time.time(),
+                    info.get("artist"), info.get("title"),
+                    *file_fingerprint(path), time.time(),
                 ),
             )
             conn.commit()
@@ -819,7 +907,66 @@ def is_own_output(path) -> bool:
     return any(x.lower() in OWN_OUTPUT_DIRS for x in parts[:-1])
 
 
-def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]:
+def file_fingerprint(path) -> tuple[float, int]:
+    """Отпечаток файла: время правки и размер.
+
+    По нему скан отличает «этот трек уже разобран» от «этот трек новый или
+    переписан». Хеш содержимого был бы честнее, но он читает файл целиком —
+    то есть стоит ровно столько же, сколько сам разбор, и экономить было бы
+    нечего. mtime+размер врут только если файл подменили с сохранением обоих;
+    для музыкальной папки это не тот случай, а принудительный пересчёт всё
+    равно есть (force)."""
+    try:
+        st = os.stat(path)
+        return (round(st.st_mtime, 3), int(st.st_size))
+    except OSError:
+        return (0.0, 0)
+
+
+def scanned_fingerprints(db_path: str) -> dict[str, tuple[float, int]]:
+    """Что уже разобрано и с каким отпечатком. Ключ — канонический путь,
+    тот же, которым пишет _upsert_track."""
+    out: dict[str, tuple[float, int]] = {}
+    try:
+        conn = sqlite3.connect(db_path, timeout=60.0)
+        conn.execute("PRAGMA busy_timeout=60000")
+        try:
+            rows = conn.execute(
+                "SELECT path, file_mtime, file_size FROM tracks").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return out
+    for path_str, mtime, size in rows:
+        if mtime is None or size is None:
+            continue            # запись до этой версии — отпечатка нет, разберём заново
+        out[str(path_str)] = (float(mtime), int(size))
+    return out
+
+
+def touch_scanned(db_path: str, paths: list[str]) -> None:
+    """Пометить пропущенные треки как «участвовали в этом проходе».
+
+    Без этого шага инкрементальный скан ломал библиотеку: backend забирает
+    из базы строки с scanned_at >= начала прохода (чтобы не подцепить
+    остатки сканов других папок), и все пропущенные треки просто исчезали
+    из комнаты. Пропуск экономит РАЗБОР, а не участие в результате."""
+    if not paths:
+        return
+    try:
+        conn = sqlite3.connect(db_path, timeout=60.0)
+        conn.execute("PRAGMA busy_timeout=60000")
+        now = time.time()
+        conn.executemany("UPDATE tracks SET scanned_at=? WHERE path=?",
+                         [(now, p) for p in paths])
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as exc:
+        print(f"[скан] не смог отметить пропущенные ({exc!r})", file=sys.stderr)
+
+
+def scan_library(root: str, db_path: str, with_tags: bool = False,
+                 only_new: bool = True) -> list[dict]:
     # Быстрая проверка ДО цикла по файлам: если librosa не установлена,
     # каждый файл провалится с одной и той же ModuleNotFoundError — вместо
     # N одинаковых строк в логе печатаем одну понятную и выходим сразу.
@@ -836,6 +983,25 @@ def scan_library(root: str, db_path: str, with_tags: bool = False) -> list[dict]
         if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
         and not is_own_output(p)
     ]
+    # Разбираем только то, чего не хватает. Раньше каждый прогон считал
+    # заново ВСЮ папку: 70 треков — это десятки минут librosa на файлах,
+    # которые не менялись с прошлого раза, и добавление одного нового трека
+    # стоило столько же, сколько первый скан.
+    known = scanned_fingerprints(db_path) if only_new else {}
+    skipped: list[str] = []
+    if known:
+        fresh = []
+        for path in files:
+            canon = canon_track_path(path)
+            if known.get(canon) == file_fingerprint(path):
+                skipped.append(canon)
+            else:
+                fresh.append(path)
+        files = fresh
+        if skipped:
+            print(f"[скан] без изменений с прошлого раза: {len(skipped)} — "
+                  f"разбираю {len(files)}", file=sys.stderr)
+            touch_scanned(db_path, skipped)
     results = []
     for i, path in enumerate(files, 1):
         print(f"[{i}/{len(files)}] {path.name}", file=sys.stderr)
@@ -933,22 +1099,30 @@ def main() -> None:
         help="После сканирования загрузить результаты в комнату backend'а (например http://localhost:8765)",
     )
     parser.add_argument("--room", default=None, help="Код комнаты для --upload (тот же, что --companion-id)")
+    parser.add_argument("--rescan-all", action="store_true",
+                        help="Разобрать заново ВСЕ файлы, а не только новые и изменившиеся")
     args = parser.parse_args()
 
-    results = scan_library(args.scan, args.db, with_tags=args.with_tags)
-    print(f"Готово: {len(results)} треков -> {args.db}", file=sys.stderr)
+    run_started = time.time()
+    results = scan_library(args.scan, args.db, with_tags=args.with_tags,
+                           only_new=not args.rescan_all)
+    print(f"Готово: разобрано {len(results)} треков -> {args.db}", file=sys.stderr)
+    # results — только РАЗОБРАННОЕ в этом проходе. Наружу (и в --print, и в
+    # --upload) отдаём всю папку: инкрементальный скан не должен выглядеть
+    # как «библиотека усохла до трёх треков».
+    library = load_library_from_db(args.db, run_started) or results
     if args.print_json:
-        print(json.dumps(results, ensure_ascii=False, indent=2))
+        print(json.dumps(library, ensure_ascii=False, indent=2))
     if args.upload:
         if not args.room:
             print("--upload требует --room", file=sys.stderr)
-        elif not results:
+        elif not library:
             # Пустой результат — почти всегда ошибка сканирования (см. лог
             # выше), а не "в папке правда нет треков". НЕ загружаем: иначе
             # молча затираем уже загруженную ранее библиотеку комнаты.
             print("Треков не найдено/не обработано — библиотеку НЕ загружаю (не хочу затирать то, что уже было).", file=sys.stderr)
         else:
-            upload_library(args.upload, args.room, results)
+            upload_library(args.upload, args.room, library)
 
 
 if __name__ == "__main__":

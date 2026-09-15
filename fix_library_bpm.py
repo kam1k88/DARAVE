@@ -45,6 +45,20 @@ PROBE_SECONDS = 90.0
 # регулярно путает драм-н-бейс с хаус-темпом (176 -> 117.5).
 OCTAVE_CANDIDATES = (1.0, 1.5, 2.0, 4.0 / 3.0, 0.5, 2.0 / 3.0, 0.75)
 MIN_CONFIDENCE = 0.20
+# Насколько убедительнее должен быть кандидат с ДРУГОЙ октавой, чтобы мы
+# согласились сменить темп. Относительная прибавка к контрасту гребёнки.
+#
+# Без этого порога октавный перебор работал на шуме. Замерено на 13
+# фонк-треках диджея: контраст у всех кандидатов лежит в 1.04..1.37, то
+# есть разница между «правильной» и «неправильной» октавой — единицы
+# процентов. Побеждал то x1.5, то x2, то x0.75 — и 103 BPM превращались в
+# 155, 99 в 200, а 136 в 101. Диджей это и увидел: «мапят неверный BPM,
+# 100-200, при том, что все треки звучат замедленно в 2 раза».
+#
+# 15% — это заметно больше разброса, который даёт шум (измеренные
+# прибавки на фонке: 0.8%, 1.7%, 3.8%, 7%), и заметно меньше того, что
+# даёт настоящая ошибка октавы. Не уверены — оставляем измеренное.
+OCTAVE_MARGIN = 0.15
 
 
 def _load_whole(path: str, sr: int = 11025):
@@ -111,6 +125,8 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
                 "confidence": float(res.get("confidence", 0.0)),
                 "note": "по тегу файла" if changed else ""}
 
+    base_contrast = None          # контраст на ИЗМЕРЕННОМ темпе, без правки
+    base_in_band = True           # попадает ли измеренный темп в полосу жанра
     ratios = list(OCTAVE_CANDIDATES if allow_octave else (1.0,))
     if tag_bpm and bpm_hint > 0 and allow_octave:
         # Согласия нет, но тег всё равно стоит проверить: добавляем ОДНУ
@@ -133,6 +149,9 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
         # потом контраст. Без полосы «половинный темп» почти всегда
         # выигрывает по контрасту — см. комментарий в beatgrid.refine_tempo.
         key = (1 if in_band else 0, contrast)
+        if abs(r - 1.0) < 1e-9:
+            base_contrast = contrast
+            base_in_band = in_band
         if best is None or key > best[0]:
             best = (key, bpm, r, contrast, res.get("confidence", 0.0))
 
@@ -142,6 +161,22 @@ def refine_one(path: str, bpm_hint: float, band: tuple[float, float],
     _key, bpm, ratio, contrast, conf = best
     if conf < MIN_CONFIDENCE and abs(ratio - 1.0) > 1e-9:
         return {"bpm": bpm_hint, "changed": False, "note": f"низкая уверенность {conf:.2f}"}
+    # Смена октавы требует ЗАМЕТНОГО перевеса, а не любого. Иначе перебор
+    # выбирает по шуму: на фонке все кандидаты дают почти одинаковый
+    # контраст, и «исправление» становится случайным числом.
+    #
+    # Но порог действует ТОЛЬКО пока измеренный темп сам попадает в
+    # жанровую полосу. Если он из неё выпал, а кандидат попадает — это
+    # уже не шум, а внешнее знание: фонка на 99 BPM не бывает, как не
+    # бывает драм-н-бейса на 116. Полоса сильнее контраста, потому что
+    # контраст на этом материале не различает ничего, а полоса различает.
+    if (abs(ratio - 1.0) > 1e-9 and base_contrast and base_in_band
+            and contrast < base_contrast * (1.0 + OCTAVE_MARGIN)):
+        return {"bpm": bpm_hint, "changed": False, "ratio": 1.0,
+                "contrast": round(contrast, 2), "confidence": conf,
+                "note": (f"октаву не меняю: x{ratio:.4g} убедительнее всего на "
+                         f"{100 * (contrast / base_contrast - 1):.0f}%, нужно "
+                         f"{100 * OCTAVE_MARGIN:.0f}%")}
 
     changed = abs(bpm - bpm_hint) > 0.05
     note = ""

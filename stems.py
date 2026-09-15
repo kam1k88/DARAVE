@@ -1728,6 +1728,28 @@ def fix_other_library(track_paths: list[str], log=print, live: bool = True) -> d
     return {"todo": len(todo), "done": done, "failed": failed, "worst_residual_db": worst}
 
 
+# Прогресс наружу: stems.py работает подпроцессом, и backend видел только
+# текстовый хвост. Хвост годится человеку и не годится полосе прогресса —
+# «идёт разделение» без единой цифры висело часами, и диджей не мог
+# отличить работу от зависания. Поэтому этап печатает ОДНУ машинную строку
+# на трек, а backend её разбирает (server.py::_stem_progress_line).
+# Префикс берём из library_analysis, а не повторяем строкой: его пишет
+# один процесс, а разбирает другой, и разъехавшийся литерал сломал бы
+# прогресс МОЛЧА — полоса просто стояла бы на месте.
+from library_analysis import PROGRESS_PREFIX
+
+
+def emit_progress(stage: str, i: int, total: int, done: int = 0,
+                  failed: int = 0, name: str = "") -> None:
+    """Строка прогресса для родительского процесса. Печатаем с flush:
+    stdout подпроцесса буферизуется поблочно, и без flush полоса
+    обновлялась бы раз в 4 КБ вывода — то есть никогда."""
+    print(PROGRESS_PREFIX + json.dumps(
+        {"stage": stage, "i": i, "total": total, "done": done,
+         "failed": failed, "name": os.path.basename(name)[:60]},
+        ensure_ascii=False), flush=True)
+
+
 def redo_vocals_library(track_paths: list[str], log=print, live: bool = True,
                         force: bool = False) -> dict:
     """Первый этап «всё одной кнопкой»: доложить роформерный вокал к тем
@@ -1753,6 +1775,7 @@ def redo_vocals_library(track_paths: list[str], log=print, live: bool = True,
         f"(уже роформерных {ready})")
     done, failed, same = 0, 0, None
     for i, p in enumerate(todo):
+        emit_progress("vocals", i, len(todo), done, failed, p)
         r = redo_vocals(p, live=live)
         if r.get("ok"):
             done += 1
@@ -1768,6 +1791,7 @@ def redo_vocals_library(track_paths: list[str], log=print, live: bool = True,
             log("  одна и та же ошибка третий раз — останавливаю пересчёт вокала")
             break
         same = err if failed >= 2 else None
+    emit_progress("vocals", len(todo), len(todo), done, failed)
     return {"todo": len(todo), "done": done, "failed": failed}
 
 
@@ -1811,7 +1835,9 @@ def separate_library(track_paths: list[str], fmt: str = "flac", model: str | Non
 
     done, failed = 0, []
     t0 = time.time()
+    emit_progress("stems", 0, len(todo), 0, 0)
     for i, p in enumerate(todo):
+        emit_progress("stems", i, len(todo), done, len(failed), p)
         if stop_after and time.time() - t0 > stop_after:
             failed.append({"path": p, "error": "остановлено по времени"})
             break
@@ -1854,9 +1880,10 @@ def separate_library(track_paths: list[str], fmt: str = "flac", model: str | Non
     # догоняем их без пересчёта модели — это секунды на трек.
     live_built, live_failed = 0, []
     if live:
-        for p in track_paths:
-            if p in todo or stem_mp4_for(p) or not stem_paths(p):
-                continue
+        pending = [p for p in track_paths
+                   if p not in todo and not stem_mp4_for(p) and stem_paths(p)]
+        for j, p in enumerate(pending):
+            emit_progress("live", j, len(pending), live_built, len(live_failed), p)
             r = build_live_stems(p)
             if r.get("ok"):
                 live_built += 1

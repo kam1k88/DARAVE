@@ -28,7 +28,12 @@ autopilot_selftest.py — проверка автопилота без Mixxx и 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
+import os
+import pathlib
 import sys
+import tempfile
 import time
 
 import autopilot as ap
@@ -1158,6 +1163,610 @@ def run_metadata() -> bool:
     return bool(ok)
 
 
+def run_phonk_bpm() -> bool:
+    """Жанр по папке и октава темпа: случай фонка.
+
+    Жалоба диджея: «новые треки в папке Phonk не определяют стиль + мапят
+    неверный BPM, 100-200, при том, что все треки звучат замедленно в 2
+    раза».
+
+    Замер на 13 его фонк-треках вскрыл две вещи. Первая: папку никто не
+    смотрел, поэтому фонк на 165 подписывался драм-н-бейсом (полоса
+    160-185), а на 155 и 190 не подписывался вовсе. Вторая, и главная:
+    контраст гребёнки на фонке почти плоский — 1.04..1.37 у ВСЕХ
+    кандидатов октавы, — и перебор выбирал по шуму. Отсюда 103 -> 155
+    (x1.5), 99 -> 200 (x2) и 136 -> 101 (x0.75) в одной папке."""
+    import fix_library_bpm as F
+    import genre
+    import id3_tags as T
+
+    ok = True
+    ok &= check("папка — источник жанра",
+                genre.genre_from_folder(r"C:\Music\Phonk\07. x.mp3")["genre"] == "phonk"
+                and genre.genre_from_folder(r"C:\Music\DnB\Liquid\y.mp3")["genre"] == "dnb")
+    ok &= check("ближняя папка сильнее дальней",
+                genre.genre_from_folder("/m/DnB/Phonk/x.mp3")["genre"] == "phonk",
+                "«DnB/Phonk» — это фонк, лежащий не на своём месте")
+    ok &= check("папки без смысла жанром не считаются",
+                genre.genre_from_folder("/m/Music/new/x.mp3")["genre"] is None
+                and genre.genre_from_folder("/m/++/x.mp3")["genre"] is None)
+    ok &= check("папка сильнее темпа",
+                genre.classify(r"C:\Music\Phonk\x.mp3", bpm=170.0)["genre"] == "phonk",
+                "170 BPM в папке Phonk — это фонк, а не драм-н-бейс")
+
+    ok &= check("у фонка есть полоса темпа",
+                T.band_for_genre(None, r"C:\Music\Phonk\x.mp3") == (125.0, 180.0),
+                "замерено на 13 треках: измеренные значения легли в 129..172")
+    ok &= check("полоса берётся и из полного пути, а не только из имени",
+                T.band_for_genre(None, r"C:\Music\Phonk\07. Alien Death.mp3") is not None)
+
+    ok &= check("октава не меняется без заметного перевеса",
+                F.OCTAVE_MARGIN >= 0.10,
+                f"нужен перевес {100 * F.OCTAVE_MARGIN:.0f}%; на фонке шум даёт 1-7%")
+
+    # Ядро правила: пока измеренный темп в полосе — не трогаем; выпал из
+    # полосы, а кандидат попадает — меняем, даже если контраст молчит.
+    import inspect
+
+    src = inspect.getsource(F.refine_one)
+    ok &= check("порог действует только внутри полосы жанра",
+                "base_in_band" in src,
+                "выход за полосу — это внешнее знание, оно сильнее плоского контраста")
+    return bool(ok)
+
+
+def run_library_analysis() -> bool:
+    """Единый анализ библиотеки: порядок шагов, пропуск сделанного, прогресс.
+
+    Почему это вообще проверяется тестом. Кнопок было пять, и порядок
+    между ними держался на памяти диджея: стемы после скана, карты вокала
+    после стемов, метки после всего. Нарушение порядка не ругалось — оно
+    молча давало неверный результат. Сложив их в одну кнопку, этот порядок
+    надо было либо закрепить кодом, либо потерять окончательно.
+
+    Второе, что проверяется, — договор о прогрессе между двумя процессами.
+    stems.py считает слои часами отдельным процессом, и до сих пор наружу
+    не шло НИЧЕГО: полоса «идёт разделение» без единой цифры неотличима от
+    зависшей. Теперь один процесс печатает строку, другой её разбирает —
+    а такой стык ломается молча, если литерал разъедется."""
+    import library_analysis as LA
+    import stems as ST
+
+    ok = True
+
+    # --- порядок задаёт код, а не тот, кто прислал галочки ---
+    ok &= check("порядок шагов не зависит от порядка в запросе",
+                LA.order_steps(["cues", "stems", "scan"]) == ["scan", "stems", "cues"],
+                "скан обязан быть первым, метки — последними")
+    ok &= check("лишние имена шагов не проходят",
+                LA.order_steps(["scan", "выдумка"]) == ["scan"])
+    ok &= check("метки в Mixxx не включаются сами",
+                "cues" not in LA.ANALYZE_DEFAULT,
+                "Mixxx перезапишет свою базу при выходе — это делают по галочке")
+    ok &= check("у каждого шага есть название и объяснение",
+                all(k in LA.ANALYZE_TITLES and LA.ANALYZE_WHY.get(k)
+                    for k in LA.ANALYZE_STEPS))
+
+    # --- договор о прогрессе между stems.py и backend'ом ---
+    ok &= check("префикс прогресса — один на оба процесса",
+                ST.PROGRESS_PREFIX is LA.PROGRESS_PREFIX,
+                "разъехавшийся литерал сломал бы полосу МОЛЧА")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ST.emit_progress("stems", 3, 13, 3, 0, "/music/Phonk/Some Track.mp3")
+    got = LA.parse_progress_line(buf.getvalue().strip())
+    ok &= check("строка прогресса проходит круг: напечатали -> разобрали",
+                got == {"stage": "stems", "i": 3, "total": 13, "done": 3,
+                        "failed": 0, "name": "Some Track.mp3"},
+                f"получилось {got}")
+    ok &= check("человеческий вывод не принимается за прогресс",
+                all(LA.parse_progress_line(x) is None for x in (
+                    "  [3/13] Some Track.mp3 — 41с",
+                    "стемы: 5 уже есть, считать 8",
+                    "[ПРОГРЕСС] это не json",
+                    '[ПРОГРЕСС] {"i": 1}',        # без total — полосе нечего делить
+                    "", None)),
+                "иначе полоса дёргалась бы от каждой строки лога")
+
+    # --- «считать только то, чего не хватает» ---
+    have = {"/m/a.mp3", "/m/b.mp3"}
+    tracks = [{"path": "/m/a.mp3", "bpm": 174.0,
+               "structure": {"drum_map": [1], "energy_map": [1]},
+               "meta": {"sources": ["discogs"]}},
+              {"path": "/m/b.mp3", "bpm": 174.0, "structure": {}, "meta": {}},
+              {"path": "/m/c.mp3", "bpm": 140.0, "structure": {}, "meta": {}}]
+    rep = LA.missing_report(tracks, lambda p: p in have,
+                            lambda p: {"vocal": True} if p == "/m/a.mp3" else None)
+    ok &= check("слои считаются только тем, у кого их нет",
+                rep["stems"] == 1, f"насчитал {rep['stems']}, а нет их у одного")
+    ok &= check("карты вокала — только там, где слои есть, а карты нет",
+                rep["vocals"] == 1, f"насчитал {rep['vocals']}")
+    ok &= check("каталоги — только тем, кого не спрашивали",
+                rep["catalog"] == 2, f"насчитал {rep['catalog']}")
+    ok &= check("одинаковый темп у нескольких треков виден как заглушка",
+                rep["bpm"] == 2,
+                "174.0 у двух из трёх — это не измерение, а значение по умолчанию")
+    ok &= check("карты считаются недостающими, если нет хотя бы одной из двух",
+                rep["maps"] == 2)
+
+    # Пустая библиотека не должна выглядеть как «всё посчитано»: разница
+    # между «нечего делать» и «нечего анализировать» — это разница между
+    # пропуском шага и просьбой указать папку.
+    empty = LA.missing_report([], lambda p: True, lambda p: None)
+    ok &= check("пустая библиотека не врёт про готовность",
+                empty["tracks"] == 0 and empty["bpm"] == 0)
+
+    # --- общий корень: папка, которую не у кого спросить ---
+    ok &= check("общий корень путей находится",
+                LA.common_root(["/m/dnb/a.mp3", "/m/dnb/x/b.mp3"]).replace("\\", "/")
+                == "/m/dnb")
+    ok &= check("пустой список корня не выдумывает",
+                LA.common_root([]) == "" and LA.common_root(None) == "")
+
+    # --- инкрементальный скан: отпечаток файла ---
+    import track_analysis as TA
+
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "x.wav")
+        with open(f, "wb") as fh:
+            fh.write(b"x" * 2048)
+        fp1 = TA.file_fingerprint(f)
+        ok &= check("отпечаток файла — это время правки и размер",
+                    fp1[1] == 2048 and fp1[0] > 0)
+        time.sleep(0.01)
+        with open(f, "ab") as fh:
+            fh.write(b"y" * 16)
+        ok &= check("переписанный файл получает другой отпечаток",
+                    TA.file_fingerprint(f) != fp1,
+                    "иначе правку трека скан пропустил бы навсегда")
+        ok &= check("пропавший файл не роняет скан",
+                    TA.file_fingerprint(os.path.join(d, "нет.wav")) == (0.0, 0))
+
+        db = os.path.join(d, "lib.db")
+        conn = TA.init_db(db)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+        conn.close()
+        ok &= check("в базе есть колонки отпечатка",
+                    {"file_mtime", "file_size"} <= cols)
+
+        # Главная ловушка инкрементального скана: backend забирает строки
+        # с scanned_at >= начала прохода, и пропущенные треки исчезали бы
+        # из комнаты. Пропуск экономит РАЗБОР, а не участие в результате.
+        conn = TA.init_db(db)
+        TA._upsert_track(conn, pathlib.Path(f), {
+            "bpm": 174.0, "key": "Am", "camelot": "8A", "energy": 0.5,
+            "brightness": 0.5, "danceability": 0.5, "duration_seconds": 300.0,
+            "structure": {}, "artist": "A", "title": "T"}, None)
+        conn.close()
+        canon = TA.canon_track_path(pathlib.Path(f))
+        mark = time.time()
+        time.sleep(0.02)
+        TA.touch_scanned(db, [canon])
+        rows = TA.load_library_from_db(db, mark)
+        ok &= check("пропущенный трек остаётся в выдаче прохода",
+                    len(rows) == 1,
+                    "без этого инкрементальный скан усекал бы библиотеку "
+                    "до одних только новых треков")
+    return bool(ok)
+
+
+def run_library_query() -> bool:
+    """Отбор в библиотеке: темп, тональность, слова — и удаление.
+
+    Почему это тест, а не «и так видно». Фильтр разбирает строку, которую
+    диджей набирает руками, и у него ровно один способ сломаться незаметно:
+    отдать НЕ ПУСТОЙ, но неверный результат. «174» находит два трека —
+    похоже на работу, даже если на самом деле оно нашло их по слову в
+    имени файла, а трек 173.97 пропустило.
+
+    Отдельно проверяется, что таблицы камелота здесь и в анализаторе
+    совпадают. Они продублированы намеренно (модуль отбора не должен
+    тянуть numpy ради двух кортежей), и расхождение было бы худшим видом
+    бага: фильтр «8A» молча искал бы не то, что записал анализатор."""
+    import library_query as Q
+    import track_analysis as TA
+
+    ok = True
+
+    ok &= check("таблицы камелота не разошлись с анализатором",
+                tuple(Q._CAMELOT_MAJOR) == tuple(TA._CAMELOT_MAJOR)
+                and tuple(Q._CAMELOT_MINOR) == tuple(TA._CAMELOT_MINOR)
+                and tuple(Q._PITCHES) == tuple(TA._PITCH_NAMES),
+                "дубль таблиц оправдан, молчаливое расхождение — нет")
+
+    # Круговая проверка: что анализатор ЗАПИСАЛ, то фильтр обязан НАЙТИ,
+    # как бы диджей это ни написал.
+    bad = []
+    for pitch in TA._PITCH_NAMES:
+        for mode in ("major", "minor"):
+            written = TA.key_to_camelot(f"{pitch} {mode}")
+            for spelling in (written, written.lower(),
+                             pitch + ("m" if mode == "minor" else ""),
+                             f"{pitch} {mode}"):
+                if Q.normalize_key(spelling) != written:
+                    bad.append((spelling, written, Q.normalize_key(spelling)))
+    ok &= check("24 тональности находятся в четырёх написаниях",
+                not bad, f"расходится: {bad[:3]}")
+
+    ok &= check("не-тональность не становится тональностью",
+                all(Q.normalize_key(x) is None for x in ("13A", "Z", "shadow", "", None)),
+                "иначе слово из названия трека превратится в фильтр")
+
+    # --- темп ---
+    ok &= check("точный темп — это узкий диапазон, а не равенство",
+                Q.parse_bpm("174") == (173.0, 175.0),
+                "анализатор отдаёт 173.97; строгое равенство отбросило бы всё")
+    ok &= check("диапазон разбирается",
+                Q.parse_bpm("100-135") == (100.0, 135.0)
+                and Q.parse_bpm("100–135") == (100.0, 135.0),
+                "и через дефис, и через тире — набирают по-разному")
+    ok &= check("открытые границы",
+                Q.parse_bpm("170+")[0] == 170.0 and Q.parse_bpm("140-")[1] == 140.0)
+    ok &= check("перевёрнутый диапазон не теряется",
+                Q.parse_bpm("180-170") == (170.0, 180.0))
+    ok &= check("номер трека не принимается за темп",
+                Q.parse_bpm("07") is None and Q.parse_bpm("1000") is None,
+                "«07» в имени файла — это не 7 ударов в минуту")
+
+    # --- отбор целиком ---
+    lib = [
+        {"path": "/m/a.mp3", "name": "Alpha Shift.mp3", "bpm": 174.0, "camelot": "8A",
+         "genre": "dnb", "subgenre": "neurofunk", "vocal": False, "stems": True},
+        {"path": "/m/b.mp3", "name": "Blue Rain.mp3", "bpm": 173.97, "camelot": "5A",
+         "genre": "dnb", "subgenre": "liquid", "vocal": True, "stems": True},
+        {"path": "/m/c.mp3", "name": "City Lights.mp3", "bpm": 128.0, "camelot": "8A",
+         "genre": "house", "vocal": True, "stems": False},
+    ]
+    names = lambda q: sorted(t["name"][:5] for t in Q.filter_tracks(lib, q)["tracks"])
+    ok &= check("«174» ловит и 174.0, и 173.97",
+                names("174") == ["Alpha", "Blue "],
+                f"нашлось {names('174')} — ровно ради этого и нужен допуск")
+    ok &= check("диапазон 100-135 отбирает только медленный",
+                names("100-135") == ["City "])
+    ok &= check("тональность отбирает буквально, а не по совместимости",
+                names("8A") == ["Alpha", "City "],
+                "совместимость — отдельное знание, в строке поиска ей не место")
+    ok &= check("жанр и поджанр ищутся тем же словом",
+                names("dnb") == ["Alpha", "Blue "] and names("liquid") == ["Blue "])
+    ok &= check("слова складываются по И",
+                names("dnb 170-180 vocal") == ["Blue "])
+    ok &= check("несуществующее даёт пусто, а не всё подряд",
+                names("нетутакого") == [] and names("dnb 128") == [])
+    ok &= check("пустой запрос пропускает всё",
+                len(Q.filter_tracks(lib, "")["tracks"]) == 3)
+    ok &= check("разбор запроса виден человеку",
+                "темп" in Q.describe(Q.parse("170-180"))
+                and Q.describe(Q.parse("")) == "без фильтров",
+                "иначе «ничего не нашлось» — гадание, а не вопрос с ответом")
+    return bool(ok)
+
+
+def run_music_fetch() -> bool:
+    """Пополнение библиотеки: право на скачивание, темп, папка-приёмник.
+
+    Главное здесь — не удобство, а два обещания, которые легко нарушить
+    молча. Первое: не скачивать то, что автор скачивать не разрешал.
+    Второе: не отдавать в библиотеку недокопированный файл — разбор
+    половины файла даёт мусорный темп, и мусор остаётся навсегда, потому
+    что второй раз трек уже не разберут (отпечаток совпадает)."""
+    import music_fetch as MF
+
+    ok = True
+
+    # --- корзина скорости не должна отрезать запрошенное ---
+    ok &= check("корзина скорости накрывает диапазон целиком",
+                MF.speed_for_bpm(170, 180) == "veryhigh"
+                and MF.speed_for_bpm(100, 130) == "medium")
+    ok &= check("широкий диапазон не сужается наугад",
+                MF.speed_for_bpm(100, 180) is None,
+                "лучше скачать лишнего, чем молча не найти запрошенное")
+    ok &= check("без диапазона корзина не навязывается",
+                MF.speed_for_bpm(None, None) is None)
+
+    # --- имя файла должно разбираться нашим же разбором ---
+    import genre as G
+
+    n = MF.safe_filename({"artist": "Some Artist", "title": "Track Name (VIP)", "id": "1"})
+    ok &= check("имя файла разбирается обратно в исполнителя и название",
+                G.artist_title_from_name(n) == ("Some Artist", "Track Name (VIP)"),
+                f"получилось {n!r} -> {G.artist_title_from_name(n)}")
+    ok &= check("запрещённые в имени символы не роняют загрузку",
+                MF.safe_filename({"artist": 'A/B\\C:*?', "title": 'X "Y" <2>'}).endswith(".mp3"))
+    ok &= check("пустые поля не дают безымянный файл",
+                len(MF.safe_filename({"id": "77"})) > 4)
+
+    # --- право на скачивание ---
+    r = MF.download({"downloadable": False, "download_url": "http://x/y.mp3"}, "/tmp")
+    ok &= check("трек без разрешения автора не качается",
+                not r["ok"] and "разреш" in r["error"],
+                "audiodownload_allowed — это не подсказка, а условие")
+    r2 = MF.download({"downloadable": True, "download_url": None}, "/tmp")
+    ok &= check("пустая ссылка не превращается в загрузку", not r2["ok"])
+
+    # --- план виден до начала ---
+    plan = MF.plan_fetch(40, 170, 180)
+    ok &= check("сколько качать ради 40 в диапазоне — известно заранее",
+                plan["candidates"] > plan["want"],
+                "темпа в каталоге нет, лишнее неизбежно — но не внезапно")
+    ok &= check("без диапазона лишнего не качаем",
+                MF.plan_fetch(10, None, None)["candidates"] == 10)
+    ok &= check("больше двухсот каталог всё равно не отдаст",
+                MF.plan_fetch(200, 170, 180)["candidates"] <= 200)
+
+    # --- попадание в диапазон ---
+    ok &= check("измеренный 173.97 попадает в «170-180»",
+                MF.in_range(173.97, 170, 180) and not MF.in_range(169.9, 170, 180))
+    ok &= check("неизмеренный темп не считается попавшим",
+                not MF.in_range(None, 170, 180),
+                "иначе трек без темпа осядет в библиотеке как подходящий")
+
+    # --- папка-приёмник: файл должен ДОКОПИРОВАТЬСЯ ---
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "big.wav")
+        with open(f, "wb") as fh:
+            fh.write(b"0" * 100000)
+        sizes: dict = {}
+        ready, sizes = MF.settled(MF.inbox_scan(d, set()), sizes)
+        ok &= check("свежезамеченный файл сразу не разбирается",
+                    not ready, "первый опрос не может знать, дописан ли он")
+        with open(f, "ab") as fh:
+            fh.write(b"0" * 400000)
+        ready, sizes = MF.settled(MF.inbox_scan(d, set()), sizes)
+        ok &= check("растущий файл не разбирается",
+                    not ready, "разбор половины файла даёт мусорный темп навсегда")
+        ready, sizes = MF.settled(MF.inbox_scan(d, set()), sizes)
+        ok &= check("переставший расти файл разбирается",
+                    ready == [f])
+
+        with open(os.path.join(d, "half.part"), "wb") as fh:
+            fh.write(b"0" * 50000)
+        ok &= check("недокачанный .part не считается треком",
+                    MF.inbox_scan(d, set()) == [f],
+                    "загрузка пишет в .part и переименовывает в конце")
+        ok &= check("уже принятое не предлагается второй раз",
+                    MF.inbox_scan(d, {f}) == [])
+        os.unlink(f)
+        ready, _ = MF.settled([f], {f: 500000})
+        ok &= check("исчезнувший между опросами файл не роняет приёмник",
+                    ready == [])
+    return bool(ok)
+
+
+def run_bass_swap_and_neutral() -> bool:
+    """Обмен низом и возврат ручек в нейтраль.
+
+    Оба правила живут в build_plan, а не в каждом приёме, и оба появились
+    из замера реального 45-минутного сета диджея, где были слышны провалы
+    и «где-то вообще тишина».
+
+    Здесь закреплены ДВЕ МОИ ОШИБКИ, пойманные замером при починке, —
+    именно они и есть то, что легко вернуть обратно:
+      * встречные кривые на плечах обмена дают провал низа на 6 dB ровно
+        в середине (дырку вместо каши, от которой я их и ставил);
+      * растягивание ВСЕХ рампов низа убивает Bar Switch, где низ скачет
+        резом каждый такт НАРОЧНО."""
+    import techniques as TQ
+    from mixxx_controls import BY_ID
+
+    ok = True
+    KNOBS = ("filter_sweep", "eq_low", "eq_mid", "eq_high", "gain_ramp")
+
+    def plan_for(tid):
+        t = TQ.TECHNIQUES[tid]
+        return TQ.build_plan(tid, "p", "A", "B", 150.0,
+                             third="C" if t.requires_decks >= 3 else None)
+
+    # --- ничего не остаётся закрытым на деке, которая продолжает играть ---
+    stuck = []
+    for tid in TQ.TECHNIQUES:
+        last = {}
+        for e in plan_for(tid)["events"]:
+            if (e.get("kind") != "ramp" or e.get("action") not in KNOBS
+                    or e.get("deck") == "A"):
+                continue
+            k = (e["deck"], e["action"])
+            end = e["beat_offset"] + e.get("duration_beats", 0.0)
+            if k not in last or end >= last[k][0]:
+                last[k] = (end, e.get("value_to"))
+        for (deck, act), (_end, val) in last.items():
+            if val is not None and abs(float(val) - BY_ID[act].neutral) > 1e-6:
+                stuck.append(f"{tid}:{deck}.{act}={val}")
+    ok &= check("ни одна ручка не остаётся закрытой на играющей деке",
+                not stuck,
+                f"застряло: {stuck[:4]} — рендер держит последнее значение "
+                f"до конца КУСКА, а не приёма: DNB-20 так дал 37.8 с с верхом на -45 dB")
+
+    # --- обмен низом складывается в единицу, а не в провал ---
+    def curve_at(x, kind):
+        if kind == "ease_in":
+            return x * x
+        if kind == "ease_out":
+            return 1 - (1 - x) ** 2
+        return x
+
+    def swap_arms(tid):
+        ev = [e for e in plan_for(tid)["events"]
+              if e.get("kind") == "ramp" and e.get("action") == "eq_low"
+              and e.get("value_from") is not None and e.get("value_to") is not None]
+        rise = [e for e in ev if e["deck"] != "A"
+                and float(e["value_to"]) > float(e["value_from"])]
+        if not rise:
+            return None, None
+        inc = max(rise, key=lambda e: e["beat_offset"] + e["duration_beats"])
+        end = inc["beat_offset"] + inc["duration_beats"]
+        out = next((e for e in ev if e["deck"] == "A"
+                    and float(e["value_from"]) > float(e["value_to"])
+                    and abs(e["beat_offset"] + e["duration_beats"] - end) <= 0.5), None)
+        return inc, out
+
+    worst = 1.0
+    for tid in ("DNB-25", "ST-09", "DNB-00", "FX-01", "TT-06"):
+        inc, out = swap_arms(tid)
+        if not (inc and out):
+            continue
+        for k in range(9):
+            b = inc["beat_offset"] + inc["duration_beats"] * k / 8.0
+            total = 0.0
+            for e in (inc, out):
+                x = min(max((b - e["beat_offset"]) / max(e["duration_beats"], 1e-9), 0.0), 1.0)
+                total += (float(e["value_from"])
+                          + (float(e["value_to"]) - float(e["value_from"]))
+                          * curve_at(x, e.get("curve", "linear")))
+            worst = min(worst, total / TQ.EQ_UNITY)
+    ok &= check("сумма низа по ходу обмена не проваливается",
+                worst > 0.95,
+                f"худшая точка {worst:.2f} от штатного; встречные кривые давали 0.50, "
+                f"то есть -6 dB ровно в середине обмена")
+
+    # --- обмен стал слышимым по длине, а рез остался резом ---
+    inc, _ = swap_arms("DNB-25")
+    ok &= check("обмен низом длится такты, а не доли",
+                inc is not None and inc["duration_beats"] >= 4.0,
+                f"{inc['duration_beats'] if inc else 0} долей; было 2-4 — на фонковых "
+                f"темпах это меньше секунды, слышно как рывок")
+    inc24, _ = swap_arms("DNB-24")
+    ok &= check("рез Bar Switch не превращён в бленд",
+                inc24 is not None and inc24["duration_beats"] < 1.0,
+                f"{inc24['duration_beats'] if inc24 else '?'} долей — скачок низа каждый "
+                f"такт это и есть приём, растянутый он его убивает")
+
+    # --- длительность настраивается диджеем ---
+    lens = []
+    for beats in (2, 8, 16):
+        pl = TQ.build_plan("DNB-25", "p", "A", "B", 150.0,
+                           overrides={"bass_swap_beats": beats})
+        e = [x for x in pl["events"] if x.get("action") == "eq_low" and x["deck"] == "B"
+             and float(x.get("value_to", 0)) > float(x.get("value_from", 1))][-1]
+        lens.append(e["duration_beats"])
+    ok &= check("длительность обмена слушается настройки",
+                lens[0] < lens[1] < lens[2], f"получилось {lens}")
+    ok &= check("ползунок появляется там, где обмен есть",
+                any(pr.key == "bass_swap_beats" for pr in TQ.TECHNIQUES["DNB-25"].params)
+                and not any(pr.key == "bass_swap_beats"
+                            for pr in TQ.TECHNIQUES["DNB-24"].params),
+                "у приёма с обменом — да, у приёма с резом — нет")
+
+    # --- пол под опорой выравнивателя ---
+    import set_export as SE
+
+    norm = SE.SET_DECK_RMS * SE.SET_MAKEUP
+    floor = norm * (10.0 ** (-SE.SET_RIDE_REF_FLOOR_DB / 20.0))
+    ok &= check("тихое соседнее тело не топит переход целиком",
+                max(norm * 10 ** (-20 / 20.0), floor) >= floor - 1e-9
+                and floor > norm * 10 ** (-SE.SET_RIDE_MAX_CUT_DB / 20.0),
+                f"пол {SE.SET_RIDE_REF_FLOOR_DB:.0f} dB должен быть выше потолка среза "
+                f"{SE.SET_RIDE_MAX_CUT_DB:.0f} dB, иначе он ничего не ограничивает")
+    return bool(ok)
+
+
+def run_drop_detection() -> bool:
+    """Поиск дропов: по тактам и по величине скачка, а не по порогу.
+
+    Проверяется на сигнале с ИЗВЕСТНОЙ структурой — это единственный
+    способ отличить «нашёл дропы» от «нашёл шум и назвал его дропами».
+    Старый детектор на фонк-треке диджея выдавал 13 дропов ровно через
+    четыре такта, и выглядело это как работа.
+
+    Что именно закреплено:
+      * дроп — это скачок СРЕДНЕГО уровня между окнами до и после, а не
+        пересечение порога: порог «90-й перцентиль минус 3 dB» на
+        реальном треке перекрывался 43% времени и пересекался 36 раз;
+      * уверенность — величина скачка в децибелах, а не разница двух
+        соседних кадров: после сглаживания окном в секунду та разница
+        составляет 0.1 dB ВСЕГДА, то есть не значит ничего;
+      * два дропа ближе восьми тактов — это один дроп: слепой перескок
+        на окно удержания и раскладывал находки ровно через 4 такта."""
+    import numpy as np
+
+    import track_analysis as TA
+
+    ok = True
+    sr, bpm = 22050, 150.0
+    bar = 4 * 60.0 / bpm
+
+    def build(plan):
+        rng = np.random.default_rng(1)
+        parts = []
+        for bars, lvl in plan:
+            n = int(bars * bar * sr)
+            t = np.arange(n) / sr
+            beat = np.abs(np.sin(np.pi * t * bpm / 60)) ** 6
+            sig = (0.9 * np.sin(2 * np.pi * 50 * t) * (0.4 + 0.6 * beat)
+                   + 0.3 * rng.standard_normal(n) * beat)
+            parts.append((sig * lvl).astype("float64"))
+        return np.concatenate(parts)
+
+    # интро тихо -> ДРОП -> яма -> ДРОП -> аутро
+    y = build([(16, 0.12), (16, 1.0), (8, 0.10), (16, 1.0), (8, 0.5)])
+    r = TA.detect_structure(y, sr, bpm)
+    bars_found = [d["bar_index"] for d in r["drops"]]
+    ok &= check("найдены оба дропа там, где они есть",
+                len(bars_found) == 2 and abs(bars_found[0] - 16) <= 1
+                and abs(bars_found[1] - 40) <= 1,
+                f"эталон такты [16, 40], найдено {bars_found}")
+    ok &= check("лишних дропов нет",
+                len(r["drops"]) == 2,
+                f"{len(r['drops'])} шт; старый детектор на фонке давал 13")
+    steps = [d.get("step_db", 0) for d in r["drops"]]
+    ok &= check("величина скачка измерена в децибелах и она заметная",
+                all(x >= TA.DROP_MIN_STEP_DB for x in steps),
+                f"скачки {steps} dB")
+    confs = [d["confidence"] for d in r["drops"]]
+    ok &= check("уверенность что-то значит",
+                all(c > 0.2 for c in confs),
+                f"{confs}; раньше это была разница соседних кадров — 0.01-0.41 "
+                f"по построению, и «дроп» нельзя было отличить от шума")
+
+    # Ровная громкая дорожка без событий: дропов быть НЕ должно. Это и
+    # есть проверка на «находит то, чего нет».
+    flat = build([(48, 1.0)])
+    ok &= check("на ровном треке дропов не находится",
+                len(TA.detect_structure(flat, sr, bpm)["drops"]) == 0,
+                "порог по пересечению находил их и здесь")
+
+    # Два подъёма подряд в пределах восьми тактов — это один дроп.
+    near = build([(16, 0.12), (2, 0.9), (2, 0.95), (16, 1.0)])
+    got = TA.detect_structure(near, sr, bpm)["drops"]
+    ok &= check("близкие подъёмы схлопываются в один",
+                len(got) <= 1, f"найдено {len(got)}")
+
+    ok &= check("ямы находятся и у них измерена глубина",
+                any(b.get("depth_db", 0) >= TA.BREAKDOWN_DROP_DB
+                    for b in r["breakdowns"]),
+                f"{[b.get('depth_db') for b in r['breakdowns']]}")
+
+    # Короткий трек не должен ронять разбор: в фонке это норма.
+    ok &= check("очень короткий кусок не роняет детектор",
+                TA.detect_structure(build([(3, 1.0)]), sr, bpm)["drops"] == [])
+
+    # --- дроп по барабанам, а не по басу ---
+    #
+    # Карта энергии ищет дроп как возврат НИЗА. В фонке бас звучит
+    # непрерывно, и она честно не находит ничего — а пустой список
+    # заставляет mix_points откатиться на дропы structure-анализа.
+    import beatgrid
+
+    n = int(48 * bar * sr)
+    t = np.arange(n) / sr
+    bass = 0.7 * np.sin(2 * np.pi * 50 * t)            # бас ВЕЗДЕ, как в фонке
+    drums = np.zeros(n)
+    half = int(24 * bar * sr)
+    beat = np.abs(np.sin(np.pi * t * bpm / 60)) ** 6
+    drums[half:] = (0.8 * beat[half:]
+                    * np.random.default_rng(2).standard_normal(n - half))
+    mix = bass + drums
+    by_bass = beatgrid.energy_map(mix, sr, bpm)
+    by_drums = beatgrid.energy_map(mix, sr, bpm, drums=drums)
+    ok &= check("по непрерывному басу дроп не виден — это не поломка",
+                len(by_bass["drops"]) == 0,
+                "именно поэтому нужен слой ударных или перкуссивная часть")
+    ok &= check("по барабанам дроп виден",
+                len(by_drums["drops"]) >= 1,
+                f"{by_drums['drops']}; барабаны входят на 24-м такте "
+                f"({24 * bar:.0f} с)")
+    return bool(ok)
+
+
 def main() -> int:
     print("Кроссфейдер:");      c1 = run_crossfader()
     print("Телеметрия:");       c2 = run_telemetry()
@@ -1173,12 +1782,19 @@ def main() -> int:
     print("Пустое пространство между сведениями:"); c15 = run_dead_tail()
     print("Режимы ведения фейдеров:"); c16 = run_profile_model()
     print("Исполнитель, название и каталоги:"); c17 = run_metadata()
+    print("Фонк: жанр по папке и октава темпа:"); c18 = run_phonk_bpm()
+    print("Единый анализ библиотеки:"); c19 = run_library_analysis()
+    print("Отбор в библиотеке:"); c20 = run_library_query()
+    print("Пополнение библиотеки:"); c21 = run_music_fetch()
+    print("Обмен басами и нейтраль:"); c22 = run_bass_swap_and_neutral()
+    print("Поиск дропов:"); c23 = run_drop_detection()
     print("Загрузчик очередью Auto DJ:")
     c6 = asyncio.run(run_autodj_loader())
     print("Сверка очереди с планом:"); c7 = run_queue_check()
     print("Проход по сету (около 20 с):")
     c5 = asyncio.run(run_set())
-    good = all((c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17))
+    good = all((c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14,
+                c15, c16, c17, c18, c19, c20, c21, c22, c23))
     print("\nИТОГ:", "всё сходится" if good else "ЕСТЬ ПРОВАЛЫ")
     return 0 if good else 1
 

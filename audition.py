@@ -69,6 +69,13 @@ def _init(conn: sqlite3.Connection) -> None:
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS seams_room ON seams(session_id, verdict)")
+    # Имя последнего отрендеренного демо этого шва. Молча, как и прочие
+    # миграции в проекте: база живёт у диджея с первого дня, и ронять её
+    # ради одной колонки незачем.
+    try:
+        conn.execute("ALTER TABLE seams ADD COLUMN demo_file TEXT")
+    except sqlite3.OperationalError:
+        pass                                    # колонка уже есть
     conn.commit()
 
 
@@ -120,13 +127,27 @@ def pool(session_id: str) -> list[dict]:
     with _db() as conn:
         rows = conn.execute(
             """SELECT a_path, b_path, technique_id, pair_label, exit_seconds,
-                      entry_seconds, params_json, created_at, id
+                      entry_seconds, params_json, created_at, id, demo_file
                FROM seams WHERE session_id = ? AND verdict = 'approved'
                ORDER BY created_at""", (session_id,)).fetchall()
     return [{"a_path": r[0], "b_path": r[1], "technique_id": r[2], "pair_label": r[3],
              "exit_seconds": r[4], "entry_seconds": r[5],
              "params": json.loads(r[6] or "{}"), "created_at": r[7],
-             "id": r[8]} for r in rows]
+             "id": r[8], "demo_file": r[9]} for r in rows]
+
+
+def set_demo(session_id: str, seam_id: int, demo_file: str | None) -> None:
+    """Запомнить, каким файлом шов звучит сейчас.
+
+    Демо не кэшируются по построению: «послушать» каждый раз собирает
+    план заново, и после правки логики сведения пул звучит по-новому сам.
+    Здесь хранится результат ПАКЕТНОЙ пересборки — чтобы полсотни швов
+    не пришлось ждать по одному, и чтобы перезагрузка вкладки не
+    выбрасывала уже посчитанное."""
+    with _db() as conn:
+        conn.execute("UPDATE seams SET demo_file = ? WHERE id = ? AND session_id = ?",
+                     (demo_file, int(seam_id), session_id))
+        conn.commit()
 
 
 def drop(session_id: str, seam_id: int) -> dict:
@@ -305,12 +326,20 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                avoid_b_genre: str | None = None,
                hold_exit: float | None = None,
                hold_entry: float | None = None,
-               hold_technique: str | None = None) -> list[dict]:
+               hold_technique: str | None = None,
+               include_judged: bool = False) -> list[dict]:
     """Швы, которые стоит послушать. Уже судимые не предлагаются повторно.
 
     a_path/b_path сужают перебор: так работают причины отказа. «Не та
     техника» оставляет обоих и меняет приём; «не тот второй трек»
-    оставляет первый; «не та пара» не задаёт ничего."""
+    оставляет первый; «не та пара» не задаёт ничего.
+
+    include_judged=True снимает ВСЕ фильтры «это уже судили»: и отказы, и
+    пул, и цепочку. Нужно ровно для одного случая — вернуть в отбор шов,
+    который УЖЕ лежит в пуле, чтобы его поправить. Такой шов по
+    построению одобрен, а значит и его пара в approved_b, и сама
+    комбинация в dead_combos: обычным перебором он не вернётся никогда.
+    Отсюда и была ошибка «не смог собрать шов для этой пары»."""
     import style
     from techniques import TECHNIQUES
 
@@ -322,7 +351,10 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
     (dead_pairs, dead_junctions, dead_combos, dead_techniques,
      dead_exits, dead_entries) = _scopes(session_id)
     tm = taste(session_id)
-    approved_b = {s["b_path"] for s in pool(session_id)}
+    approved_b = set() if include_judged else {s["b_path"] for s in pool(session_id)}
+    if include_judged:
+        dead_pairs = dead_junctions = dead_combos = set()
+        dead_techniques = dead_exits = dead_entries = set()
 
     # Продолжение цепочки. Диджей слушает переходы ПОДРЯД, начиная с
     # первого, поэтому следующий шов по умолчанию начинается там, где
@@ -330,7 +362,7 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
     # случайным графом: даже когда диджей соглашался на ВСЁ, из двадцати
     # швов складывалась цепочка из четырёх треков, а не из двадцати.
     chain_used: set[str] = set()
-    if a_path is None and b_path is None:
+    if a_path is None and b_path is None and not include_judged:
         built = build_set(session_id, tracks)
         if built.get("ok") and built.get("tracks"):
             chain_used = {t["path"] for t in built["tracks"]}

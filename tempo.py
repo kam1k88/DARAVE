@@ -185,15 +185,57 @@ def library_center(bpms: list[float], fallback: float = 174.0) -> float:
     return round(fold_into_band(median), 1)
 
 
-def normalize_library(tracks: list[dict], bpm_key: str = "bpm") -> float:
-    """Приводит поле bpm всех треков к общему центру библиотеки НА МЕСТЕ.
-    Возвращает найденный центр. Идемпотентна."""
-    center = library_center([t.get(bpm_key) or 0.0 for t in tracks])
+def normalize_library(tracks: list[dict], bpm_key: str = "bpm",
+                     group_key=None) -> float:
+    """Приводит поле bpm треков к центру их СОБСТВЕННОЙ группы. На месте.
+
+    Раньше центр был один на всю библиотеку, и это ломалось ровно тогда,
+    когда библиотека перестала быть одножанровой. Замерено на библиотеке
+    диджея: 42 драм-н-бейсовых трека на 170-175 задают центр 174, и фонк
+    на 92-100 сворачивается к нему — то есть УДВАИВАЕТСЯ до 184-200.
+    Он это и увидел: «мапят неверный BPM, 100-200, при том, что все треки
+    звучат замедленно в 2 раза». Треки не замедлены — их темп удвоили мы.
+
+    Половинный и двойной счёт — это действительно один темп (см. relate),
+    и сворачивать к центру осмысленно. Но центр должен быть СВОЙ: у фонка
+    он около 95, у драм-н-бейса около 174, и подтягивать первый ко второму
+    значит подписывать треку чужой темп.
+
+    group_key — как определить группу; по умолчанию по жанру трека.
+    Группа меньше четырёх треков собственного центра не образует: там
+    статистики нет, и такие треки не трогаем вовсе."""
+    def _default_group(t: dict):
+        try:
+            import genre as _genre
+
+            g = _genre.classify(t.get("path") or t.get("name") or "",
+                                bpm=t.get(bpm_key))
+            return g.get("genre") or None
+        except Exception:                            # noqa: BLE001
+            return None
+
+    pick = group_key or _default_group
+    groups: dict = {}
     for t in tracks:
-        b = t.get(bpm_key)
-        if b:
-            t[bpm_key] = round(fold_to_center(b, center), 1)
-    return center
+        groups.setdefault(pick(t), []).append(t)
+
+    overall = library_center([t.get(bpm_key) or 0.0 for t in tracks])
+    for name, items in groups.items():
+        if name is None or len(items) < MIN_GROUP_TRACKS:
+            # Жанр неизвестен или треков слишком мало: без собственного
+            # центра сворачивать не к чему, а к чужому — нельзя.
+            continue
+        centre = library_center([t.get(bpm_key) or 0.0 for t in items])
+        for t in items:
+            b = t.get(bpm_key)
+            if b:
+                t[bpm_key] = round(fold_to_center(b, centre), 1)
+    return overall
+
+
+# Меньше этого числа треков в жанре — своего центра нет. Четыре: на трёх
+# медиана ещё качается от одного промаха детектора, на четырёх уже нет.
+MIN_GROUP_TRACKS = 4
 
 
 # --------------------------------------------------- питч после подгонки темпа

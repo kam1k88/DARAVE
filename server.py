@@ -83,6 +83,7 @@ except ImportError:
     # ошибку вместо падения ВСЕГО backend'а при импорте.
     demo_render = None
 import full_catalog
+import library_analysis as _la
 import live_control
 import mix_strategist
 import set_export
@@ -1123,8 +1124,29 @@ async def upload_library(session_id: str, body: dict) -> JSONResponse:
     return JSONResponse({"ok": True, "count": len(tracks)})
 
 
+@app.get("/api/docs")
+async def docs_index() -> JSONResponse:
+    """Оглавление встроенной документации."""
+    import docs as _docs
+
+    return JSONResponse({"sections": _docs.index()})
+
+
+@app.get("/api/docs/{slug}")
+async def docs_page(slug: str) -> JSONResponse:
+    """Один раздел. Теория берётся из тех же строк, что читает ассистент,
+    а справочник приёмов собирается из живого словаря TECHNIQUES —
+    поэтому документация не может отстать от кода."""
+    import docs as _docs
+
+    page = _docs.page(slug)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Нет раздела {slug!r}")
+    return JSONResponse(page)
+
+
 @app.get("/api/rooms/{session_id}/library")
-async def get_library(session_id: str) -> JSONResponse:
+async def get_library(session_id: str, q: str = "") -> JSONResponse:
     """Библиотека комнаты + два поля, которых в базе сканера нет.
 
     `stems` — готовы ли слои у трека. Без этого признака диджей не мог
@@ -1149,7 +1171,19 @@ async def get_library(session_id: str) -> JSONResponse:
         except Exception:
             item["stems"] = False
         out.append(item)
-    return JSONResponse({"tracks": out})
+
+    # Фильтр считает СЕРВЕР, а не браузер. Разбор «100-135», «174» и «Am»
+    # живёт в library_query и покрыт тестами; продублировать его на
+    # JavaScript значило бы завести вторую, чуть другую версию тех же
+    # правил — и расхождение вылезло бы там, где его никто не ищет.
+    if q:
+        import library_query as _lq
+
+        res = _lq.filter_tracks(out, q)
+        return JSONResponse({"tracks": res["tracks"], "total": res["total"],
+                             "found": res["found"], "query": q,
+                             "filters": _lq.describe(res["filters"])})
+    return JSONResponse({"tracks": out, "total": len(out), "found": len(out)})
 
 
 @app.post("/api/rooms/{session_id}/library/scan")
@@ -1345,6 +1379,424 @@ async def library_scan_status(session_id: str) -> JSONResponse:
     status = _scan_status.get(session_id, {"running": False, "tail": [], "ok": None, "returncode": None})
     return JSONResponse(status)
 
+# --- единый анализ библиотеки -----------------------------------------
+#
+# Раньше во вкладке "Библиотека" стояло пять кнопок: сканировать, стемы,
+# метки, перемерить темп, убрать мусор. Порядок между ними был неписаным
+# (стемы после скана, метки после стемов), нарушение порядка молча давало
+# неверный результат, а каждая кнопка считала СВОЁ заново — добавление
+# одного трека стоило столько же, сколько первый проход.
+#
+# Здесь они собраны в один конвейер с двумя правилами:
+#   * порядок задан кодом (library_analysis.order_steps), а не памятью
+#     диджея и не тем, в каком порядке клиент прислал галочки;
+#   * каждый шаг сначала считает, чего не хватает, и пропускается целиком,
+#     если не хватает нечего. Пропуск — это нормальный исход шага, а не
+#     ошибка, и он так и показывается.
+#
+# Шаг "cues" (метки в Mixxx) выключен по умолчанию сознательно: Mixxx
+# держит свою библиотеку в памяти и при выходе перезаписывает файл, то
+# есть запись меток при запущенном Mixxx их теряет. Шаг это проверяет сам
+# и отказывается, а не портит базу.
+
+ANALYZE_STEPS = _la.ANALYZE_STEPS
+ANALYZE_DEFAULT = _la.ANALYZE_DEFAULT
+
+_analyze_tasks: dict[str, asyncio.Task] = {}
+_analyze_status: dict[str, dict] = {}
+
+
+def _analyze_step(session_id: str, key: str) -> dict | None:
+    for st in _analyze_status.get(session_id, {}).get("steps", []):
+        if st["key"] == key:
+            return st
+    return None
+
+
+async def _analyze_push(session_id: str) -> None:
+    room = sessions.get_or_create(session_id)
+    await room.broadcast_to_chat({"type": "analyze_progress",
+                                  **_analyze_status.get(session_id, {})})
+
+
+async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
+                               parse=None) -> dict:
+    """Запуск подпроцесса с живым прогрессом.
+
+    Вывод читается в потоке (на Windows asyncio-подпроцессы требуют
+    ProactorEventLoop, а uvicorn поднимает селекторный — см. историю
+    /library/scan), а разобранные строки прогресса кладутся прямо в
+    состояние шага."""
+    import subprocess as _sp
+
+    st = _analyze_step(session_id, key) or {}
+    tail: list[str] = []
+    loop = asyncio.get_running_loop()
+    try:
+        proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                         cwd=str(Path(__file__).parent),
+                         creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+    except OSError as exc:
+        return {"state": "fail", "note": f"не смог запустить: {exc}"}
+
+    def _pump() -> None:
+        if proc.stdout is None:
+            proc.wait()
+            return
+        for raw in proc.stdout:
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            if not line:
+                continue
+            upd = parse(line) if parse else None
+            if upd is None:
+                # Машинные строки прогресса в хвост НЕ кладём: хвост
+                # читает человек, когда что-то пошло не так, и JSON по
+                # строке на трек вытеснял бы из него настоящую причину.
+                tail.append(line)
+                del tail[:-40]
+            if upd:
+                st.update({"done": int(upd.get("i", 0)),
+                           "total": int(upd.get("total", 0)),
+                           "name": str(upd.get("name", "")),
+                           "stage": str(upd.get("stage", ""))})
+                # Толкаем в UI из рабочего потока: событийный цикл живёт в
+                # другом, и без call_soon_threadsafe это гонка.
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(_analyze_push(session_id)))
+        proc.wait()
+
+    await asyncio.to_thread(_pump)
+    for line in tail[-10:]:
+        logger.info(f"[анализ:{key}] {line}")
+    if proc.returncode != 0:
+        return {"state": "fail", "note": f"код возврата {proc.returncode}",
+                "tail": tail[-5:]}
+    return {"state": "ok", "tail": tail[-5:]}
+
+
+async def _analyze_run(session_id: str, path: str, steps: list[str],
+                       force: bool, backend: str) -> None:
+    import stems as _stems
+
+    room = sessions.get_or_create(session_id)
+    db_path = _room_db_path(session_id)
+
+    async def _mark(key: str, **kw) -> None:
+        st = _analyze_step(session_id, key)
+        if st is not None:
+            st.update(kw)
+        await _analyze_push(session_id)
+
+    try:
+        for key in steps:
+            _analyze_status[session_id]["current"] = key
+            await _mark(key, state="run")
+            try:
+                res = await _analyze_one(session_id, key, path, force, backend,
+                                         db_path, room, _stems)
+            except asyncio.CancelledError:
+                # Конвейер сняли (перезапуск backend'а, закрытие цикла).
+                # Шаг обязан перестать выглядеть идущим: иначе состояние
+                # навсегда остаётся running=True, кнопка заблокирована, а
+                # повторный запуск отвечает 409 «уже идёт» — и выглядит
+                # это как намертво зависший анализ.
+                await _mark(key, state="fail", note="прервано")
+                raise
+            except Exception as exc:                 # noqa: BLE001
+                logger.exception(f"[анализ] шаг {key} упал")
+                res = {"state": "fail", "note": str(exc)[:200]}
+            await _mark(key, **res)
+    finally:
+        _analyze_status[session_id]["running"] = False
+        _analyze_status[session_id]["current"] = None
+        _analyze_status[session_id]["finished_at"] = time.time()
+    await _analyze_push(session_id)
+    done = [s for s in _analyze_status[session_id]["steps"] if s["state"] == "ok"]
+    skipped = [s for s in _analyze_status[session_id]["steps"] if s["state"] == "skip"]
+    failed = [s for s in _analyze_status[session_id]["steps"] if s["state"] == "fail"]
+    await room.broadcast_to_chat({
+        "type": "system",
+        "text": ("Анализ библиотеки закончен: сделано "
+                 + (", ".join(s["title"].lower() for s in done) or "ничего")
+                 + (f"; нечего делать — {len(skipped)} шагов" if skipped else "")
+                 + ("; НЕ вышло: " + ", ".join(f"{s['title']} ({s['note']})" for s in failed)
+                    if failed else "")),
+    })
+
+
+async def _analyze_one(session_id: str, key: str, path: str, force: bool,
+                       backend: str, db_path: str, room, _stems) -> dict:
+    """Один шаг конвейера. Возвращает {state, note, ...}.
+
+    state: ok — сделали; skip — делать было нечего; fail — не вышло."""
+    tracks = room.library_tracks or []
+    paths = [t.get("path") for t in tracks if t.get("path")]
+
+    if key == "scan":
+        if not path:
+            return {"state": "skip", "note": "папка не указана — беру библиотеку как есть"}
+        if not Path(path).exists():
+            return {"state": "fail", "note": f"папка не найдена: {path}"}
+        started = time.time()
+        cmd = [sys.executable, str(Path(__file__).parent / "track_analysis.py"),
+               "--scan", path, "--db", db_path]
+        if force:
+            cmd.append("--rescan-all")
+        res = await _run_subprocess_step(session_id, key, cmd)
+        if res["state"] != "ok":
+            return res
+        fresh = await asyncio.to_thread(load_library_from_db, db_path, started)
+        if not fresh:
+            return {"state": "fail", "note": "скан не дал треков — библиотеку не трогаю"}
+        room.library_tracks = fresh
+        persistence.save_library(session_id, fresh)
+        _bpm_refine_done.discard(session_id)
+        await room.broadcast_to_chat({"type": "library_updated", "count": len(fresh)})
+        return {"state": "ok", "done": len(fresh), "total": len(fresh),
+                "note": f"{len(fresh)} треков в библиотеке"}
+
+    if key == "bpm":
+        if fix_library_bpm is None:
+            return {"state": "skip", "note": "нет numpy/scipy/librosa"}
+        if not tracks:
+            return {"state": "skip", "note": "библиотека пуста"}
+        if force:
+            _bpm_refine_done.discard(session_id)
+        await _refine_room_bpm(session_id, force=force)
+        st = _bpm_refine_status.get(session_id, {})
+        if st.get("skipped"):
+            return {"state": "skip", "note": st["skipped"]}
+        if st.get("error"):
+            return {"state": "fail", "note": "перемер не отработал — см. лог"}
+        return {"state": "ok", "done": st.get("done", 0), "total": st.get("done", 0),
+                "note": f"темп поправлен у {st.get('changed', 0)} треков"}
+
+    if key == "stems":
+        if not paths:
+            return {"state": "skip", "note": "библиотека пуста"}
+        todo = [p for p in paths if not _stems.has_stems(p)]
+        if not todo and not force:
+            return {"state": "skip", "done": len(paths), "total": len(paths),
+                    "note": f"слои есть у всех {len(paths)} треков"}
+        problem = _stems.backend_problem(_stems.resolve_backend(backend))
+        if problem:
+            return {"state": "fail", "note": problem}
+        root = path or _la.common_root(paths)
+        if not root:
+            return {"state": "fail", "note": "не понял, какую папку считать"}
+        cmd = [sys.executable, str(Path(__file__).parent / "stems.py"),
+               "--dir", root, "--backend", backend, "--all"]
+        res = await _run_subprocess_step(session_id, key, cmd,
+                                         parse=_la.parse_progress_line)
+        cov = _stems.library_coverage(paths)
+        # Карты энергии и барабанов считались при СКАНЕ, то есть до того,
+        # как появились слои: тогда дроп искался по возврату баса, а в
+        # фонке бас звучит непрерывно, и карта оставалась без единого
+        # дропа. Теперь слои есть — пересчитываем по ним.
+        #
+        # Инкрементальный скан сам этого не сделает: файл не менялся,
+        # отпечаток совпадает, трек пропускается. Без этой строки карта,
+        # посчитанная без барабанов, оставалась бы с треком навсегда.
+        if res.get("state") == "ok" and cov.get("with_stems"):
+            _bpm_refine_done.discard(session_id)
+            await _refine_room_bpm(session_id, force=True)
+        res.setdefault("note", "")
+        res["note"] = f"слои у {cov['with_stems']} из {cov['tracks']}, .stem.mp4 у {cov['live_mp4']}"
+        res["done"] = cov["with_stems"]
+        res["total"] = cov["tracks"]
+        return res
+
+    if key == "vocals":
+        if not paths:
+            return {"state": "skip", "note": "библиотека пуста"}
+        todo = [p for p in paths
+                if _stems.has_stems(p) and (force or _stems.vocal_map(p) is None)]
+        if not todo:
+            return {"state": "skip", "note": "карты вокала посчитаны у всех, у кого есть слои"}
+        def _work() -> dict:
+            return _stems.vocal_maps_library(todo, rebuild=force,
+                                             log=lambda m: logger.info(f"[вокал] {m}"))
+        r = await asyncio.to_thread(_work)
+        return {"state": "ok", "done": r.get("checked", 0), "total": len(todo),
+                "note": f"посчитано {r.get('checked', 0)}, с вокалом {r.get('with_vocal', 0)}"}
+
+    if key == "catalog":
+        import metadata as _metadata
+
+        if not tracks:
+            return {"state": "skip", "note": "библиотека пуста"}
+        token = _metadata.resolve_discogs_token(None)
+        todo = [t for t in tracks
+                if force or not ((t.get("meta") or {}).get("sources"))]
+        if not todo:
+            return {"state": "skip", "note": "каталоги уже опрошены по всем трекам"}
+        step = _analyze_step(session_id, key) or {}
+        step["total"] = len(todo)
+        loop = asyncio.get_running_loop()
+
+        def _tick(i: int, total: int) -> None:
+            step["done"] = i
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(_analyze_push(session_id)))
+
+        def _work() -> dict:
+            return _metadata.enrich_library(
+                todo, token, not force,
+                lambda m: logger.info(f"[каталоги] {m}"), _tick)
+
+        report = await asyncio.to_thread(_work)
+        filled = 0
+        for t in todo:
+            sub = (t.get("meta") or {}).get("subgenre")
+            if not sub:
+                continue
+            tg = dict(t.get("tags") or {})
+            g = dict(tg.get("genre") or {})
+            if not g.get("subgenre"):
+                g["subgenre"] = sub
+                g["subgenre_source"] = "discogs"
+                tg["genre"] = g
+                t["tags"] = tg
+                filled += 1
+        persistence.save_library(session_id, room.library_tracks)
+        await room.broadcast_to_chat({"type": "library_updated",
+                                      "count": len(room.library_tracks)})
+        note = (f"опрошено {report.get('checked', 0)}, найдено {report.get('found', 0)}, "
+                f"поджанров дописано {filled}")
+        if not token:
+            note += " — без токена Discogs стилей не будет, один MusicBrainz"
+        return {"state": "ok", "done": report.get("checked", 0), "total": len(todo),
+                "note": note}
+
+    if key == "cleanup":
+        import housekeeping
+
+        r = await asyncio.to_thread(housekeeping.session_cleanup, False, logger.info)
+        removed = int(r.get("removed_count", 0) or 0)
+        merged = int((r.get("library_dedupe") or {}).get("merged", 0) or 0)
+        if not removed and not merged:
+            return {"state": "skip", "note": "мусора нет"}
+        note = f"убрано {removed} файлов, {r.get('freed_mb', 0)} МБ"
+        if merged:
+            note += f"; схлопнуто дублей по регистру пути: {merged}"
+        return {"state": "ok", "done": removed, "total": removed, "note": note}
+
+    if key == "cues":
+        import mixxx_cues
+        import mixxx_process
+
+        if not tracks:
+            return {"state": "skip", "note": "библиотека пуста"}
+        if mixxx_process.is_running():
+            # Не «попробуем и посмотрим»: Mixxx держит библиотеку в памяти
+            # и при выходе перезаписывает файл — метки, записанные сейчас,
+            # он сотрёт, и выглядеть это будет как «метки не работают».
+            return {"state": "fail",
+                    "note": "Mixxx запущен — он перезапишет базу при выходе. Закройте его."}
+        r = await asyncio.to_thread(mixxx_cues.export_library, tracks, None,
+                                    False, logger.info, 8)
+        if not r.get("ok"):
+            return {"state": "fail", "note": str(r.get("error") or "не вышло")[:200]}
+        return {"state": "ok", "done": r.get("tracks", 0), "total": len(tracks),
+                "note": f"метки расставлены у {r.get('tracks', 0)} треков"}
+
+    return {"state": "skip", "note": "шаг не знаю"}
+
+
+@app.post("/api/rooms/{session_id}/library/analyze")
+async def analyze_library(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Кнопка «Анализ библиотеки» — один проход по всем шагам.
+
+    body: {"path": папка, "steps": [...], "force": false, "backend": "auto"}
+    Без steps берётся ANALYZE_DEFAULT (всё, кроме меток в Mixxx).
+    force=true считает заново даже то, что уже посчитано."""
+    body = body or {}
+    task = _analyze_tasks.get(session_id)
+    if task is not None and not task.done():
+        raise HTTPException(status_code=409, detail="Анализ уже идёт — дождитесь конца")
+    if _scan_is_running(session_id):
+        raise HTTPException(status_code=409,
+                            detail="Идёт отдельное сканирование — дождитесь его конца")
+
+    # Порядок наш, а не присланный: клиент говорит ЧТО, модуль — В КАКОМ ПОРЯДКЕ.
+    steps = _la.order_steps(body.get("steps") or ANALYZE_DEFAULT)
+    if not steps:
+        raise HTTPException(status_code=400, detail="Не выбрано ни одного шага")
+    path = str(body.get("path") or "").strip()
+    if not path:
+        room = sessions.get_or_create(session_id)
+        path = _la.common_root([t.get("path") for t in room.library_tracks if t.get("path")])
+
+    _analyze_status[session_id] = _la.blank_status(steps)
+    _analyze_status[session_id]["started_at"] = time.time()
+    _analyze_tasks[session_id] = asyncio.create_task(
+        _analyze_run(session_id, path, steps, bool(body.get("force")),
+                     str(body.get("backend") or "auto")))
+    return JSONResponse({"ok": True, "started": True, "steps": steps, "path": path})
+
+
+@app.get("/api/rooms/{session_id}/library/analyze/plan")
+async def analyze_library_plan(session_id: str) -> JSONResponse:
+    """Что будет сделано, ЕСЛИ нажать. Считается до запуска и ничего не трогает.
+
+    Пять прежних кнопок спрашивали каждая про своё: уборка показывала
+    список на удаление, метки — сколько записей найдено в медиатеке
+    Mixxx. Сложив кнопки в одну, эти вопросы легко было потерять — а это
+    ровно те два шага, которые НЕОБРАТИМЫ (удаление файлов) и пишут в
+    ЧУЖУЮ базу (Mixxx). Поэтому предупреждение осталось, только теперь
+    оно одно на весь проход, а не пять подряд."""
+    import housekeeping
+    import metadata as _metadata
+    import stems as _stems
+
+    room = sessions.get_or_create(session_id)
+    tracks = room.library_tracks or []
+    missing = _la.missing_report(tracks, _stems.has_stems, _stems.vocal_map)
+
+    dry = await asyncio.to_thread(housekeeping.session_cleanup, True, None)
+    missing["cleanup"] = int(dry.get("removed_count", 0) or 0)
+    missing["cleanup_mb"] = dry.get("freed_mb", 0)
+
+    # -1 = «посчитать заранее нельзя». У скана это честно: сколько файлов
+    # новых, видно только обойдя папку, а обходить её дважды ради цифры на
+    # кнопке — это половина стоимости самого скана. У меток — тоже: их
+    # число известно только после сверки с медиатекой Mixxx.
+    counts = {"scan": -1, "bpm": max(missing.get("bpm", 0), missing.get("maps", 0)),
+              "stems": missing.get("stems", 0), "vocals": missing.get("vocals", 0),
+              "catalog": missing.get("catalog", 0),
+              "cleanup": missing["cleanup"], "cues": -1}
+    steps = [{"key": k, "title": _la.ANALYZE_TITLES[k], "why": _la.ANALYZE_WHY[k],
+              "missing": counts.get(k, 0), "default": k in _la.ANALYZE_DEFAULT}
+             for k in _la.ANALYZE_STEPS]
+    return JSONResponse({
+        "tracks": len(tracks),
+        "root": _la.common_root([t.get("path") for t in tracks if t.get("path")]),
+        "steps": steps, "missing": missing,
+        "cleanup_mb": missing["cleanup_mb"],
+        "discogs": bool(_metadata.resolve_discogs_token(None)),
+    })
+
+
+@app.get("/api/rooms/{session_id}/library/analyze")
+async def analyze_library_status(session_id: str) -> JSONResponse:
+    st = _analyze_status.get(session_id)
+    if st is None:
+        return JSONResponse({"running": False, "steps": []})
+    task = _analyze_tasks.get(session_id)
+    if st.get("running") and (task is None or task.done()):
+        # Состояние — источник правды для UI, а живёт оно в памяти рядом с
+        # задачей. Если задача умерла, не сняв флаг (её сняли, процесс
+        # перезапустили), то без этой сверки опрос крутится вечно и кнопка
+        # не разблокируется никогда. Спрашиваем саму задачу, а не флаг.
+        st["running"] = False
+        st["current"] = None
+        st.setdefault("finished_at", time.time())
+        for step in st.get("steps", []):
+            if step["state"] == "run":
+                step.update(state="fail", note=step.get("note") or "прервано")
+    return JSONResponse(st)
+
+
 
 # Разделение на слои идёт подпроцессом и часами: держим его состояние
 # рядом со сканом и по тем же правилам (один проход на комнату).
@@ -1465,6 +1917,411 @@ async def stems_status(session_id: str) -> JSONResponse:
     if paths:
         st["coverage"] = _stems.library_coverage(paths)
     return JSONResponse(st)
+
+
+# --- пополнение библиотеки и управление ею -----------------------------
+#
+# Три вещи, которые раньше делались руками вне DARAVE: взять новые треки,
+# подобрать в библиотеке нужное и выкинуть лишнее.
+#
+# Про источник загрузки. Здесь только Jamendo — каталог под лицензиями
+# Creative Commons, где право на скачивание прописано у каждого трека
+# отдельным полем и проверяется перед загрузкой. Качалок из стриминговых
+# сервисов в DARAVE нет и не будет: они достают файлы, которые подписка
+# даёт слушать, но не отдавать. Для купленного и скачанного самому есть
+# папка-приёмник — она принимает ЛЮБУЮ музыку, просто не добывает её.
+
+_fetch_tasks: dict[str, asyncio.Task] = {}
+_fetch_status: dict[str, dict] = {}
+_inbox_tasks: dict[str, asyncio.Task] = {}
+_inbox_state: dict[str, dict] = {}
+
+DEFAULT_MUSIC_DIR = str(Path.home() / "Music")
+
+
+@app.post("/api/rooms/{session_id}/library/fetch/search")
+async def fetch_search(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Посмотреть, что есть в каталоге, ДО загрузки.
+
+    Отдельным шагом, потому что «скачай сорок треков» вслепую — это
+    сорок файлов, о которых диджей узнаёт постфактум. Сначала видно, что
+    нашлось, потом решение."""
+    import music_fetch as _mf
+
+    body = body or {}
+    client_id = _mf.resolve_client_id(body.get("client_id"))
+    if not client_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Нет client_id Jamendo. Бесплатный ключ: developer.jamendo.com — "
+                   f"положите его в {_mf.SECRETS_FILE} полем jamendo_client_id "
+                   "или в переменную JAMENDO_CLIENT_ID.")
+    lo, hi = body.get("bpm_lo"), body.get("bpm_hi")
+    plan = _mf.plan_fetch(int(body.get("want") or 20),
+                          float(lo) if lo else None, float(hi) if hi else None)
+    tags = _mf.tags_for(body.get("genre"), body.get("tags"))
+    try:
+        items = await asyncio.to_thread(
+            _mf.search, client_id, tags, plan["speed"],
+            plan["candidates"], int(body.get("offset") or 0),
+            str(body.get("order") or "popularity_total"), True,
+            bool(body.get("allow_nc", True)))
+    except _mf.FetchError as exc:
+        raise HTTPException(status_code=502, detail=f"Каталог не ответил: {exc}") from exc
+    return JSONResponse({"ok": True, "items": items, "tags": tags, **plan})
+
+
+async def _fetch_run(session_id: str, items: list[dict], dest: str,
+                     want: int, lo: float | None, hi: float | None) -> None:
+    """Скачать и проверить темп. Не попавшее в диапазон — в корзину.
+
+    Темп проверяется ИЗМЕРЕНИЕМ, а не полем каталога: у Jamendo его нет
+    вовсе, есть только корзина скорости пятью ступенями. Меряем тем же
+    анализатором, что и всю библиотеку, — иначе у скачанных треков был бы
+    свой темп, а у своих свой."""
+    import music_fetch as _mf
+    import track_analysis as _ta
+
+    st = _fetch_status[session_id]
+    room = sessions.get_or_create(session_id)
+    narrowing = lo is not None or hi is not None
+    kept: list[str] = []
+
+    async def push() -> None:
+        await room.broadcast_to_chat({"type": "fetch_progress", **st})
+
+    try:
+        for i, item in enumerate(items):
+            if len(kept) >= want:
+                st["note"] = f"набрал {want} — остальное не качаю"
+                break
+            st.update(done=i, total=len(items), kept=len(kept),
+                      name=f"{item.get('artist') or '?'} — {item.get('title') or '?'}")
+            await push()
+            r = await asyncio.to_thread(_mf.download, item, dest)
+            if not r.get("ok"):
+                st["failed"] = st.get("failed", 0) + 1
+                st.setdefault("errors", []).append(
+                    f"{item.get('title') or item.get('id')}: {r.get('error')}")
+                del st["errors"][:-8]
+                continue
+            path = r["path"]
+            if not narrowing:
+                kept.append(path)
+                continue
+            try:
+                info = await asyncio.to_thread(_ta.analyze_track, path)
+                bpm = info.get("bpm")
+            except Exception as exc:                 # noqa: BLE001
+                logger.info(f"[загрузка] не смог померять темп {path}: {exc}")
+                bpm = None
+            if _mf.in_range(bpm, lo, hi):
+                kept.append(path)
+            else:
+                # Мимо диапазона — убираем. В корзину, а не os.remove:
+                # ошибка измерения не должна стоить диджею файла.
+                moved = _to_trash(path)
+                st["dropped"] = st.get("dropped", 0) + 1
+                logger.info(f"[загрузка] {Path(path).name}: {bpm} вне {lo}-{hi} -> {moved}")
+        st.update(done=len(items), kept=len(kept))
+    finally:
+        st["running"] = False
+        st["finished_at"] = time.time()
+    await push()
+    await room.broadcast_to_chat({
+        "type": "system",
+        "text": (f"Загрузка закончена: оставлено {len(kept)} треков в {dest}"
+                 + (f", отброшено по темпу {st.get('dropped', 0)}" if st.get("dropped") else "")
+                 + (f", не скачалось {st.get('failed', 0)}" if st.get("failed") else "")
+                 + ". Нажмите «Анализ библиотеки», чтобы они попали в подбор."),
+    })
+
+
+@app.post("/api/rooms/{session_id}/library/fetch")
+async def fetch_start(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Скачать найденное. body: {items | genre/tags/want/bpm_lo/bpm_hi, dir}."""
+    import music_fetch as _mf
+
+    body = body or {}
+    task = _fetch_tasks.get(session_id)
+    if task is not None and not task.done():
+        raise HTTPException(status_code=409, detail="Загрузка уже идёт — дождитесь конца")
+
+    dest = str(body.get("dir") or "").strip() or DEFAULT_MUSIC_DIR
+    parent = Path(dest).parent
+    if not parent.exists():
+        raise HTTPException(status_code=400,
+                            detail=f"Некуда класть: нет папки {parent}")
+    want = max(1, int(body.get("want") or 20))
+    lo = float(body["bpm_lo"]) if body.get("bpm_lo") else None
+    hi = float(body["bpm_hi"]) if body.get("bpm_hi") else None
+
+    items = body.get("items")
+    if not items:
+        client_id = _mf.resolve_client_id(body.get("client_id"))
+        if not client_id:
+            raise HTTPException(status_code=400, detail="Нет client_id Jamendo — см. поиск")
+        plan = _mf.plan_fetch(want, lo, hi)
+        try:
+            items = await asyncio.to_thread(
+                _mf.search, client_id, _mf.tags_for(body.get("genre"), body.get("tags")),
+                plan["speed"], plan["candidates"], 0,
+                str(body.get("order") or "popularity_total"), True,
+                bool(body.get("allow_nc", True)))
+        except _mf.FetchError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    items = [i for i in items if i.get("downloadable") and i.get("download_url")]
+    if not items:
+        raise HTTPException(status_code=400,
+                            detail="Ни одного трека, который автор разрешил скачивать.")
+
+    _fetch_status[session_id] = {"running": True, "done": 0, "total": len(items),
+                                 "kept": 0, "dropped": 0, "failed": 0, "dir": dest,
+                                 "name": "", "note": "", "errors": []}
+    _fetch_tasks[session_id] = asyncio.create_task(
+        _fetch_run(session_id, items, dest, want, lo, hi))
+    return JSONResponse({"ok": True, "started": True, "candidates": len(items), "dir": dest})
+
+
+@app.get("/api/rooms/{session_id}/library/fetch")
+async def fetch_status(session_id: str) -> JSONResponse:
+    st = _fetch_status.get(session_id)
+    if st is None:
+        return JSONResponse({"running": False})
+    task = _fetch_tasks.get(session_id)
+    if st.get("running") and (task is None or task.done()):
+        st["running"] = False           # см. ту же сверку в /library/analyze
+    return JSONResponse(st)
+
+
+# ------------------------------------------------------ папка-приёмник
+
+async def _inbox_watch(session_id: str, folder: str, interval: float) -> None:
+    """Следит за папкой и разбирает то, что в неё положили.
+
+    Ждёт, пока файл перестанет расти: копирование флака с флешки идёт
+    секунды, а разбор половины файла даёт мусорный темп и мусорную
+    структуру — и этот мусор остаётся в библиотеке навсегда, потому что
+    второй раз трек уже не разберут (отпечаток совпадает)."""
+    import music_fetch as _mf
+
+    state = _inbox_state[session_id]
+    room = sessions.get_or_create(session_id)
+    sizes: dict[str, int] = {}
+    seen: set[str] = set()
+    try:
+        while state.get("enabled"):
+            fresh = await asyncio.to_thread(_mf.inbox_scan, folder, seen)
+            ready, sizes = await asyncio.to_thread(_mf.settled, fresh, sizes)
+            state["waiting"] = len(fresh) - len(ready)
+            if ready:
+                seen.update(ready)
+                state["added"] = state.get("added", 0) + len(ready)
+                state["last"] = [Path(p).name for p in ready[-5:]]
+                logger.info(f"[приёмник] новых файлов: {len(ready)}")
+                await room.broadcast_to_chat({
+                    "type": "system",
+                    "text": (f"В папке-приёмнике {len(ready)} новых треков "
+                             f"({', '.join(state['last'][:3])}"
+                             + ("…" if len(ready) > 3 else "") + "). Разбираю."),
+                })
+                # Разбираем тем же конвейером, что и всё остальное: он сам
+                # пропустит уже разобранное и посчитает только новое.
+                if not (_analyze_tasks.get(session_id) and
+                        not _analyze_tasks[session_id].done()):
+                    steps = _la.order_steps(["scan", "bpm"])
+                    _analyze_status[session_id] = _la.blank_status(steps)
+                    _analyze_status[session_id]["started_at"] = time.time()
+                    _analyze_tasks[session_id] = asyncio.create_task(
+                        _analyze_run(session_id, folder, steps, False, "auto"))
+            await asyncio.sleep(max(3.0, float(interval)))
+    except asyncio.CancelledError:
+        pass
+    finally:
+        state["enabled"] = False
+
+
+@app.post("/api/rooms/{session_id}/library/inbox")
+async def inbox_config(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Включить/выключить слежение за папкой. body: {dir, enabled, interval}."""
+    body = body or {}
+    enabled = bool(body.get("enabled", True))
+    task = _inbox_tasks.get(session_id)
+    if task is not None and not task.done():
+        _inbox_state.get(session_id, {})["enabled"] = False
+        task.cancel()
+    if not enabled:
+        _inbox_state[session_id] = {"enabled": False, "dir": "", "added": 0}
+        return JSONResponse({"ok": True, "enabled": False})
+
+    folder = str(body.get("dir") or "").strip() or DEFAULT_MUSIC_DIR
+    if not Path(folder).exists():
+        raise HTTPException(status_code=400, detail=f"Папка не найдена: {folder}")
+    _inbox_state[session_id] = {"enabled": True, "dir": folder, "added": 0,
+                                "waiting": 0, "last": []}
+    _inbox_tasks[session_id] = asyncio.create_task(
+        _inbox_watch(session_id, folder, float(body.get("interval") or 15.0)))
+    logger.info(f"[приёмник] слежу за {folder}")
+    return JSONResponse({"ok": True, "enabled": True, "dir": folder})
+
+
+@app.get("/api/rooms/{session_id}/library/inbox")
+async def inbox_status(session_id: str) -> JSONResponse:
+    return JSONResponse(_inbox_state.get(session_id, {"enabled": False}))
+
+
+# ------------------------------------------------- удаление из библиотеки
+
+def _to_trash(path: str) -> str:
+    """Убрать файл, не уничтожая его.
+
+    Не os.remove: удаление необратимо, а поводы для него бывают ошибочные
+    — неверно измеренный темп, случайно отмеченная строка. Файл едет в
+    папку `_корзина` рядом с ним же: место она не освобождает, но её
+    видно в проводнике, и очистить её диджей может сам, когда убедится.
+    Настоящее стирание — отдельный режим, и о нём спрашивают явно."""
+    src = Path(path)
+    trash = src.parent / "_корзина"
+    try:
+        trash.mkdir(exist_ok=True)
+        target = trash / src.name
+        n = 1
+        while target.exists():
+            target = trash / f"{src.stem} ({n}){src.suffix}"
+            n += 1
+        src.replace(target)
+        return str(target)
+    except OSError as exc:
+        logger.info(f"[удаление] не смог убрать {path}: {exc}")
+        return ""
+
+
+@app.post("/api/rooms/{session_id}/library/remove")
+async def library_remove(session_id: str, body: dict) -> JSONResponse:
+    """Убрать треки. body: {paths: [...], mode: "library"|"trash"|"erase"}.
+
+    Три ступени по весу, а не одна кнопка «удалить»:
+      library — вынуть из библиотеки, файл не трогать. Обратимо: вернётся
+                следующим сканированием. Это и есть «убрать ненужное» в
+                девяти случаях из десяти.
+      trash   — вдобавок отправить файл в папку `_корзина` рядом. Место
+                не освобождает, зато обратимо руками.
+      erase   — стереть с диска. Необратимо, и подтверждение спрашивает
+                интерфейс, а не этот обработчик.
+    Слои и .stem.mp4 едут за треком: иначе после удаления в папке
+    остаются гигабайты осиротевших стемов, которых никто уже не найдёт."""
+    import stems as _stems
+
+    mode = str(body.get("mode") or "library")
+    if mode not in ("library", "trash", "erase"):
+        raise HTTPException(status_code=400, detail=f"Не знаю режим {mode!r}")
+    paths = [str(p) for p in (body.get("paths") or []) if p]
+    if not paths:
+        raise HTTPException(status_code=400, detail="Не выбрано ни одного трека")
+
+    room = sessions.get_or_create(session_id)
+    wanted = {_canon(p) for p in paths}
+    before = len(room.library_tracks or [])
+    room.library_tracks = [t for t in (room.library_tracks or [])
+                           if _canon(t.get("path")) not in wanted]
+    removed = before - len(room.library_tracks)
+    persistence.save_library(session_id, room.library_tracks)
+
+    # Из базы сканера тоже: иначе следующий скан вернёт трек обратно, и
+    # удаление будет выглядеть как «не сработало».
+    db_removed = await asyncio.to_thread(_forget_in_db, _room_db_path(session_id), paths)
+
+    files, errors = 0, []
+    if mode in ("trash", "erase"):
+        for p in paths:
+            targets = [p]
+            try:
+                d = _stems.stem_dir_for(p)
+                if d and Path(d).exists():
+                    targets.append(str(d))
+                m = _stems.stem_mp4_for(p)
+                if m:
+                    targets.append(str(m))
+            except Exception:                        # noqa: BLE001
+                pass
+            for t in targets:
+                r = await asyncio.to_thread(_erase if mode == "erase" else _to_trash_any, t)
+                if r:
+                    files += 1
+                else:
+                    errors.append(Path(t).name)
+    logger.info(f"[удаление] режим {mode}: из библиотеки {removed}, из базы {db_removed}, "
+                f"файлов и папок {files}")
+    await room.broadcast_to_chat({"type": "library_updated",
+                                  "count": len(room.library_tracks)})
+    return JSONResponse({"ok": True, "mode": mode, "removed": removed,
+                         "db_removed": db_removed, "files": files,
+                         "errors": errors[:8], "left": len(room.library_tracks)})
+
+
+def _canon(path) -> str:
+    """Сравнение путей без оглядки на регистр: Windows не различает
+    C:\\Music и C:\\music, а в базе лежит та строка, что пришла."""
+    return str(path or "").replace("\\", "/").rstrip("/").lower()
+
+
+def _forget_in_db(db_path: str, paths: list[str]) -> int:
+    import sqlite3
+
+    if not Path(db_path).exists():
+        return 0
+    try:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000")
+        n = 0
+        for p in paths:
+            cur = conn.execute("DELETE FROM tracks WHERE lower(replace(path,'\\\\','/'))=?",
+                               (_canon(p),))
+            n += cur.rowcount
+        conn.commit()
+        conn.close()
+        return n
+    except sqlite3.Error as exc:
+        logger.info(f"[удаление] база не отдала строки: {exc}")
+        return 0
+
+
+def _to_trash_any(path: str) -> str:
+    """То же, что _to_trash, но и для папки слоёв."""
+    src = Path(path)
+    if not src.exists():
+        return ""
+    if src.is_dir():
+        trash = src.parent / "_корзина"
+        try:
+            trash.mkdir(exist_ok=True)
+            target = trash / src.name
+            n = 1
+            while target.exists():
+                target = trash / f"{src.name} ({n})"
+                n += 1
+            src.replace(target)
+            return str(target)
+        except OSError:
+            return ""
+    return _to_trash(path)
+
+
+def _erase(path: str) -> str:
+    import shutil
+
+    p = Path(path)
+    try:
+        if p.is_dir():
+            shutil.rmtree(p)
+        elif p.exists():
+            p.unlink()
+        else:
+            return ""
+        return path
+    except OSError as exc:
+        logger.info(f"[удаление] не стёр {path}: {exc}")
+        return ""
 
 
 # --- судейский цикл: предложили шов -> послушали -> вердикт ------------
@@ -1862,6 +2719,104 @@ async def audition_pool(session_id: str) -> JSONResponse:
                          "progress": audition.progress(session_id, tracks)})
 
 
+def _seam_for_pair(session_id: str, a_path: str, b_path: str,
+                   technique_id: str | None = None,
+                   exit_seconds: float | None = None,
+                   entry_seconds: float | None = None,
+                   bars: float | None = None) -> dict:
+    """Полный шов для КОНКРЕТНОЙ пары, даже если её уже отсудили.
+
+    Обычный перебор (audition.candidates) по построению не показывает
+    отсуженное, и это правильно: он предлагает НОВОЕ. Но починка — не
+    предложение: шов уже выбран, его надо открыть и поправить. Отсюда
+    include_judged.
+
+    Точки могли уехать после пересканирования (сегментация дала другие
+    границы фраз), поэтому попыток три, от самой строгой к самой мягкой:
+    с точками и приёмом, только с приёмом, просто по паре. Отдать шов с
+    новыми точками честнее, чем отказать."""
+    import audition
+
+    tracks = _room_tracks(session_id)
+    by_path = {t.get("path"): t for t in tracks}
+    if a_path not in by_path or b_path not in by_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Треков этого шва нет в библиотеке — пересканировали папку после отбора?")
+    tries = (
+        dict(hold_exit=exit_seconds, hold_entry=entry_seconds, hold_technique=technique_id),
+        dict(hold_technique=technique_id),
+        dict(),
+    )
+    items = []
+    for kw in tries:
+        items = audition.candidates(session_id, tracks, a_path=a_path, b_path=b_path,
+                                    limit=12, include_judged=True, **kw)
+        if items:
+            break
+    if not items:
+        raise HTTPException(status_code=400,
+                            detail="Не смог собрать шов: у этой пары нет ни одного стыка")
+    seam = dict(items[0])
+    if technique_id:
+        seam["technique_id"] = technique_id
+        t = TECHNIQUES.get(technique_id)
+        if t is not None:
+            seam["technique"] = t.name
+    if exit_seconds is not None:
+        seam["exit_seconds"] = float(exit_seconds)
+    if entry_seconds is not None:
+        seam["entry_seconds"] = float(entry_seconds)
+    if bars:
+        seam["bars"] = float(bars)
+    return seam
+
+
+@app.get("/api/rooms/{session_id}/audition/seam")
+async def audition_seam_for_pair(session_id: str, a_path: str, b_path: str,
+                                 technique_id: str = "", exit_seconds: float | None = None,
+                                 entry_seconds: float | None = None,
+                                 bars: float | None = None) -> JSONResponse:
+    """Шов по паре треков — чтобы открыть в отборе переход из готового плана.
+
+    Нужно для правки плохих стыков прямо из ControlC: там переход виден
+    как отрезок на хронометраже, а править его надо там же, где
+    выбирали, — в отборе."""
+    return JSONResponse({"ok": True, "seam": _seam_for_pair(
+        session_id, a_path, b_path, technique_id or None,
+        exit_seconds, entry_seconds, bars)})
+
+
+@app.get("/api/rooms/{session_id}/audition/pool/{seam_id}/seam")
+async def audition_pool_seam(session_id: str, seam_id: int) -> JSONResponse:
+    """Полный шов по записи из пула — чтобы вернуть его в отбор на правку.
+
+    Почему отдельной ручкой, а не через /audition/next. Тот перебор по
+    построению НЕ показывает то, что уже отсужено: пара одобренного шва
+    лежит в approved_b, сама комбинация — в dead_combos, и трек стоит в
+    цепочке. То есть шов из пула не мог вернуться оттуда никогда, и
+    кнопка «в отбор» честно отвечала «не смог собрать шов для этой пары».
+
+    Здесь тот же перебор зовётся с include_judged=True и закреплённой
+    парой, приёмом и точками — получается ровно тот шов, что лежит в
+    пуле, но со всей обвязкой карточки: подписи секций, тональности,
+    расстройка, готовность слоёв."""
+    import audition
+
+    row = next((x for x in audition.pool(session_id) if int(x["id"]) == int(seam_id)), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Такого шва в пуле нет")
+    params = dict(row.get("params") or {})
+    seam = _seam_for_pair(session_id, row["a_path"], row["b_path"],
+                          row.get("technique_id"), row.get("exit_seconds"),
+                          row.get("entry_seconds"), params.get("bars"))
+    if row.get("pair_label"):
+        seam["pair_label"] = row["pair_label"]
+    seam["params"] = params
+    return JSONResponse({"ok": True, "seam": seam, "pool_id": int(seam_id),
+                         "demo_file": row.get("demo_file")})
+
+
 @app.delete("/api/rooms/{session_id}/audition/pool/{seam_id}")
 async def audition_pool_drop(session_id: str, seam_id: int) -> JSONResponse:
     """Убрать один шов из пула."""
@@ -1878,6 +2833,117 @@ async def audition_pool_clear(session_id: str, what: str = "approved") -> JSONRe
     out = audition.clear(session_id, what)
     out["progress"] = audition.progress(session_id, _room_tracks(session_id))
     return JSONResponse(out)
+
+
+# --- пакетная пересборка пула ------------------------------------------
+#
+# Демо в пуле НЕ кэшируются: «послушать» каждый раз зовёт render_demo, а
+# тот собирает план заново через build_plan. Значит после правки логики
+# сведения пул звучит по-новому сам, ничего инвалидировать не надо.
+#
+# Не хватало другого. Рендер одного шва — это секунды, и на полусотне
+# отобранных швов «переслушать всё» превращается в полсотни нажатий с
+# ожиданием после каждого. Поэтому здесь пакетный проход: считает все
+# разом в фоне, а диджей слушает уже готовое подряд.
+
+_pool_render_tasks: dict[str, asyncio.Task] = {}
+_pool_render_status: dict[str, dict] = {}
+
+
+async def _pool_rerender(session_id: str, seams: list[dict]) -> None:
+    import audition
+
+    st = _pool_render_status[session_id]
+    room = sessions.get_or_create(session_id)
+    by_path = {t.get("path"): t for t in room.library_tracks}
+
+    async def push() -> None:
+        await room.broadcast_to_chat({"type": "pool_render", **st})
+
+    try:
+        for i, seam in enumerate(seams):
+            st.update(done=i, name=Path(str(seam.get("a_path") or "")).name[:40])
+            await push()
+            a = by_path.get(seam.get("a_path"))
+            b = by_path.get(seam.get("b_path"))
+            if a is None or b is None:
+                st["failed"] = st.get("failed", 0) + 1
+                st.setdefault("errors", []).append(
+                    f"шов {seam.get('id')}: трека нет в библиотеке")
+                continue
+            params = dict(seam.get("params") or {})
+            out_name = f"{session_id}_pool{seam['id']}_{secrets.token_hex(4)}.mp3"
+            try:
+                await asyncio.to_thread(
+                    demo_render.render_demo,
+                    seam["technique_id"], seam["a_path"], seam["b_path"],
+                    float(a.get("bpm") or 128.0), float(b.get("bpm") or 128.0),
+                    str(DEMOS_DIR / out_name),
+                    param_overrides={k: v for k, v in params.items()
+                                     if k not in ("bars", "mix_profile")},
+                    source_at=seam.get("exit_seconds"),
+                    target_at=seam.get("entry_seconds"),
+                    bars=(float(params["bars"]) if params.get("bars") else None),
+                    mix_profile=params.get("mix_profile") or None,
+                )
+            except Exception as exc:                 # noqa: BLE001
+                st["failed"] = st.get("failed", 0) + 1
+                st.setdefault("errors", []).append(f"шов {seam.get('id')}: {str(exc)[:90]}")
+                del st["errors"][:-8]
+                logger.info(f"[пул] шов {seam.get('id')} не собрался: {exc}")
+                continue
+            # Ссылку кладём в сам шов: страницу могут перезагрузить, и
+            # отрендеренное не должно пропадать вместе с вкладкой.
+            audition.set_demo(session_id, int(seam["id"]), out_name)
+            st["ready"] = st.get("ready", 0) + 1
+        st["done"] = len(seams)
+    finally:
+        st["running"] = False
+    await push()
+    await room.broadcast_to_chat({
+        "type": "system",
+        "text": (f"Пул пересобран по текущей логике: готово {st.get('ready', 0)} из "
+                 f"{len(seams)}"
+                 + (f", не вышло {st['failed']}" if st.get("failed") else "")
+                 + ". Можно слушать подряд, рендер больше не ждём."),
+    })
+
+
+@app.post("/api/rooms/{session_id}/audition/pool/rerender")
+async def audition_pool_rerender(session_id: str, body: dict | None = None) -> JSONResponse:
+    """Пересобрать демо всех отобранных швов по ТЕКУЩЕЙ логике сведения.
+
+    Нужно после правок в приёмах или в тракте: сами швы (пара, приём,
+    точки, длина) не меняются — меняется то, как они звучат."""
+    import audition
+
+    if demo_render is None:
+        raise HTTPException(status_code=503, detail="Нет numpy/scipy — рендер недоступен")
+    task = _pool_render_tasks.get(session_id)
+    if task is not None and not task.done():
+        raise HTTPException(status_code=409, detail="Пересборка уже идёт — дождитесь конца")
+    seams = audition.pool(session_id)
+    only = (body or {}).get("ids")
+    if only:
+        want = {int(x) for x in only}
+        seams = [s for s in seams if int(s["id"]) in want]
+    if not seams:
+        raise HTTPException(status_code=400, detail="Пул пуст — пересобирать нечего")
+    _pool_render_status[session_id] = {"running": True, "done": 0, "total": len(seams),
+                                       "ready": 0, "failed": 0, "name": "", "errors": []}
+    _pool_render_tasks[session_id] = asyncio.create_task(_pool_rerender(session_id, seams))
+    return JSONResponse({"ok": True, "started": True, "total": len(seams)})
+
+
+@app.get("/api/rooms/{session_id}/audition/pool/rerender")
+async def audition_pool_rerender_status(session_id: str) -> JSONResponse:
+    st = _pool_render_status.get(session_id)
+    if st is None:
+        return JSONResponse({"running": False})
+    task = _pool_render_tasks.get(session_id)
+    if st.get("running") and (task is None or task.done()):
+        st["running"] = False          # см. ту же сверку в /library/analyze
+    return JSONResponse(st)
 
 
 @app.post("/api/rooms/{session_id}/audition/build")

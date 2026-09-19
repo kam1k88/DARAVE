@@ -21,6 +21,8 @@ new-session-*.json
 .venv/
 venv/
 
+_config.php
+
 # Редакторы / ОС
 .idea/
 .vscode/

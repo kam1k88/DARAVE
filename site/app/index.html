@@ -79,6 +79,17 @@
   .spin { display:inline-block; animation:sp 1s linear infinite; }
   @keyframes sp { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spin { animation:none; } }
+  .dev { display:flex; align-items:center; gap:10px; justify-content:space-between;
+         padding:9px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
+  .dev:last-child { border-bottom:none; }
+  .dev .n { color:var(--text); }
+  .dev .t { color:var(--muted); font-size:12px; }
+  .dev button { width:auto; margin:0; padding:5px 11px; font-size:12.5px;
+                background:transparent; color:var(--muted); border-color:var(--line); }
+  .dev button:hover:not(:disabled) { background:var(--panel-2); color:var(--text); }
+  .tier-row { display:flex; align-items:center; justify-content:space-between;
+              gap:10px; margin-bottom:6px; }
+  .tier-row b { font-size:14.5px; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -234,11 +245,118 @@
 
   // ─────────── поиск и спаривание ───────────
 
+  var pendingBuy = null;    // тариф, за которым человек пришёл с витрины
+
   function showConnect(user) {
     $("auth").hidden = true;
     $("connect").hidden = false;
     $("who-email").textContent = user.email;
+
+    var q = new URLSearchParams(location.search);
+    var paid = q.get("paid");
+    var buy = q.get("buy");
+
+    // Вернулись с оплаты — ждём подтверждения и только потом ищем
+    // программу: иначе человек увидит «программа не найдена» раньше,
+    // чем «оплата прошла», и решит, что деньги ушли впустую.
+    if (paid) { watchPayment(paid); return; }
+
+    // Пришли с витрины по кнопке «Купить». Тариф запоминаем и
+    // запускаем оплату сразу: человек уже нажал кнопку, второй раз
+    // просить его нажимать незачем.
+    if (buy === "personal" || buy === "workshop") {
+      pendingBuy = buy;
+      startPayment(buy);
+      return;
+    }
     findClient();
+  }
+
+  // ─────────── оплата ───────────
+
+  function startPayment(tier) {
+    var names = { personal: "Личная", workshop: "Мастерская" };
+    body('<h1>Оплата тарифа «' + names[tier] + '»</h1>' +
+         '<p><span class="spin">◐</span> Готовлю платёж…</p>');
+
+    api("buy.php", { tier: tier, method: "sbp" }).then(function (r) {
+      if (r.status === 401) {
+        // Сюда мы не попадём из showConnect (он вызывается только после
+        // входа), но пусть будет: истёкшая кука выглядит именно так.
+        location.href = "/app/?buy=" + tier;
+        return;
+      }
+      if (r.data && r.data.confirmation_url) {
+        location.href = r.data.confirmation_url;
+        return;
+      }
+      body('<h1>Не смог создать платёж</h1>' +
+           '<div class="note bad">' + escapeHtml(r.data.error || "Платёжный сервис не ответил") + '</div>' +
+           '<button id="retry">Попробовать снова</button>' +
+           '<button id="skip" class="quiet" style="margin-top:10px">Пропустить, продолжить бесплатно</button>');
+      $("retry").addEventListener("click", function () { startPayment(tier); });
+      $("skip").addEventListener("click", function () {
+        history.replaceState(null, "", "/app/");
+        findClient();
+      });
+    }).catch(function () {
+      body('<h1>Сайт не отвечает</h1>' +
+           '<div class="note bad">Проверьте интернет и попробуйте снова.</div>' +
+           '<button id="retry">Попробовать снова</button>');
+      $("retry").addEventListener("click", function () { startPayment(tier); });
+    });
+  }
+
+  // Ждём, пока ЮKassa подтвердит оплату. Уведомление до нашего сервера
+  // доходит за секунды, но иногда и за минуту — поэтому опрашиваем, а не
+  // показываем сразу «не получилось».
+  function watchPayment(orderId) {
+    var tries = 0;
+    var MAX = 20;                        // ~60 секунд, дальше врать нельзя
+
+    body('<h1>Проверяю оплату</h1>' +
+         '<p><span class="spin">◐</span> Платёжный сервис подтверждает перевод. ' +
+         'Обычно это пара секунд.</p>');
+
+    (function poll() {
+      api("order.php?id=" + encodeURIComponent(orderId)).then(function (r) {
+        var o = (r.data && r.data.order) || null;
+        if (o && o.status === "succeeded") {
+          history.replaceState(null, "", "/app/");
+          body('<h1>Оплачено</h1>' +
+               '<div class="note good">Лицензия активирована. Спасибо!<br>' +
+               'Чек придёт на вашу почту — его формирую я, обычно в тот же день.</div>' +
+               '<p><span class="spin">◐</span> Ищу программу…</p>');
+          setTimeout(findClient, 1200);
+          return;
+        }
+        if (o && o.status === "canceled") {
+          history.replaceState(null, "", "/app/");
+          body('<h1>Платёж отменён</h1>' +
+               '<div class="note">Деньги не списаны. Можно попробовать ещё раз ' +
+               'или продолжить в бесплатном режиме.</div>' +
+               '<button id="again">Оплатить</button>' +
+               '<button id="skip" class="quiet" style="margin-top:10px">Продолжить бесплатно</button>');
+          $("again").addEventListener("click", function () { startPayment(o.tier || "personal"); });
+          $("skip").addEventListener("click", findClient);
+          return;
+        }
+        if (++tries < MAX) { setTimeout(poll, 3000); return; }
+
+        // Сдались ждать. Ни в коем случае не «оплата не прошла»: деньги
+        // могли уйти, и человеку надо сказать правду и дать контакт.
+        history.replaceState(null, "", "/app/");
+        body('<h1>Подтверждение задерживается</h1>' +
+             '<div class="note">Платёжный сервис ещё не сообщил о результате. ' +
+             'Если деньги списались, лицензия включится сама — обновите страницу ' +
+             'через несколько минут.<br><br>Если этого не произошло, напишите на ' +
+             '<a href="mailto:kam1k@darave.ru">kam1k@darave.ru</a>, разберусь вручную.</div>' +
+             '<button id="reload">Обновить</button>');
+        $("reload").addEventListener("click", function () { location.href = "/app/"; });
+      }).catch(function () {
+        if (++tries < MAX) setTimeout(poll, 3000);
+      });
+    })();
   }
 
   function body(html) { $("connect-body").innerHTML = html; }
@@ -315,15 +433,22 @@
     $("retry").addEventListener("click", findClient);
   }
 
+  var TIERS = { free: "Бесплатная", personal: "Личная", workshop: "Мастерская" };
+
   function ready(health) {
     var acc = (health && health.account) || {};
-    var tier = { free: "Бесплатная", personal: "Личная", workshop: "Мастерская" }[acc.tier] || acc.tier;
+    var tier = TIERS[acc.tier] || acc.tier;
     body(
       '<h1>Готово</h1>' +
       '<p>DARAVE ' + escapeHtml(health.version || "") + ' на связи.</p>' +
-      '<div class="note good"><b>Тариф:</b> ' + escapeHtml(tier) +
-      (acc.expired_tier ? ' — срок истёк, работает бесплатный режим' : '') +
-      '<br><b>Проверка входа:</b> ещё ' + (acc.days_left || 0) + ' дн.</div>' +
+      '<div class="note good">' +
+      '<div class="tier-row"><b>Тариф: ' + escapeHtml(tier) + '</b>' +
+      (acc.tier === "free"
+        ? '<a href="/app/?buy=personal" style="color:var(--flame)">Купить «Личную»</a>' : '') +
+      '</div>' +
+      (acc.expired_tier ? 'Срок оплаты истёк — работает бесплатный режим.<br>' : '') +
+      'Проверка входа действует ещё ' + (acc.days_left || 0) + ' дн.</div>' +
+      '<div id="devices"></div>' +
       '<button id="go">Открыть DARAVE</button>'
     );
     $("go").addEventListener("click", function () {
@@ -331,6 +456,82 @@
       // через сайт мегабайты разметки и демо-аудио незачем.
       location.href = LOCAL + "/?token=" + encodeURIComponent(localToken());
     });
+    loadDevices();
+  }
+
+  // ─────────── компьютеры ───────────
+
+  function loadDevices() {
+    var box = $("devices");
+    if (!box) return;
+    api("me.php").then(function (r) {
+      var d = r.data || {};
+      if (!d.authenticated) return;
+      renderDevices(box, d.devices || [], d.max_devices || 1);
+    }).catch(function () { /* список — не главное, молчим */ });
+  }
+
+  function renderDevices(box, devices, max) {
+    var html = '<div class="note"><b>Компьютеры: ' + devices.length + ' из ' + max + '</b>';
+    if (!devices.length) {
+      html += '<br>Пока ни одного.';
+    } else {
+      devices.forEach(function (x) {
+        html += '<div class="dev">' +
+          '<span><span class="n">' + escapeHtml(x.name || "без имени") + '</span>' +
+          '<br><span class="t">' + escapeHtml(prettyDate(x.last_seen)) + '</span></span>' +
+          '<button type="button" class="revoke" data-id="' + escapeHtml(x.device_id) + '">Отвязать</button>' +
+          '</div>';
+      });
+    }
+    if (devices.length >= max) {
+      html += '<div class="t" style="margin-top:10px">Больше компьютеров на этом тарифе ' +
+              'не подключить. Отвяжите ненужный или откройте доступ шире.</div>';
+    }
+    box.innerHTML = html + '</div>';
+
+    // Обработчики вешаем на КАЖДУЮ кнопку, а не один на document:
+    // список перерисовывается, и общий обработчик пришлось бы снимать,
+    // иначе после третьей перерисовки один клик отвязывал бы трижды.
+    Array.prototype.forEach.call(box.querySelectorAll(".revoke"), function (btn) {
+      btn.addEventListener("click", function () { revoke(btn); });
+    });
+  }
+
+  function revoke(btn) {
+    var id = btn.getAttribute("data-id");
+    if (!confirm("Отвязать этот компьютер?\n\nПрограмма на нём попросит войти заново.")) return;
+    btn.disabled = true;
+    btn.textContent = "Отвязываю…";
+    api("revoke.php", { device_id: id }).then(function (r) {
+      if (r.data && r.data.ok) {
+        // Если отвязали ТОТ компьютер, за которым сидим, — местный токен
+        // больше не наш. Сбрасываем и идём по кругу заново, иначе
+        // страница покажет «готово», а программа ответит 401.
+        loadDevices();
+        local("/account", { open: true }).then(function (h) {
+          if (!h.data || !h.data.signed_in) { localToken(null); findClient(); }
+        }).catch(function () {});
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = "Отвязать";
+      alert((r.data && r.data.error) || "Не получилось отвязать");
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = "Отвязать";
+      alert("Сайт не отвечает");
+    });
+  }
+
+  // MySQL отдаёт «2026-09-19 13:41:49». Safari такую строку через
+  // new Date() не разбирает вовсе и выдаёт Invalid Date, поэтому
+  // приводим вручную.
+  function prettyDate(s) {
+    if (!s) return "";
+    var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    if (!m) return String(s);
+    return m[3] + "." + m[2] + "." + m[1] + ", " + m[4] + ":" + m[5];
   }
 
   function escapeHtml(s) {

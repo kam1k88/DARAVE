@@ -26,6 +26,14 @@ if (!in_array($method, ['sbp', 'bank_card'], true)) {
     json_out(['error' => 'Неизвестный способ оплаты'], 400);
 }
 
+// СБП в тестовом магазине ЮKassa недоступен. Молча подменяем на карту —
+// иначе тестовый прогон падает с невнятным отказом, и непонятно, дело
+// в ключах или в коде.
+$test = (bool)(cfg()['yookassa']['test_mode'] ?? false);
+if ($test && $method === 'sbp') {
+    $method = 'bank_card';
+}
+
 // Незакрытый заказ того же тарифа переиспользуем вместо создания нового:
 // человек мог закрыть вкладку и вернуться, и плодить ему платежи незачем.
 $st = db()->prepare(
@@ -89,4 +97,6 @@ json_out([
     'ok' => true,
     'payment_id' => $p['id'],
     'confirmation_url' => $p['confirmation']['confirmation_url'] ?? null,
+    'test_mode' => $test,
+    'method' => $method,
 ]);

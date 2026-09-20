@@ -197,6 +197,26 @@ if (-not $DryRun) {
     Say "(dry-run) в site\index.html поменялись бы ссылка, подпись кнопки, хеш и команда проверки"
 }
 
+# ------------------------------------------- 5b. локальная копия рядом
+#
+# Папка darave-releases — это клон репозитория релизов, и держать в ней
+# свежий установщик под рукой удобно: не надо качать свой же файл с
+# GitHub, чтобы кому-то его передать. В сам репозиторий он не попадёт —
+# там .gitignore на *.exe, потому что GitHub отклоняет файлы тяжелее
+# 100 МБ, а установщик весит под 180.
+$localCopyDir = Join-Path (Split-Path -Parent $root) "darave-releases"
+if (Test-Path $localCopyDir) {
+    Step "кладу копию в darave-releases"
+    if ($DryRun) {
+        Say "(dry-run) копия -> $localCopyDir\$setupName"
+    } else {
+        Copy-Item $setup (Join-Path $localCopyDir $setupName) -Force
+        Say "копия: $localCopyDir\$setupName" Green
+    }
+} else {
+    Say "папки darave-releases рядом нет — локальную копию пропускаю" Gray
+}
+
 # ------------------------------------------------- 6. прошлый релиз
 if ($RemovePrevious) {
     Step "удаляю прошлый релиз"

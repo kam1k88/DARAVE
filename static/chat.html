@@ -398,6 +398,24 @@
   .scan-bar #scan-status { font-size: 12px; color: var(--muted); }
   .scan-bar #scan-status.err { color: var(--danger); }
   .scan-bar #scan-status.ok { color: var(--ok); }
+  /* Полоса сканирования. Числа СЛЕВА от полосы, а не внутри: внутри они
+     тонут, когда заливка доходит до них. */
+  .scan-meter { display: none; align-items: center; gap: 9px; padding: 5px 0 2px; font-size: 12px; }
+  .scan-meter.on { display: flex; }
+  .scan-meter .track {
+    flex: 1; min-width: 90px; height: 6px; border-radius: 999px;
+    background: var(--panel-2, #012531); overflow: hidden;
+  }
+  .scan-meter .fill {
+    height: 100%; width: 0; background: var(--accent);
+    transition: width .35s ease;
+  }
+  .scan-meter .nums { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scan-meter .left { color: var(--muted); white-space: nowrap; }
+  .scan-meter .cur {
+    color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 34ch; direction: rtl; text-align: left;
+  }
   .analyze-steps { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 0; font-size: 12px; }
   .analyze-steps label { display: flex; align-items: baseline; gap: 5px; cursor: pointer; }
   .analyze-steps .cnt { color: var(--muted); }
@@ -1017,6 +1035,12 @@
             <button id="analyze-btn" title="Разбор треков, темп и карты, слои, карты вокала, стили из каталогов, уборка. Считается только то, чего не хватает.">🔬 Анализ библиотеки</button>
             <button id="analyze-steps-btn" class="ghost" title="Выбрать шаги вручную">⋯ шаги</button>
             <span id="scan-status"></span>
+          </div>
+          <div id="scan-meter" class="scan-meter">
+            <span class="nums" id="scan-nums"></span>
+            <span class="track"><span class="fill" id="scan-fill"></span></span>
+            <span class="left" id="scan-left"></span>
+            <span class="cur" id="scan-cur"></span>
           </div>
           <!-- Разбор по шагам. Свёрнут: обычный день — это одна кнопка, а
                выбор шагов нужен в двух случаях — что-то одно пересчитать
@@ -3543,10 +3567,18 @@
            "\n\nСчитается только то, чего не хватает.";
   }
 
+  // Когда каждый шаг начал считать — только для оценки остатка. На
+  // сервере этого времени нет, и заводить его там ради подписи не стоит.
+  const analyzeStepT0 = {};
+
   function renderAnalyzeBars(status) {
     if (!status || !status.steps || !status.steps.length) {
       analyzeBarsEl.style.display = "none"; return;
     }
+    status.steps.forEach(function (s) {
+      if (s.state === "run" && !analyzeStepT0[s.key]) analyzeStepT0[s.key] = Date.now();
+      if (s.state !== "run") delete analyzeStepT0[s.key];
+    });
     analyzeBarsEl.style.display = "flex";
     const icon = {wait: "·", run: "▸", ok: "✓", skip: "–", fail: "✕"};
     analyzeBarsEl.innerHTML = status.steps.map(function (s) {
@@ -3554,9 +3586,28 @@
       // прыгает на 100% от деления на ноль и врёт про готовность.
       const pct = s.total > 0 ? Math.round(100 * Math.min(s.done, s.total) / s.total)
                               : (s.state === "ok" || s.state === "skip" ? 100 : 0);
-      const right = s.state === "run" && s.total > 0
-        ? s.done + "/" + s.total + (s.name ? " · " + s.name : "")
-        : (s.note || "");
+      // «17/532 · осталось 515 · ~4 мин · Имя файла».
+      //
+      // Одних done/total мало: «17/532» читается как отчёт, а человеку
+      // нужен ответ на вопрос «мне ждать или идти пить чай». Остаток в
+      // штуках и во времени отвечает на него сразу. Оценку показываем не
+      // раньше пятого трека — до этого средняя скорость ещё случайна.
+      let right;
+      if (s.state === "run" && s.total > 0) {
+        const left = Math.max(0, s.total - s.done);
+        const t0 = analyzeStepT0[s.key];
+        let eta = "";
+        if (t0 && s.done >= 5 && left > 0) {
+          const secs = Math.round((Date.now() - t0) / s.done * left / 1000);
+          if (isFinite(secs) && secs > 0) {
+            eta = secs < 90 ? " · ~" + secs + " с" : " · ~" + Math.round(secs / 60) + " мин";
+          }
+        }
+        right = s.done + "/" + s.total + " · осталось " + left + eta +
+                (s.name ? " · " + s.name : "");
+      } else {
+        right = s.note || "";
+      }
       return '<div class="row ' + s.state + '">' +
              '<span>' + icon[s.state] + '</span>' +
              '<span>' + escapeHtml(s.title) + '</span>' +
@@ -3970,6 +4021,45 @@
     scanStatusEl.className = cls || "";
   }
 
+  // Полоса сканирования.
+  //
+  // Сканер знает и номер трека, и общее число ещё до начала работы, так
+  // что проценты здесь честные, а не «примерно». Оценку остатка считаем
+  // по средней скорости с начала прохода: первые секунд десять она врёт,
+  // поэтому до пятого трека её просто не показываем.
+  let scanT0 = 0;
+  function renderScanMeter(data) {
+    const meter = document.getElementById("scan-meter");
+    if (!meter) return;
+    const total = Number(data && data.total) || 0;
+    const done = Number(data && data.done) || 0;
+    if (!data || !data.running || total <= 0) {
+      meter.classList.remove("on");
+      scanT0 = 0;
+      return;
+    }
+    if (!scanT0) scanT0 = Date.now();
+    meter.classList.add("on");
+    const pct = Math.max(0, Math.min(100, Math.round(100 * done / total)));
+    document.getElementById("scan-fill").style.width = pct + "%";
+    document.getElementById("scan-nums").textContent = done + " / " + total;
+
+    let left = "осталось " + Math.max(0, total - done);
+    if (done >= 5) {
+      const perTrack = (Date.now() - scanT0) / done;          // мс на трек
+      const secs = Math.round(perTrack * (total - done) / 1000);
+      if (secs > 0 && isFinite(secs)) {
+        left += secs < 90
+          ? " · ~" + secs + " с"
+          : " · ~" + Math.round(secs / 60) + " мин";
+      }
+    }
+    document.getElementById("scan-left").textContent = left;
+    // direction:rtl в CSS обрезает длинное имя слева, а не справа —
+    // у файлов различается конец, а не начало.
+    document.getElementById("scan-cur").textContent = data.name || "";
+  }
+
   function renderScanTail(tail) {
     if (!tail || !tail.length) { scanProgressEl.style.display = "none"; return; }
     scanProgressEl.style.display = "block";
@@ -3987,8 +4077,11 @@
       const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/library/scan/status");
       const data = await resp.json();
       renderScanTail(data.tail);
+      renderScanMeter(data);
       if (data.running) {
-        setScanStatus("Сканирую...", "");
+        setScanStatus(data.total > 0
+          ? "Сканирую: " + Math.round(100 * (data.done || 0) / data.total) + "%"
+          : "Сканирую...", "");
         scanPollTimer = setTimeout(pollScanStatus, 1200);
       } else {
         scanBtn.disabled = false;

@@ -256,6 +256,68 @@
     header nav { margin-left: 0; width: 100%; gap: 16px; }
   }
   @media (max-width: 440px) { .steps { grid-template-columns: 1fr; } }
+
+  /* --- разбор шва -------------------------------------------------
+     Главный экран страницы. Диджей покупает не список возможностей, а
+     уверенность, что стык не развалится, — и проверяет это ушами за
+     двадцать секунд. Звука здесь пока нет, поэтому показываем то, что
+     под звуком: сетку тактов, которая не рвётся на переходе, и обе
+     автоматизации по тактам. Это СХЕМА, и так она и подписана — врать
+     про запись нельзя. */
+  .seam-wrap { display: flex; flex-direction: column; gap: 16px; }
+  .seam-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .seam-tabs button {
+    font: 500 13px/1 var(--body); color: var(--muted); cursor: pointer;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 15px;
+  }
+  .seam-tabs button:hover { color: var(--text); border-color: var(--muted); }
+  .seam-tabs button[aria-pressed="true"] {
+    color: #fff; background: var(--flame); border-color: var(--flame);
+  }
+  .seam-stage {
+    position: relative; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 16px 12px; overflow: hidden;
+  }
+  #seam { display: block; width: 100%; height: 320px; }
+  @media (max-width: 640px) { #seam { height: 260px; } }
+  .seam-foot {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding-top: 12px; margin-top: 10px; border-top: 1px solid var(--line);
+  }
+  .seam-play {
+    font: 600 13px/1 var(--body); color: var(--text); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 16px; min-width: 122px;
+  }
+  .seam-play:hover { border-color: var(--muted); }
+  .seam-caption { font-family: var(--mono); font-size: 12px; color: var(--flame); }
+  .seam-note { font-size: 13px; color: var(--muted); margin-left: auto; }
+  @media (max-width: 640px) { .seam-note { margin-left: 0; } }
+  .seam-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .seam-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+
+  /* Слот под ролик. Пустого плеера на странице нет: блок показывается
+     только когда в data-yt появится настоящий идентификатор. До клика
+     не грузится ничего с чужих серверов — только обложка. */
+  .film { display: none; }
+  .film.on { display: block; }
+  .film .frame {
+    position: relative; aspect-ratio: 16 / 9; border-radius: 14px;
+    overflow: hidden; border: 1px solid var(--line); background: var(--panel);
+    cursor: pointer;
+  }
+  .film .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .film .frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .film .play {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,27,36,.35);
+  }
+  .film .play span {
+    width: 68px; height: 68px; border-radius: 50%; background: var(--flame);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 24px;
+  }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -267,6 +329,7 @@
       <a href="#how">Как это работает</a>
       <a href="#inside">Что считается</a>
       <a href="#proof">Замеры</a>
+      <a href="#seam-sec">Шов</a>
       <a href="#price">Цены</a>
       <a href="#get">Скачать</a>
     </nav>
@@ -279,12 +342,13 @@
     <div class="hero-scrim" aria-hidden="true"></div>
     <div class="wrap stack">
       <span class="eyebrow">Диджейский инструмент · Windows · считает на вашем компьютере</span>
-      <h1>Программа, которая сводит треки.<br>Пока — только это.</h1>
+      <h1>Другие собирают план микса.<br>DARAVE его сводит.</h1>
       <p class="lede">
-        DARAVE размечает вашу библиотеку собственными моделями, предлагает переход —
-        пару треков, приём и две точки в секциях, — и даёт послушать. Одобренное
-        складывается в сет и сводится в файл. Вся работа сейчас идёт в одно:
-        чтобы стык звучал чисто.
+        Программа размечает вашу библиотеку собственными моделями, предлагает переход —
+        пару треков, приём и две точки в секциях, — и даёт <b>послушать каждый шов
+        до того, как вы его одобрите</b>. Одобренное складывается в сет и уходит
+        одним файлом. Больше она пока ничего не умеет, и это выбор: сначала
+        стык должен звучать чисто.
       </p>
       <div class="actions">
         <a class="cta" href="#get">Скачать бесплатно</a>
@@ -294,6 +358,59 @@
         <b>↑</b> Музыка не покидает ваш компьютер: разметка и сведение идут на нём,
         загружать библиотеку никуда не нужно.
       </p>
+    </div>
+  </section>
+
+  <section id="seam-sec">
+    <div class="wrap stack-lg">
+      <div class="stack">
+        <span class="eyebrow">Тот самый шов</span>
+        <h2>Сетка не рвётся на переходе</h2>
+        <p class="lede">
+          Переход разваливается там, где вторая дорожка встаёт мимо доли.
+          DARAVE держит один счёт тактов на весь сет: приём начинается на
+          границе фразы и заканчивается на ней же. Ниже — что происходит
+          внутри шва, такт за тактом. Приёмов в программе 63; здесь три.
+        </p>
+      </div>
+
+      <div class="seam-wrap">
+        <div class="seam-tabs" id="seam-tabs" role="group" aria-label="Приём сведения"></div>
+
+        <div class="seam-stage">
+          <canvas id="seam" aria-label="Схема перехода: две дорожки, сетка тактов и автоматизация"></canvas>
+        </div>
+
+        <div class="seam-foot">
+          <button type="button" class="seam-play" id="seam-play">Пауза</button>
+          <span class="seam-caption" id="seam-caption"></span>
+          <span class="seam-note">
+            Это схема, а не запись: звука на странице нет. Как он звучит —
+            слышно в программе, она бесплатная.
+          </span>
+        </div>
+
+        <div class="seam-legend">
+          <span><i style="background:#2fbf9b"></i>уходящий трек</span>
+          <span><i style="background:#f75700"></i>входящий трек</span>
+          <span><i style="background:#7fa0ab"></i>низ снят эквалайзером</span>
+          <span><i style="background:#10505f"></i>границы фраз</span>
+        </div>
+      </div>
+
+      <!-- Ролик. Чтобы включить: поставьте идентификатор ютуб-видео в
+           data-yt, и блок появится сам. Пустого плеера на странице нет —
+           лучше никакого видео, чем чёрный прямоугольник. -->
+      <div class="film" id="film" data-yt="">
+        <div class="stack">
+          <span class="eyebrow">Видео</span>
+          <h2>Как это выглядит в работе</h2>
+        </div>
+        <div class="frame" id="film-frame" role="button" tabindex="0" aria-label="Смотреть видео">
+          <img id="film-cover" alt="" loading="lazy">
+          <span class="play" aria-hidden="true"><span>&#9654;</span></span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -562,8 +679,8 @@
         <div class="spec"><dt>Видеокарта</dt><dd>Необязательна. С NVIDIA слои считаются в разы быстрее</dd></div>
       </dl>
       <div class="actions">
-        <a class="cta" href="https://github.com/kam1k88/darave-releases/releases/download/v1.0.2/DARAVE-1.0.2-setup.exe" download>
-          Скачать DARAVE 1.0.2 для Windows · 173 МБ
+        <a class="cta" href="https://github.com/kam1k88/darave-releases/releases/download/v1.0.3/DARAVE-1.0.3-setup.exe" download>
+          Скачать DARAVE 1.0.3 для Windows · 173 МБ
         </a>
         <a class="cta quiet" href="#price">Сравнить версии</a>
       </div>
@@ -578,8 +695,8 @@
         </p>
         <p class="dl-hash">
           SHA-256, чтобы убедиться, что файл скачался целиком и тот самый:<br>
-          <b>948b17064d6e9b9df08d11782b5af0d197d7bd9a6c65ac6b92f0c2bfffa23a80</b><br>
-          Проверить в PowerShell: <b>Get-FileHash .\DARAVE-1.0.2-setup.exe</b>
+          <b>92aee9adabd9aec1eca6b8b158589ffd944a46c2fbd37a3b9c196c5afca9e890</b><br>
+          Проверить в PowerShell: <b>Get-FileHash .\DARAVE-1.0.3-setup.exe</b>
         </p>
       </div>
     </div>
@@ -676,6 +793,330 @@
   size();
   /* 4.2 с — «типичный» кадр: волна уже разошлась, но ничего не обрезано. */
   if (still.matches) draw(4.2); else requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+/* Разбор шва.
+   ------------------------------------------------------------------
+   Рисунок, а не проигрыватель. Показывает ровно то, что нельзя
+   услышать на картинке: непрерывный счёт тактов через переход и обе
+   автоматизации, привязанные к границам фраз.
+
+   Почему схема, а не запись. Запись требует прав на музыку, а
+   ноунейм-трек в демонстрации сведения бесполезен: слушать всё равно
+   будут стык, а не мелодию. Схема честнее — она показывает механику,
+   и подписана как схема.
+
+   Шестнадцать тактов, шов ровно посередине. Огибающая дорожек
+   детерминированная: при каждом заходе одна и та же, потому что
+   «случайная каждый раз» мешает сравнивать приёмы между собой. */
+(function () {
+  "use strict";
+  var cv = document.getElementById("seam");
+  if (!cv || !cv.getContext) return;
+  var ctx = cv.getContext("2d");
+
+  var BARS = 16;          /* всего тактов на экране */
+  var SEAM = 8;           /* такт, на котором приём заканчивается */
+  var SECONDS = 11;       /* длительность одного прохода */
+
+  var C = {
+    a:    "#2fbf9b",
+    b:    "#f75700",
+    grid: "#10505f",
+    phr:  "#1d6b7d",
+    text: "#e6f0f3",
+    mute: "#7fa0ab",
+    dim:  "#04323f"
+  };
+
+  /* ---- приёмы -----------------------------------------------------
+     Каждый — четыре кривые от такта: громкость и низ для обеих
+     дорожек. Значения от 0 до 1. Числа здесь не выдуманы «на глаз»:
+     это те же границы фраз, по которым программа расставляет точки —
+     приём начинается на 4 и заканчивается на 8. */
+  function ramp(x, from, to) {       /* 0..1 внутри отрезка тактов */
+    if (x <= from) return 0;
+    if (x >= to) return 1;
+    return (x - from) / (to - from);
+  }
+  function smooth(t) { return t * t * (3 - 2 * t); }
+
+  var MOVES = [
+    {
+      key: "bass",
+      name: "Обмен низом",
+      why: "Классика: низы никогда не звучат вдвоём — один уходит ровно тогда, когда приходит другой.",
+      a:    function (x) { return 1 - smooth(ramp(x, 6, 8)); },
+      b:    function (x) { return smooth(ramp(x, 4, 6)); },
+      aLow: function (x) { return 1 - smooth(ramp(x, 4, 5)); },
+      bLow: function (x) { return smooth(ramp(x, 4, 5)); },
+      marks: [
+        [4, "B заходит, низ меняется местами"],
+        [6, "A начинает уходить"],
+        [8, "A снят, граница фразы"]
+      ]
+    },
+    {
+      key: "cut",
+      name: "Рез на фразу",
+      why: "Ничего не смешивается: A играет до конца фразы, на её границе мгновенно встаёт B.",
+      a:    function (x) { return x < SEAM ? 1 : 0; },
+      b:    function (x) { return x < SEAM ? 0 : 1; },
+      aLow: function (x) { return x < SEAM ? 1 : 0; },
+      bLow: function (x) { return x < SEAM ? 0 : 1; },
+      marks: [
+        [8, "рез точно на границе фразы"]
+      ]
+    },
+    {
+      key: "sweep",
+      name: "Свип фильтром",
+      why: "У A поднимается срез — трек истончается и уходит вверх, освобождая место снизу.",
+      a:    function (x) { return 1 - 0.65 * smooth(ramp(x, 3, 8)); },
+      b:    function (x) { return smooth(ramp(x, 4, 8)); },
+      aLow: function (x) { return 1 - smooth(ramp(x, 3, 7)); },
+      bLow: function (x) { return smooth(ramp(x, 4, 6)); },
+      marks: [
+        [3, "срез у A поехал вверх"],
+        [4, "B заходит снизу"],
+        [8, "A истончён и снят"]
+      ]
+    }
+  ];
+  var move = MOVES[0];
+
+  /* ---- огибающая дорожки -----------------------------------------
+     Детерминированный шум: та же картинка при каждом заходе. Форма
+     нарочно «музыкальная» — доли выражены, на границах фраз всплеск. */
+  /* Плавный переход между двумя цветами. Нужен ровно для низа: он
+     уходит не скачком, и цвет обязан ехать вместе с высотой. */
+  function hex(c) {
+    return [parseInt(c.substr(1, 2), 16), parseInt(c.substr(3, 2), 16), parseInt(c.substr(5, 2), 16)];
+  }
+  function mixHex(c1, c2, t) {
+    var a = hex(c1), b = hex(c2);
+    t = Math.max(0, Math.min(1, t));
+    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * t) + "," +
+                    Math.round(a[1] + (b[1] - a[1]) * t) + "," +
+                    Math.round(a[2] + (b[2] - a[2]) * t) + ")";
+  }
+
+  function env(x, seed) {
+    var s = Math.sin(x * 12.9898 + seed) * 43758.5453;
+    var n = s - Math.floor(s);
+    var beat = 0.55 + 0.45 * Math.abs(Math.sin(x * Math.PI * 4));
+    var phrase = (x % 4 < 0.12) ? 1.25 : 1;
+    return Math.min(1, (0.42 + 0.58 * n) * beat * phrase);
+  }
+
+  var W = 0, H = 0, dpr = 1;
+  function size() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var r = cv.getBoundingClientRect();
+    W = Math.max(320, Math.round(r.width));
+    H = Math.max(200, Math.round(r.height));
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw(head) {
+    var padL = 46, padR = 12, padT = 14, padB = 44;
+    var plotW = W - padL - padR;
+    var laneH = (H - padT - padB) / 2 - 10;
+    var yA = padT, yB = padT + laneH + 20;
+    var xOf = function (bar) { return padL + plotW * bar / BARS; };
+
+    ctx.clearRect(0, 0, W, H);
+
+    /* сетка тактов — одна на обе дорожки, в этом весь смысл */
+    for (var bar = 0; bar <= BARS; bar++) {
+      var phrase = bar % 4 === 0;
+      ctx.strokeStyle = phrase ? C.phr : C.grid;
+      ctx.globalAlpha = phrase ? 1 : 0.45;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(xOf(bar)) + 0.5, padT);
+      ctx.lineTo(Math.round(xOf(bar)) + 0.5, padT + laneH * 2 + 20);
+      ctx.stroke();
+      if (phrase && bar < BARS) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = C.mute;
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        ctx.fillText("такт " + (bar + 1), xOf(bar) + 5, padT + laneH * 2 + 36);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    /* дорожки */
+    function lane(y, seed, colour, gain, low, label) {
+      ctx.fillStyle = C.mute;
+      ctx.font = "11px 'JetBrains Mono', monospace";
+      ctx.fillText(label, 6, y + laneH / 2 + 4);
+
+      var step = 2;
+      for (var px = 0; px <= plotW; px += step) {
+        var bar = BARS * px / plotW;
+        var g = Math.max(0, Math.min(1, gain(bar)));
+        if (g <= 0.001) continue;
+        var lo = Math.max(0, Math.min(1, low(bar)));
+        var h = env(bar, seed) * (laneH / 2) * (0.35 + 0.65 * g);
+        var x = padL + px;
+        /* Верхняя половина — весь спектр. Нижняя — низ, и она СХЛОПЫВАЕТСЯ
+           и сереет, когда эквалайзер его снял. Раньше низ просто чуть
+           притухал, и на картинке было не различить, работает эквалайзер
+           или нет, — а это половина смысла приёма. */
+        ctx.globalAlpha = 0.25 + 0.75 * g;
+        ctx.fillStyle = colour;
+        ctx.fillRect(x, y + laneH / 2 - h, step - 0.4, h);
+        ctx.globalAlpha = (0.25 + 0.75 * g) * (0.5 + 0.5 * lo);
+        ctx.fillStyle = mixHex(C.mute, colour, lo);
+        ctx.fillRect(x, y + laneH / 2, step - 0.4, h * (0.1 + 0.9 * lo));
+      }
+      ctx.globalAlpha = 1;
+      /* осевая */
+      ctx.strokeStyle = C.grid;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(padL, Math.round(y + laneH / 2) + 0.5);
+      ctx.lineTo(padL + plotW, Math.round(y + laneH / 2) + 0.5);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    lane(yA, 3.7, C.a, move.a, move.aLow, "A");
+    lane(yB, 8.1, C.b, move.b, move.bLow, "B");
+
+    /* подписи событий */
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    for (var m = 0; m < move.marks.length; m++) {
+      var mb = move.marks[m][0];
+      var reached = head >= mb;
+      ctx.strokeStyle = reached ? C.b : C.grid;
+      ctx.globalAlpha = reached ? 0.9 : 0.35;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(Math.round(xOf(mb)) + 0.5, padT);
+      ctx.lineTo(Math.round(xOf(mb)) + 0.5, padT + laneH * 2 + 20);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    /* курсор */
+    var hx = xOf(Math.max(0, Math.min(BARS, head)));
+    ctx.strokeStyle = C.text;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(hx, padT - 4);
+    ctx.lineTo(hx, padT + laneH * 2 + 24);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---- подпись под картинкой -------------------------------------
+     Показываем последнее событие, которое курсор уже прошёл: бегущий
+     текст под схемой объясняет, что именно сейчас происходит. */
+  function captionFor(head) {
+    var best = move.why;
+    for (var i = 0; i < move.marks.length; i++) {
+      if (head >= move.marks[i][0]) best = "такт " + (move.marks[i][0] + 1) + " — " + move.marks[i][1];
+    }
+    return best;
+  }
+
+  var capEl = document.getElementById("seam-caption");
+  var playEl = document.getElementById("seam-play");
+  var tabsEl = document.getElementById("seam-tabs");
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var running = !still.matches;
+  var t0 = 0, head = still.matches ? SEAM : 0, lastCap = "";
+
+  function paint(h) {
+    draw(h);
+    var c = captionFor(h);
+    if (c !== lastCap) { capEl.textContent = c; lastCap = c; }
+  }
+
+  function frame(now) {
+    if (!t0) t0 = now;
+    if (running) {
+      head = ((now - t0) / 1000 / SECONDS % 1) * BARS;
+      paint(head);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* вкладки приёмов */
+  MOVES.forEach(function (mv, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = mv.name;
+    b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", function () {
+      move = mv;
+      Array.prototype.forEach.call(tabsEl.children, function (n) {
+        n.setAttribute("aria-pressed", n === b ? "true" : "false");
+      });
+      /* Переключение приёма отматывает в начало: сравнивать приёмы
+         имеет смысл с одной точки, а не с середины чужого прохода. */
+      t0 = 0; head = still.matches ? SEAM : 0; lastCap = "";
+      paint(head);
+    });
+    tabsEl.appendChild(b);
+  });
+
+  playEl.textContent = running ? "Пауза" : "Смотреть";
+  playEl.addEventListener("click", function () {
+    running = !running;
+    if (running) t0 = 0;
+    playEl.textContent = running ? "Пауза" : "Смотреть";
+  });
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { size(); paint(head); }).observe(cv);
+  } else {
+    window.addEventListener("resize", function () { size(); paint(head); });
+  }
+  size();
+  paint(head);
+  if (!still.matches) requestAnimationFrame(frame);
+})();
+
+/* Ролик. Появляется, только если в data-yt стоит идентификатор.
+   До клика с ютуба берётся одна обложка и ничего больше: плеер тянет
+   за собой куки и счётчики, и грузить их всем подряд ради кнопки
+   «play» неприлично. */
+(function () {
+  "use strict";
+  var box = document.getElementById("film");
+  if (!box) return;
+  var id = (box.getAttribute("data-yt") || "").trim();
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return;   /* нет ролика — нет блока */
+
+  var frame = document.getElementById("film-frame");
+  var cover = document.getElementById("film-cover");
+  cover.src = "https://i.ytimg.com/vi/" + id + "/maxresdefault.jpg";
+  cover.onerror = function () { cover.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"; };
+  box.classList.add("on");
+
+  function open() {
+    var f = document.createElement("iframe");
+    f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0";
+    f.title = "DARAVE в работе";
+    f.allow = "accelerometer; autoplay; encrypted-media; picture-in-picture";
+    f.allowFullscreen = true;
+    frame.innerHTML = "";
+    frame.appendChild(f);
+    frame.style.cursor = "default";
+  }
+  frame.addEventListener("click", open);
+  frame.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+  });
 })();
 </script>
 

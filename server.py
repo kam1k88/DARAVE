@@ -66,6 +66,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -236,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -401,6 +402,9 @@ DEFAULT_SET_MINUTES = 90.0  # длительность сета, если дид
 SCAN_DB_DIR = _paths.data_subdir("scan_dbs")
 _scan_processes: dict[str, "subprocess.Popen"] = {}  # обычный Popen, см. start_library_scan
 _scan_status: dict[str, dict] = {}
+# «[17/532] Имя файла.mp3» — то, что печатает track_analysis.py --scan
+# на каждый трек. Разбираем здесь, чтобы показать полосу, а не поток строк.
+_SCAN_PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
 
 # Офлайн аудио-демо техник (кнопка "🎧 Демо" во вкладке "Техника") —
 # demo_render.py реально сводит два файла диджея по логике технике и пишет
@@ -1542,15 +1546,32 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
                             detail=f"Не смог запустить сканер: {exc}") from exc
     logger.info(f"сканирование запущено: комната '{session_id}', папка {path}, БД {db_path}")
     _scan_processes[session_id] = proc
-    _scan_status[session_id] = {"running": True, "tail": [], "ok": None, "returncode": None}
+    _scan_status[session_id] = {"running": True, "tail": [], "ok": None,
+                                "returncode": None, "done": 0, "total": 0,
+                                "name": "", "started_at": scan_started_at}
 
     def _pump() -> None:
-        """Читает вывод сканера в отдельном потоке и ждёт его конца."""
+        """Читает вывод сканера в отдельном потоке и ждёт его конца.
+
+        Сканер печатает по строке на трек: «[17/532] Имя файла.mp3».
+        Раньше эти строки просто складывались в хвост, и человек видел
+        бегущие имена, но не видел, сколько осталось, — а на библиотеке
+        в тысячу треков это разница между «идёт» и «идёт ещё час».
+        Поэтому строку прогресса разбираем в числа и в хвост НЕ кладём:
+        хвост читают, когда что-то сломалось, и настоящая причина не
+        должна вытесняться оттуда именами файлов."""
         if proc.stdout is not None:
             for raw_line in proc.stdout:
                 line = raw_line.decode("utf-8", errors="replace").rstrip()
-                if line:
-                    status = _scan_status[session_id]
+                if not line:
+                    continue
+                status = _scan_status[session_id]
+                m = _SCAN_PROGRESS_RE.match(line)
+                if m:
+                    status["done"] = int(m.group(1))
+                    status["total"] = int(m.group(2))
+                    status["name"] = m.group(3)
+                else:
                     status["tail"] = (status["tail"] + [line])[-30:]
         proc.wait()
 
@@ -1674,7 +1695,8 @@ async def library_catalog_search(session_id: str, body: dict | None = None) -> J
 
 @app.get("/api/rooms/{session_id}/library/scan/status")
 async def library_scan_status(session_id: str) -> JSONResponse:
-    status = _scan_status.get(session_id, {"running": False, "tail": [], "ok": None, "returncode": None})
+    status = _scan_status.get(session_id, {"running": False, "tail": [], "ok": None,
+                                           "returncode": None, "done": 0, "total": 0, "name": ""})
     return JSONResponse(status)
 
 # --- единый анализ библиотеки -----------------------------------------
@@ -1715,6 +1737,17 @@ async def _analyze_push(session_id: str) -> None:
     room = sessions.get_or_create(session_id)
     await room.broadcast_to_chat({"type": "analyze_progress",
                                   **_analyze_status.get(session_id, {})})
+
+
+def _parse_scan_line(line: str) -> dict | None:
+    """«[17/532] Имя файла.mp3» -> числа для полосы.
+
+    Возврат None означает «это обычная строка, положи её в хвост»."""
+    m = _SCAN_PROGRESS_RE.match(line)
+    if not m:
+        return None
+    return {"i": int(m.group(1)), "total": int(m.group(2)),
+            "name": m.group(3), "stage": ""}
 
 
 async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
@@ -1839,7 +1872,12 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
         cmd = child_cmd("track_analysis", "--scan", path, "--db", db_path)
         if force:
             cmd.append("--rescan-all")
-        res = await _run_subprocess_step(session_id, key, cmd)
+        # parse=_parse_scan_line — без него шаг «Разбор треков» показывал
+        # только бегущие имена файлов: полоса стояла пустой, и на
+        # библиотеке в тысячу треков было не понять, идёт это пять минут
+        # или час. Числа сканер печатает сам, оставалось их прочитать.
+        res = await _run_subprocess_step(session_id, key, cmd,
+                                         parse=_parse_scan_line)
         if res["state"] != "ok":
             return res
         fresh = await asyncio.to_thread(load_library_from_db, db_path, started)

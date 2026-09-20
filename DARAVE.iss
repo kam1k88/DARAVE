@@ -15,7 +15,7 @@
 
 #define MyAppName "DARAVE"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.0.1"
 #endif
 #define MyAppPublisher "DARAVE"
 #define MyAppURL "https://darave.ru"

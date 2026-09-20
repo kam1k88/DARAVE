@@ -36,7 +36,7 @@ jobs:
           rsync -avz --delete $DRY \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --exclude="_config.php" \
-            --exclude="db.sql" \
+            --exclude="*.sql" \
             --exclude="*.log" \
             --exclude="*.md" \
             --exclude="nginx.conf.example" \

@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>DARAVE — админка</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  :root {
+    --ink:#001b24; --panel:#002936; --panel2:#04323f; --line:#10505f;
+    --text:#e6f0f3; --muted:#7fa0ab; --flame:#f75700; --ok:#2fbf9b; --warn:#f0a83c; --bad:#ff5c7a;
+    --display:"Unbounded",system-ui,sans-serif;
+    --body:"Golos Text",ui-sans-serif,system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--ink); color:var(--text); font:15px/1.6 var(--body); }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 20px 80px; }
+
+  header { border-bottom:1px solid var(--line); margin-bottom:22px; }
+  .bar { max-width:1180px; margin:0 auto; padding:13px 20px; display:flex; align-items:center; gap:14px; }
+  .brand { font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:.07em;
+           display:flex; align-items:center; gap:9px; color:var(--text); text-decoration:none; }
+  .brand img { width:20px; height:20px; display:block; }
+  .bar .who { margin-left:auto; color:var(--muted); font-size:13px; }
+  .tabs { display:flex; gap:6px; }
+  .tab { font:500 13px/1 var(--body); color:var(--muted); background:transparent;
+         border:1px solid transparent; border-radius:7px; padding:7px 12px; cursor:pointer; }
+  .tab:hover { color:var(--text); border-color:var(--line); }
+  .tab[aria-selected="true"] { color:var(--ink); background:var(--flame); border-color:var(--flame); }
+
+  button, .btn { font:500 13.5px/1 var(--body); color:var(--text); background:var(--panel2);
+                 border:1px solid var(--line); border-radius:7px; padding:8px 13px; cursor:pointer; }
+  button:hover { border-color:var(--muted); }
+  button.primary { background:var(--flame); border-color:var(--flame); color:#fff; font-weight:600; }
+  button.danger { border-color:color-mix(in srgb, var(--bad) 45%, var(--line)); color:var(--bad); }
+  input, select, textarea {
+    font:14px var(--body); color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:7px; padding:8px 10px; width:100%;
+  }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--flame); outline-offset:1px; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:20px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px; }
+  .stat b { display:block; font-family:var(--display); font-size:21px; font-weight:600; }
+  .stat span { font:11px var(--mono); color:var(--muted); letter-spacing:.06em; text-transform:uppercase; }
+
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  .row input { flex:1; min-width:200px; }
+
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th { text-align:left; font:500 11px/1 var(--mono); color:var(--muted); letter-spacing:.07em;
+       text-transform:uppercase; padding:8px 10px; border-bottom:1px solid var(--line); }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr.clickable:hover td { background:var(--panel); cursor:pointer; }
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+
+  .av { width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center;
+        justify-content:center; font:600 11px var(--body); color:#fff; flex:none; }
+  .who-cell { display:flex; align-items:center; gap:9px; }
+  .who-cell small { display:block; color:var(--muted); font-size:11.5px; }
+
+  .pill { font:500 11px/1 var(--mono); padding:4px 8px; border-radius:20px; border:1px solid var(--line);
+          color:var(--muted); white-space:nowrap; }
+  .pill.paid { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--line)); }
+  .pill.blocked { color:var(--bad); border-color:color-mix(in srgb,var(--bad) 40%,var(--line)); }
+  .pill.admin { color:var(--flame); border-color:color-mix(in srgb,var(--flame) 50%,var(--line)); }
+  .pill.gone { color:var(--muted); opacity:.65; }
+
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--ink); color:var(--text);
+           max-width:760px; width:calc(100% - 32px); padding:0; }
+  dialog::backdrop { background:rgba(0,10,14,.75); }
+  .dlg-head { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--line); }
+  .dlg-head h2 { font-family:var(--display); font-weight:600; font-size:17px; margin:0; }
+  .dlg-body { padding:18px 20px 22px; max-height:70vh; overflow:auto; }
+  .dlg-body h3 { font:600 13px var(--body); color:var(--muted); margin:20px 0 8px;
+                 text-transform:uppercase; letter-spacing:.06em; }
+  .dlg-body h3:first-child { margin-top:0; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+  .note { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--flame);
+          border-radius:8px; padding:11px 13px; font-size:13.5px; color:var(--muted); margin:10px 0; }
+  .note.good { border-left-color:var(--ok); }
+  .note.bad { border-left-color:var(--bad); color:var(--text); }
+  .mono { font-family:var(--mono); font-size:12.5px; }
+  .muted { color:var(--muted); }
+  .empty { color:var(--muted); padding:22px; text-align:center; }
+  @media (max-width:640px){ .bar { flex-wrap:wrap; } .bar .who { margin-left:0; width:100%; } }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <a class="brand" href="/"><img src="/mark.svg" alt="">DARAVE</a>
+  <div class="tabs" id="tabs">
+    <button class="tab" data-tab="users" aria-selected="true">Пользователи</button>
+    <button class="tab" data-tab="promo" aria-selected="false">Промокоды</button>
+    <button class="tab" data-tab="log" aria-selected="false">Журнал</button>
+  </div>
+  <div class="who" id="who"></div>
+</div></header>
+
+<div class="wrap">
+  <div id="gate" hidden></div>
+  <div id="view"></div>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-head"><h2 id="dlg-title">—</h2>
+    <span style="flex:1"></span>
+    <button id="dlg-close">Закрыть</button></div>
+  <div class="dlg-body" id="dlg-body"></div>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var view = $("view"), dlg = $("dlg");
+
+  function esc(s) {
+    return String(s === null || s === undefined ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Аватар считается из строки, а не хранится: картинку негде держать,
+  // некому модерировать и незачем отдавать наружу. Буквы и цвет
+  // детерминированы, поэтому у человека он всегда один и тот же.
+  function avatar(seed, label) {
+    var h = 0, i;
+    seed = String(seed || "?");
+    for (i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    var hue = h % 360;
+    var txt = String(label || seed).trim().slice(0, 2).toUpperCase();
+    return '<span class="av" style="background:hsl(' + hue + ',42%,38%)">' + esc(txt) + '</span>';
+  }
+
+  function api(payload) {
+    return fetch("/api/admin.php", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { status: r.status, data: d };
+      });
+    });
+  }
+
+  function fail(r) {
+    if (r.status === 401 || r.status === 404) {
+      $("gate").hidden = false;
+      $("gate").innerHTML =
+        '<div class="note bad"><b>Нет доступа.</b><br>' +
+        'Войдите на <a href="/app/">darave.ru/app</a> учётной записью с правами админа. ' +
+        'Права ставятся только в базе: <span class="mono">UPDATE users SET is_admin = 1 WHERE email = …</span></div>';
+      view.innerHTML = "";
+      return true;
+    }
+    return false;
+  }
+
+  function dateShort(s) {
+    if (!s) return "—";
+    return String(s).replace("T", " ").slice(0, 16);
+  }
+
+  function tierPill(u) {
+    var name = { free: "Бесплатно", personal: "Полная", workshop: "С разбором" }[u.tier] || u.tier;
+    var cls = u.tier === "free" ? "" : " paid";
+    return '<span class="pill' + cls + '">' + esc(name) + "</span>";
+  }
+
+  function flags(u) {
+    var out = "";
+    if (Number(u.is_admin)) out += ' <span class="pill admin">админ</span>';
+    if (Number(u.blocked)) out += ' <span class="pill blocked">заблокирован</span>';
+    if (u.deleted_at) out += ' <span class="pill gone">удалён</span>';
+    return out;
+  }
+
+  // ------------------------------------------------------ пользователи
+  var lastQuery = "";
+
+  function tabUsers() {
+    view.innerHTML =
+      '<div class="stats" id="stats"></div>' +
+      '<div class="row"><input id="q" placeholder="Поиск по почте или имени" value="' + esc(lastQuery) + '">' +
+      '<button id="find" class="primary">Найти</button>' +
+      '<button id="all">Все</button></div>' +
+      '<div class="tablewrap"><div class="empty">Загружаю…</div></div>';
+
+    $("find").addEventListener("click", function () { lastQuery = $("q").value.trim(); loadUsers(); });
+    $("all").addEventListener("click", function () { lastQuery = ""; $("q").value = ""; loadUsers(); });
+    $("q").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { lastQuery = $("q").value.trim(); loadUsers(); }
+    });
+
+    api({ action: "stats" }).then(function (r) {
+      if (fail(r)) return;
+      var s = r.data.stats || {};
+      var cells = [
+        ["users", "учётных записей"], ["paid", "платных"], ["orders_ok", "оплат"],
+        ["revenue", "выручка, ₽"], ["refunded", "возвратов"], ["devices", "устройств"],
+        ["blocked", "заблокировано"], ["deleted", "удалено"]
+      ];
+      $("stats").innerHTML = cells.map(function (c) {
+        return '<div class="stat"><b>' + esc(s[c[0]] === undefined ? "—" : s[c[0]]) +
+               "</b><span>" + c[1] + "</span></div>";
+      }).join("");
+    });
+    loadUsers();
+  }
+
+  function loadUsers() {
+    api({ action: "users", q: lastQuery }).then(function (r) {
+      if (fail(r)) return;
+      var list = r.data.users || [];
+      var box = document.querySelector(".tablewrap");
+      if (!list.length) { box.innerHTML = '<div class="empty">Никого не нашлось</div>'; return; }
+      box.innerHTML =
+        "<table><thead><tr><th>Кто</th><th>Тариф</th><th>До</th>" +
+        "<th>Регистрация</th><th>Последний вход</th></tr></thead><tbody>" +
+        list.map(function (u) {
+          return '<tr class="clickable" data-id="' + u.id + '"><td><div class="who-cell">' +
+            avatar(u.id + "|" + u.email, u.nickname || u.email) +
+            "<div><span>" + esc(u.nickname || u.email) + "</span>" + flags(u) +
+            (u.nickname ? "<small>" + esc(u.email) + "</small>" : "") +
+            "</div></div></td><td>" + tierPill(u) + "</td><td class='mono muted'>" +
+            (u.tier_until ? dateShort(u.tier_until) : (u.tier === "free" ? "—" : "бессрочно")) +
+            "</td><td class='mono muted'>" + dateShort(u.created_at) +
+            "</td><td class='mono muted'>" + dateShort(u.last_login_at) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+      box.querySelectorAll("tr.clickable").forEach(function (tr) {
+        tr.addEventListener("click", function () { openUser(Number(tr.dataset.id)); });
+      });
+    });
+  }
+
+  // ---------------------------------------------------------- карточка
+  function openUser(id) {
+    api({ action: "user", id: id }).then(function (r) {
+      if (fail(r)) return;
+      if (!r.data.ok) { alert(r.data.error || "Не открылось"); return; }
+      var u = r.data.user, devices = r.data.devices || [], orders = r.data.orders || [], log = r.data.log || [];
+
+      $("dlg-title").innerHTML = avatar(u.id + "|" + u.email, u.nickname || u.email) +
+        " " + esc(u.nickname || u.email) + flags(u);
+
+      var html = "";
+      html += '<div class="grid2">' +
+        '<div><h3>Почта</h3><div class="mono">' + esc(u.email) + "</div></div>" +
+        '<div><h3>Зарегистрирован</h3><div class="mono muted">' + dateShort(u.created_at) + "</div></div>" +
+        '<div><h3>Последний вход</h3><div class="mono muted">' + dateShort(u.last_login_at) + "</div></div>" +
+        "</div>";
+
+      html += "<h3>Тариф</h3><div class='row'>" +
+        '<select id="t-tier" style="max-width:190px">' +
+        ["free", "personal", "workshop"].map(function (t) {
+          var n = { free: "Бесплатно", personal: "Полная", workshop: "С разбором" }[t];
+          return '<option value="' + t + '"' + (u.tier === t ? " selected" : "") + ">" + n + "</option>";
+        }).join("") + "</select>" +
+        '<input id="t-until" style="max-width:170px" placeholder="до 2027-01-31, пусто = бессрочно" value="' +
+        esc(u.tier_until ? String(u.tier_until).slice(0, 10) : "") + '">' +
+        '<input id="t-reason" style="max-width:220px" placeholder="причина — попадёт в журнал">' +
+        '<button id="t-save" class="primary">Выдать</button></div>';
+
+      html += "<h3>Устройства (" + devices.filter(function (d) { return !Number(d.revoked); }).length +
+        " из " + (r.data.max_devices || 1) + ")</h3>";
+      html += devices.length
+        ? '<div class="tablewrap"><table><tbody>' + devices.map(function (d) {
+            return "<tr><td>" + esc(d.name || "компьютер") +
+              (Number(d.revoked) ? ' <span class="pill">отвязан</span>' : "") +
+              "</td><td class='mono muted'>" + esc(d.app_version || "") +
+              "</td><td class='mono muted'>" + dateShort(d.last_seen) + "</td></tr>";
+          }).join("") + "</tbody></table></div>"
+        : '<div class="muted">Программа ещё не привязана.</div>';
+
+      html += "<h3>Заказы</h3>";
+      html += orders.length
+        ? '<div class="tablewrap"><table><thead><tr><th>№</th><th>Тариф</th><th>Сумма</th>' +
+          "<th>Статус</th><th>Оплачен</th><th></th></tr></thead><tbody>" +
+          orders.map(function (o) {
+            var canRefund = o.status === "succeeded";
+            return "<tr><td class='mono'>" + o.id + "</td><td>" + esc(o.tier) +
+              "</td><td class='mono'>" + esc(o.amount) + "</td><td>" +
+              '<span class="pill' + (o.status === "succeeded" ? " paid" : "") + '">' + esc(o.status) + "</span>" +
+              (o.refund_amount ? ' <span class="pill">−' + esc(o.refund_amount) + "</span>" : "") +
+              "</td><td class='mono muted'>" + dateShort(o.paid_at) + "</td><td>" +
+              (canRefund ? '<button class="danger refund" data-order="' + o.id + '">Вернуть</button>' : "") +
+              "</td></tr>";
+          }).join("") + "</tbody></table></div>"
+        : '<div class="muted">Оплат не было.</div>';
+
+      html += "<h3>Заметка (видна только вам)</h3>" +
+        '<textarea id="n-note" rows="2" placeholder="например: попросил счёт на юрлицо">' +
+        esc(u.admin_note || "") + "</textarea>" +
+        '<div class="row" style="margin-top:8px"><button id="n-save">Сохранить заметку</button></div>';
+
+      html += "<h3>Действия</h3><div class='row'>" +
+        '<button id="a-reset">Сбросить пароль</button>' +
+        '<button id="a-block" class="' + (Number(u.blocked) ? "" : "danger") + '">' +
+        (Number(u.blocked) ? "Разблокировать" : "Заблокировать") + "</button></div>" +
+        '<div id="a-out"></div>';
+
+      if (log.length) {
+        html += "<h3>Что с ним делали</h3><div class='mono muted' style='font-size:12px'>" +
+          log.map(function (l) {
+            return dateShort(l.created_at) + "  " + esc(l.action) +
+              (l.details ? "  " + esc(l.details) : "");
+          }).join("<br>") + "</div>";
+      }
+
+      $("dlg-body").innerHTML = html;
+      wireUser(u);
+      if (!dlg.open) dlg.showModal();
+    });
+  }
+
+  function wireUser(u) {
+    var out = $("a-out");
+    function say(cls, text) { out.innerHTML = '<div class="note ' + cls + '">' + text + "</div>"; }
+
+    $("t-save").addEventListener("click", function () {
+      api({ action: "set_tier", id: u.id, tier: $("t-tier").value,
+            until: $("t-until").value.trim(), reason: $("t-reason").value.trim() })
+        .then(function (r) {
+          if (!r.data.ok) { say("bad", esc(r.data.error || "Не вышло")); return; }
+          say("good", "Тариф изменён."); loadUsers(); openUser(u.id);
+        });
+    });
+
+    $("n-save").addEventListener("click", function () {
+      api({ action: "note", id: u.id, note: $("n-note").value })
+        .then(function (r) { say(r.data.ok ? "good" : "bad", r.data.ok ? "Заметка сохранена." : esc(r.data.error)); });
+    });
+
+    $("a-reset").addEventListener("click", function () {
+      if (!confirm("Сбросить пароль? Человек не сможет войти старым, все его сессии закроются.")) return;
+      api({ action: "reset_password", id: u.id }).then(function (r) {
+        if (!r.data.ok) { say("bad", esc(r.data.error || "Не вышло")); return; }
+        say("good", "Новый пароль — покажется только сейчас:<br><b class='mono' style='font-size:15px;color:var(--text)'>" +
+            esc(r.data.password) + "</b><br>Передайте человеку и попросите сменить.");
+      });
+    });
+
+    $("a-block").addEventListener("click", function () {
+      var on = !Number(u.blocked);
+      if (on && !confirm("Заблокировать? Все его сессии закроются сразу.")) return;
+      api({ action: "block", id: u.id, blocked: on }).then(function (r) {
+        if (!r.data.ok) { say("bad", esc(r.data.error || "Не вышло")); return; }
+        loadUsers(); openUser(u.id);
+      });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll(".refund"), function (b) {
+      b.addEventListener("click", function () {
+        var id = Number(b.dataset.order);
+        if (!confirm("Вернуть деньги по заказу " + id + "? Тариф вернётся к тому, что был до оплаты.")) return;
+        b.disabled = true;
+        fetch("/api/refund.php", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: id })
+        }).then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (d) {
+            b.disabled = false;
+            if (!d.ok) { say("bad", esc(d.error || "ЮKassa отказала")); return; }
+            say("good", "Возврат " + esc(d.refund_id) + " на " + esc(d.amount) +
+                " ₽. Не забудьте возвратный чек в «Мой налог».");
+            loadUsers(); openUser(u.id);
+          });
+      });
+    });
+  }
+
+  // ------------------------------------------------------- промокоды
+  function tabPromo() {
+    view.innerHTML =
+      '<div class="note">Коды сохраняются, но оплата их пока <b>не применяет</b> — для этого нужна ' +
+      'доработка расчёта цены в buy.php. Делать вид, что скидка работает, нельзя.</div>' +
+      '<div class="row">' +
+      '<input id="p-code" style="max-width:160px" placeholder="КОД">' +
+      '<input id="p-percent" style="max-width:110px" type="number" min="1" max="100" placeholder="% скидки">' +
+      '<input id="p-fixed" style="max-width:130px" placeholder="или цена, ₽">' +
+      '<input id="p-uses" style="max-width:110px" type="number" min="1" value="1" placeholder="раз">' +
+      '<input id="p-exp" style="max-width:150px" placeholder="до 2027-01-31">' +
+      '<button id="p-add" class="primary">Создать</button></div>' +
+      '<div id="p-out"></div><div class="tablewrap"><div class="empty">Загружаю…</div></div>';
+
+    $("p-add").addEventListener("click", function () {
+      api({ action: "promo_add", code: $("p-code").value, percent: $("p-percent").value,
+            fixed_price: $("p-fixed").value, max_uses: $("p-uses").value, expires_at: $("p-exp").value })
+        .then(function (r) {
+          $("p-out").innerHTML = '<div class="note ' + (r.data.ok ? "good" : "bad") + '">' +
+            esc(r.data.ok ? ("Код " + r.data.code + " создан. " + (r.data.warning || "")) : r.data.error) + "</div>";
+          if (r.data.ok) loadPromo();
+        });
+    });
+    loadPromo();
+  }
+
+  function loadPromo() {
+    api({ action: "promo_list" }).then(function (r) {
+      if (fail(r)) return;
+      var box = document.querySelector(".tablewrap");
+      var list = r.data.codes || [];
+      box.innerHTML = list.length
+        ? "<table><thead><tr><th>Код</th><th>Скидка</th><th>Тариф</th><th>Использовано</th><th>До</th></tr></thead><tbody>" +
+          list.map(function (c) {
+            return "<tr><td class='mono'>" + esc(c.code) + "</td><td>" +
+              (c.percent ? esc(c.percent) + " %" : esc(c.fixed_price) + " ₽") +
+              "</td><td class='muted'>" + esc(c.tier || "любой") + "</td><td class='mono'>" +
+              esc(c.used) + " / " + esc(c.max_uses) + "</td><td class='mono muted'>" +
+              (c.expires_at ? dateShort(c.expires_at) : "без срока") + "</td></tr>";
+          }).join("") + "</tbody></table>"
+        : '<div class="empty">Кодов пока нет</div>';
+    });
+  }
+
+  // ---------------------------------------------------------- журнал
+  function tabLog() {
+    view.innerHTML = '<div class="tablewrap"><div class="empty">Загружаю…</div></div>';
+    api({ action: "log" }).then(function (r) {
+      if (fail(r)) return;
+      var box = document.querySelector(".tablewrap");
+      var list = r.data.log || [];
+      box.innerHTML = list.length
+        ? "<table><thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Кому</th><th>Подробности</th></tr></thead><tbody>" +
+          list.map(function (l) {
+            return "<tr><td class='mono muted'>" + dateShort(l.created_at) +
+              "</td><td class='muted'>" + esc(l.admin_email || "—") +
+              "</td><td>" + esc(l.action) + "</td><td class='muted'>" + esc(l.target_email || "—") +
+              "</td><td class='mono muted' style='font-size:11.5px'>" + esc(l.details || "") + "</td></tr>";
+          }).join("") + "</tbody></table>"
+        : '<div class="empty">Журнал пуст</div>';
+    });
+  }
+
+  // ------------------------------------------------------------ старт
+  var TABS = { users: tabUsers, promo: tabPromo, log: tabLog };
+  document.getElementById("tabs").addEventListener("click", function (e) {
+    var b = e.target.closest(".tab");
+    if (!b) return;
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.setAttribute("aria-selected", String(t === b));
+    });
+    TABS[b.dataset.tab]();
+  });
+  $("dlg-close").addEventListener("click", function () { dlg.close(); });
+
+  fetch("/api/me.php", { credentials: "same-origin" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.authenticated && d.user) {
+        $("who").textContent = d.user.email + (d.user.is_admin ? " · админ" : "");
+      } else {
+        $("who").innerHTML = '<a href="/app/">Войти</a>';
+      }
+    }).catch(function () {});
+
+  tabUsers();
+})();
+</script>
+</body>
+</html>

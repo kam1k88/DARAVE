@@ -131,6 +131,7 @@ def status() -> dict:
     return {
         "signed_in": left > 0,
         "email": st.get("email"),
+        "nickname": st.get("nickname") or "",
         "tier": st.get("tier", "free"),
         "expired_tier": bool(st.get("expired")),
         "days_left": max(0, int(left // 86400)),
@@ -209,6 +210,7 @@ def pair(pair_token: str, app_version: str = "") -> dict:
     save_state({
         "token": token,
         "email": user.get("email"),
+        "nickname": user.get("nickname"),
         "tier": user.get("tier", "free"),
         "expired": bool(user.get("expired")),
         "paired_at": time.time(),

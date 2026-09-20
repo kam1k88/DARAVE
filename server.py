@@ -236,7 +236,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.2"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -1000,14 +1000,33 @@ async def render_set(session_id: str, body: dict | None = None) -> JSONResponse:
         raise HTTPException(status_code=503,
                             detail="Нужны numpy/scipy/librosa: pip install -r requirements-analysis.txt")
     room = sessions.get_or_create(session_id)
-    if room.last_strategy is None:
-        raise HTTPException(status_code=400, detail="Сначала постройте план.")
+    strategy = room.last_strategy
+    if strategy is None:
+        # Единственная кнопка ControlC, работающая без оплаты, обязана
+        # работать по-настоящему. План для неё строится ЗДЕСЬ, на один
+        # раз, и НЕ кладётся в room.last_strategy: в ControlC он не
+        # появится, и ни одна кнопка плана от него не оживёт. Человек
+        # получает файл со всеми стыками — и ничего кроме.
+        if not room.library_tracks:
+            raise HTTPException(status_code=400,
+                                detail="Библиотека комнаты пуста — сначала разберите её во вкладке Library.")
+        _kick_bpm_refine(session_id)
+        import mix_profile as _mix_profile
+
+        body = body or {}
+        strategy = mix_strategist.plan_strategy(
+            room.library_tracks,
+            arc_shape=body.get("arc_shape", "rising"),
+            only_mixable=bool(body.get("only_mixable", True)),
+            fit_mode="compress",
+            target_minutes=body.get("target_minutes") or DEFAULT_SET_MINUTES,
+        )
+        strategy["mix_profile"] = {"entry": "manual", **_mix_profile.DEFAULTS}
     task = _preview_tasks.get(session_id)
     if task is not None and not task.done():
         raise HTTPException(status_code=409, detail="Швы уже собираются — дождитесь окончания")
 
     body = body or {}
-    strategy = room.last_strategy
     out = SETS_DIR / f"{session_id}_{secrets.token_hex(4)}.wav"
     total = len(strategy.get("transitions") or [])
     _preview_status[session_id] = {"running": True, "done": 0, "total": total}
@@ -3242,6 +3261,7 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
     комнаты. body: {"arc_shape": "rising"|"wave"|"peak_middle", "track_names": [...]}
     (track_names — необязательный отбор подмножества библиотеки; по
     умолчанию используется вся)."""
+    require_paid("Построить план сета")
     room = sessions.get_or_create(session_id)
     if not room.library_tracks:
         raise HTTPException(status_code=400, detail="Библиотека комнаты пуста — сначала запустите track_analysis.py --upload")
@@ -3344,6 +3364,7 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
     целиком и отдаём три лучших — выбрать из трёх понятнее, чем угадывать
     минуты. Планы строятся по метаданным, без чтения аудио, поэтому весь
     перебор занимает доли секунды."""
+    require_paid("Подобрать длительность сета")
     room = sessions.get_or_create(session_id)
     tracks = room.library_tracks or []
     if not tracks:

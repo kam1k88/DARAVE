@@ -227,7 +227,56 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
   .dot.on { background: var(--ok); }
 
-  .view { flex: 1; display: none; min-height: 0; }
+  /* Аккаунт в шапке. Кнопка, а не ссылка: всё, что за ней, живёт
+     внутри программы, и уводить человека в браузер ради «кто я»
+     было бы грубо. */
+  .acct-btn {
+    display: flex; align-items: center; gap: 7px;
+    background: transparent; border: 1px solid transparent; color: var(--muted);
+    font-size: 12.5px; padding: 3px 8px 3px 3px; border-radius: 999px; cursor: pointer;
+  }
+  .acct-btn:hover { border-color: var(--border); color: var(--text); }
+  /* display:flex сильнее браузерного правила для [hidden] — без этой
+     строки кнопка видна и у невошедшего. */
+  .acct-btn[hidden] { display: none; }
+  .acct-av {
+    width: 24px; height: 24px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: #fff;
+    text-transform: uppercase;
+  }
+  .acct-pop {
+    position: fixed; z-index: 9990; width: 280px;
+    background: var(--panel-2, #002936); border: 1px solid var(--border);
+    border-radius: var(--r-lg, 12px); padding: 14px;
+    font-size: 13px; color: var(--text);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+  }
+  .acct-pop .who { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .acct-pop .who .acct-av { width: 38px; height: 38px; font-size: 14px; }
+  .acct-pop .nm { font-weight: 600; overflow-wrap: anywhere; }
+  .acct-pop .em { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .acct-pop .line {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 5px 0; border-top: 1px solid var(--border); color: var(--muted);
+  }
+  .acct-pop .line b { color: var(--text); font-weight: 600; text-align: right; }
+  .acct-pop .acts { display: flex; gap: 8px; margin-top: 13px; }
+  .acct-pop .acts a, .acct-pop .acts button {
+    flex: 1; text-align: center; font-size: 12.5px; padding: 7px 10px;
+    border-radius: var(--r-md, 8px); text-decoration: none; cursor: pointer;
+  }
+  .acct-pop .acts a {
+    background: var(--accent); color: #fff; font-weight: 600; border: 0;
+  }
+
+  /* Рабочая область: активная вкладка слева, ассистент справа.
+     Обёртка нужна потому, что #shell — колонка (сверху шапка), а
+     ассистент должен стоять СБОКУ от вкладки, а не под ней.
+     Вкладки внутри намеренно НЕ переотступлены на два пробела: это дало
+     бы триста изменённых строк там, где изменилась одна. */
+  #stage { flex: 1; display: flex; min-height: 0; min-width: 0; position: relative; }
+  .view { flex: 1; display: none; min-height: 0; min-width: 0; }
   .view.active { display: flex; }
 
   /* ===== Чат ===== */
@@ -604,7 +653,6 @@
     background: var(--accent); border-color: var(--accent); color: #fff;
     box-shadow: 0 4px 14px rgba(0,0,0,.35);
   }
-  #strategy-view { position: relative; }
   @media (max-width: 1400px) { .assist-col { flex-basis: 300px; } }
   @media (max-width: 1100px) { .assist-col { display: none; } }
 
@@ -904,7 +952,12 @@
       </select>
       <div class="status"><span class="dot" id="companion-dot"></span><span id="companion-label">companion не подключён</span></div>
       <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-label">соединение...</span></div>
+      <button type="button" class="acct-btn" id="acct-btn" title="Аккаунт, тариф, выход" hidden>
+        <span class="acct-av" id="acct-av"></span><span id="acct-name"></span>
+      </button>
     </header>
+
+    <div id="stage">
 
     <!-- ===== Чат ===== -->
     <div id="chat-view" class="view">
@@ -1070,14 +1123,14 @@
           <div class="list-header">
             <h1 data-i18n="nav.strategy">ControlC</h1>
             <span class="head-sub" data-i18n="nav.strategy.sub">планировщик · энергетическая дуга · предпрослушка · трансляция в DSP и в файл</span>
-            <button id="suggest-length-btn" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
+            <button id="suggest-length-btn" data-paid="1" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
             <span id="length-picks" style="display:flex;gap:4px;align-items:center"></span>
             <div class="spacer"></div>
             <button id="mixxx-play-btn" data-paid="1" title="Играть весь сет в самом Mixxx. Всё готовит сам: если очередь Auto DJ разошлась с планом, закроет Mixxx, перепишет очередь и поднимет его обратно. Видно волны, фейдер и ручки.">▶ В Mixxx</button>
             <button id="mixxx-stop-btn" style="display:none" title="Остановить автопилот">⏹ Стоп</button>
             <button id="render-set-btn" title="Все переходы плана подряд, одним файлом и на одной бит-сетке. Тел треков между ними нет: слышно только сами сведения, двадцать минут вместо полутора часов.">🎬 Все швы подряд</button>
             <button id="render-full-btn" data-paid="1" title="Весь сет целиком одним треком, в едином темпе, без потерь">💿 Собрать сет</button>
-            <button id="build-strategy-btn">🗺 Построить план</button>
+            <button id="build-strategy-btn" data-paid="1">🗺 Построить план</button>
             <button id="strategy-more-btn" title="Дуга, вариант, длительность, жанр, формат файла">⚙</button>
           </div>
           <!-- Редко трогаемое — за кнопкой «⚙».
@@ -1132,24 +1185,7 @@
             <div class="empty" style="padding:18px">Сначала загрузите библиотеку (вкладка Library), затем нажмите «Построить план».</div>
           </div>
         </div>
-        <!-- Ассистент живёт здесь, а не отдельной вкладкой: спрашивают о
-             плане, глядя на план. Сам чат никуда не переезжал — сюда
-             переносится готовый блок из #chat-view, чтобы вся его
-             проводка (ws, история, запись) осталась той же. -->
-        <aside class="assist-col" id="assist-col">
-          <div class="assist-head">
-            <b>Ассистент</b>
-            <button class="ghost doc-btn" data-doc="guide" title="Как пользоваться DARAVE">Руководство</button>
-            <button class="ghost doc-btn" data-doc="dj" title="Темп, фразировка, тональность, уровень">Сведение</button>
-            <button class="ghost doc-btn" data-doc="music" title="Квадраты, колесо Камелота, секции, слои">Теория</button>
-            <button class="ghost doc-btn" data-doc="techniques" title="Все приёмы: что делают и когда">Приёмы</button>
-            <span class="spacer"></span>
-            <button id="assist-hide" class="ghost" title="Свернуть — план станет шире">✕</button>
-          </div>
-          <div id="assist-slot"></div>
-        </aside>
       </div>
-      <button id="assist-show" title="Спросить ассистента про этот план">💬</button>
     </div>
 
     <!-- ===== Техника ===== -->
@@ -1206,6 +1242,31 @@
         </div>
       </div>
     </div>
+
+        <!-- Ассистент и справочники стоят рядом со ВСЕМИ вкладками, а не
+           отдельной вкладкой и не только в ControlC. Спрашивают о том,
+           на что смотрят: про трек — из Library, про приём — из
+           Technician, про шов — из Clipping. Панель, доступная из
+           одного места, вынуждает уходить с того экрана, про который
+           вопрос, — то есть терять как раз то, о чём спрашиваешь.
+
+           Сам чат никуда не переезжал: в #assist-slot переносится
+           готовый узел #chat-col, чтобы вся его проводка (ws, история,
+           запись) осталась той же. -->
+      <aside class="assist-col" id="assist-col">
+          <div class="assist-head">
+            <b>Ассистент</b>
+            <button class="ghost doc-btn" data-doc="guide" title="Как пользоваться DARAVE">Руководство</button>
+            <button class="ghost doc-btn" data-doc="dj" title="Темп, фразировка, тональность, уровень">Сведение</button>
+            <button class="ghost doc-btn" data-doc="music" title="Квадраты, колесо Камелота, секции, слои">Теория</button>
+            <button class="ghost doc-btn" data-doc="techniques" title="Все приёмы: что делают и когда">Приёмы</button>
+            <span class="spacer"></span>
+            <button id="assist-hide" class="ghost" title="Свернуть — рабочая область станет шире">✕</button>
+          </div>
+          <div id="assist-slot"></div>
+      </aside>
+      <button id="assist-show" title="Спросить ассистента">💬</button>
+    </div><!-- /#stage -->
   </div>
 </div>
 
@@ -1378,9 +1439,131 @@
     });
   }
 
+  // ------------------------------------------------------------- аккаунт
+  //
+  // Кто вошёл, какой тариф и сколько ещё действует проверка — всё это
+  // уже приходит в /account, ради замка на кнопках. Показать это
+  // человеку стоит одного запроса больше нуля, поэтому панель живёт на
+  // том же ответе.
+
+  // Цвет аватара считается из строки. Ничего не грузится, ничего не
+  // хранится: у одного и того же адреса он всегда один и тот же, и
+  // человек узнаёт свой кружок, не читая подпись.
+  function acctHue(seed) {
+    let h = 0;
+    seed = String(seed || "?");
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return h % 360;
+  }
+
+  const TIER_RU = { free: "Бесплатный", personal: "Полная", workshop: "С разбором" };
+
+  // Версию спрашиваем один раз у /health: в панели она нужна, чтобы
+  // человек мог назвать её в письме, а держать её второй копией в
+  // разметке — значит однажды забыть обновить.
+  let ACCT_VERSION = "";
+  fetch("/health").then(function (r) { return r.json(); })
+    .then(function (h) { ACCT_VERSION = String((h && h.version) || ""); })
+    .catch(function () { });
+
+  let acctPop = null;
+  function acctClose() {
+    if (acctPop) { acctPop.remove(); acctPop = null; }
+    document.removeEventListener("mousedown", acctOutside, true);
+    document.removeEventListener("keydown", acctEsc, true);
+  }
+  function acctOutside(e) {
+    const btn = document.getElementById("acct-btn");
+    if (acctPop && !acctPop.contains(e.target) && btn && !btn.contains(e.target)) acctClose();
+  }
+  function acctEsc(e) { if (e.key === "Escape") acctClose(); }
+
+  function acctPanel(a) {
+    if (acctPop) { acctClose(); return; }
+    const btn = document.getElementById("acct-btn");
+    const name = (a.nickname || "").trim() || String(a.email || "").split("@")[0] || "вы";
+    const paid = !!(a.tier && a.tier !== "free" && !a.expired_tier);
+
+    const pop = document.createElement("div");
+    pop.className = "acct-pop";
+
+    const who = document.createElement("div");
+    who.className = "who";
+    const av = document.createElement("span");
+    av.className = "acct-av";
+    av.style.background = "hsl(" + acctHue(a.email || name) + ",42%,38%)";
+    av.textContent = name.slice(0, 2);
+    const nmBox = document.createElement("div");
+    const nm = document.createElement("div");
+    nm.className = "nm"; nm.textContent = name;
+    const em = document.createElement("div");
+    em.className = "em"; em.textContent = a.email || "";
+    nmBox.appendChild(nm); nmBox.appendChild(em);
+    who.appendChild(av); who.appendChild(nmBox);
+    pop.appendChild(who);
+
+    function line(k, v) {
+      const d = document.createElement("div");
+      d.className = "line";
+      const s1 = document.createElement("span"); s1.textContent = k;
+      const s2 = document.createElement("b"); s2.textContent = v;
+      d.appendChild(s1); d.appendChild(s2);
+      pop.appendChild(d);
+    }
+    line("Тариф", TIER_RU[a.tier] || a.tier || "—");
+    if (a.expired_tier) line("Внимание", "оплата истекла");
+    line("Проверка входа", a.days_left > 0 ? "ещё " + a.days_left + " дн." : "истекает");
+    if (ACCT_VERSION) line("Версия", ACCT_VERSION);
+
+    const acts = document.createElement("div");
+    acts.className = "acts";
+    const site = document.createElement("a");
+    site.href = paid ? "https://darave.ru/app/" : "https://darave.ru/app/?buy=personal";
+    site.target = "_blank"; site.rel = "noopener";
+    site.textContent = paid ? "Профиль" : "Купить";
+    const out = document.createElement("button");
+    out.textContent = "Выйти";
+    out.onclick = function () {
+      // Выход стирает токен на этой машине. Подписку он не трогает —
+      // о чём и говорим, иначе кнопку боятся нажимать.
+      if (!confirm("Выйти на этом компьютере?\n\nПодписка останется: войти обратно можно с darave.ru.")) return;
+      out.disabled = true;
+      fetch("/unpair", { method: "POST" })
+        .then(function () { location.reload(); })
+        .catch(function () { out.disabled = false; alert("Не получилось выйти — программа не ответила."); });
+    };
+    acts.appendChild(site); acts.appendChild(out);
+    pop.appendChild(acts);
+
+    document.body.appendChild(pop);
+    acctPop = pop;
+    // Прижимаем к правому краю кнопки, но не даём вылезти за экран.
+    const r = btn.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    pop.style.top = (r.bottom + 8) + "px";
+    pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + "px";
+    document.addEventListener("mousedown", acctOutside, true);
+    document.addEventListener("keydown", acctEsc, true);
+  }
+
+  function paintAccount(a) {
+    const btn = document.getElementById("acct-btn");
+    if (!btn) return;
+    if (!a || !a.signed_in) { btn.hidden = true; return; }
+    const name = (a.nickname || "").trim() || String(a.email || "").split("@")[0] || "вы";
+    const av = document.getElementById("acct-av");
+    av.style.background = "hsl(" + acctHue(a.email || name) + ",42%,38%)";
+    av.textContent = name.slice(0, 2);
+    document.getElementById("acct-name").textContent = name;
+    btn.title = (a.email || "") + " · " + (TIER_RU[a.tier] || a.tier || "");
+    btn.hidden = false;
+    btn.onclick = function () { acctPanel(a); };
+  }
+
   fetch("/account").then(function (r) { return r.json(); }).then(function (a) {
     PAID = !!(a && a.tier && a.tier !== "free" && !a.expired_tier);
     lockPaid();
+    paintAccount(a);
   }).catch(function () { /* не ответил — не запираем: см. выше */ });
 
   // Часть кнопок рисуется на ходу (вкладка «Отбор»), поэтому одного
@@ -4821,13 +5004,20 @@
   });
 
   document.getElementById("render-set-btn").addEventListener("click", async function () {
-    if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
+    // План здесь НЕ обязателен. Это единственная кнопка ControlC,
+    // работающая без оплаты, и требовать от бесплатного пользователя
+    // сперва нажать платную кнопку — значит её выключить. Если плана
+    // нет, бэкенд построит его для себя и никому не отдаст.
+    if (!currentRoom) { addMessage("Сначала войдите в комнату.", "system"); return; }
     const out = _setOut();
     const base = "/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/render";
-    out.textContent = "Собираю все швы подряд...";
+    out.textContent = currentStrategy ? "Собираю все швы подряд..."
+                                      : "Строю порядок и собираю все швы подряд...";
     try {
       const r = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seconds_between: 50,
+          arc_shape: (document.getElementById("arc-shape-select") || {}).value || "rising",
+          target_minutes: Number((document.getElementById("target-minutes") || {}).value) || undefined,
           format: document.getElementById("set-format").value }) });
       const d = await r.json();
       if (!r.ok) { out.textContent = d.detail || "Не удалось запустить"; return; }

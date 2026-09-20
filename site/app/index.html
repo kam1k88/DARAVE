@@ -93,6 +93,18 @@
               gap:10px; margin-bottom:6px; }
   .tier-row b { font-size:14.5px; }
   [hidden] { display:none !important; }
+  /* Аватар и кнопка профиля в шапке. */
+  .av { width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center;
+        justify-content:center; font:600 10.5px/1 inherit; color:#fff; flex:none; }
+  .who button { display:inline-flex; align-items:center; gap:9px; background:transparent;
+                border:1px solid transparent; border-radius:20px; padding:4px 11px 4px 4px;
+                color:inherit; font:inherit; cursor:pointer; }
+  .who button:hover { border-color:var(--line,#10505f); }
+  .prof-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+  .prof-row input { flex:1; min-width:170px; }
+  .ord { display:flex; justify-content:space-between; gap:12px; padding:7px 0;
+         border-bottom:1px solid var(--line,#10505f); font-size:13.5px; }
+  .ord:last-child { border-bottom:0; }
 </style>
 </head>
 <body>
@@ -123,7 +135,9 @@
   <!-- ─────────── поиск программы ─────────── -->
   <section id="connect" hidden>
     <div class="who">
-      <span>Вы вошли как <b id="who-email"></b></span>
+      <button type="button" id="who-btn" title="Профиль и устройства">
+        <span id="who-av"></span><b id="who-email"></b>
+      </button>
       <a id="logout">Выйти</a>
     </div>
     <div id="connect-body"></div>
@@ -249,10 +263,137 @@
 
   var pendingBuy = null;    // тариф, за которым человек пришёл с витрины
 
+  // Аватар считается из строки, а не хранится: картинку негде держать и
+  // некому модерировать, а буквы с цветом выводятся из почты и всегда
+  // одни и те же у одного человека.
+  function avatarHtml(seed, label) {
+    var h = 0, i;
+    seed = String(seed || "?");
+    for (i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    var txt = String(label || seed).trim().slice(0, 2).toUpperCase();
+    return '<span class="av" style="background:hsl(' + (h % 360) + ',42%,38%)">' +
+           escapeHtml(txt) + '</span>';
+  }
+
+  var ME = null;    // последний ответ me.php — чтобы не ходить за ним дважды
+
+  function accApi(payload) {
+    return fetch("/api/account.php", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { status: r.status, data: d };
+      });
+    });
+  }
+
+  // Экран профиля. Открывается по аватару в шапке; «Назад» возвращает
+  // туда, откуда пришли, — к поиску программы.
+  function showProfile() {
+    var u = (ME && ME.user) || {};
+    var TN = { free: "Бесплатно", personal: "Полная", workshop: "С разбором" };
+
+    body('<h1>Профиль</h1>' +
+         '<div class="note"><b>' + escapeHtml(u.email || "") + '</b><br>' +
+         'Тариф: ' + escapeHtml(TN[u.tier] || u.tier || "—") +
+         (u.expired ? ' <span style="color:var(--warn,#f0a83c)">(срок истёк)</span>' : '') +
+         (u.tier && u.tier !== "free" && !u.tier_until ? ' · бессрочно' : '') +
+         '</div>' +
+
+         '<h2 style="font-size:15px;margin:20px 0 6px">Как вас звать</h2>' +
+         '<div class="prof-row"><input id="pf-nick" maxlength="40" placeholder="имя или никнейм" value="' +
+         escapeHtml(u.nickname || "") + '">' +
+         '<button type="button" id="pf-nick-save">Сохранить</button></div>' +
+
+         '<h2 style="font-size:15px;margin:20px 0 6px">Пароль</h2>' +
+         '<div class="prof-row"><input id="pf-old" type="password" placeholder="текущий"></div>' +
+         '<div class="prof-row"><input id="pf-new" type="password" placeholder="новый, от 10 знаков">' +
+         '<button type="button" id="pf-pass-save">Сменить</button></div>' +
+
+         '<h2 style="font-size:15px;margin:20px 0 6px">Компьютеры</h2>' +
+         '<div id="pf-devices"></div>' +
+
+         '<h2 style="font-size:15px;margin:20px 0 6px">Оплаты</h2>' +
+         '<div id="pf-orders" class="note">Загружаю…</div>' +
+
+         '<div id="pf-out"></div>' +
+         '<div class="prof-row" style="margin-top:22px">' +
+         '<button type="button" id="pf-back">← К программе</button>' +
+         '<span style="flex:1"></span>' +
+         '<button type="button" id="pf-del" class="quiet">Удалить учётную запись</button></div>');
+
+    if (ME) renderDevices($("pf-devices"), ME.devices || [], ME.max_devices || 1);
+
+    var out = $("pf-out");
+    function say(cls, text) { out.innerHTML = '<div class="note ' + cls + '">' + text + '</div>'; }
+
+    $("pf-back").addEventListener("click", findClient);
+
+    $("pf-nick-save").addEventListener("click", function () {
+      accApi({ action: "profile", nickname: $("pf-nick").value }).then(function (r) {
+        if (!r.data.ok) { say("bad", escapeHtml(r.data.error || "Не вышло")); return; }
+        if (ME && ME.user) ME.user.nickname = r.data.nickname;
+        paintWho();
+        say("good", "Имя сохранено.");
+      });
+    });
+
+    $("pf-pass-save").addEventListener("click", function () {
+      accApi({ action: "password", old: $("pf-old").value, "new": $("pf-new").value })
+        .then(function (r) {
+          if (!r.data.ok) { say("bad", escapeHtml(r.data.error || "Не вышло")); return; }
+          $("pf-old").value = ""; $("pf-new").value = "";
+          say("good", escapeHtml(r.data.note || "Пароль изменён."));
+        });
+    });
+
+    accApi({ action: "orders" }).then(function (r) {
+      var box = $("pf-orders");
+      var list = (r.data && r.data.orders) || [];
+      if (!list.length) { box.innerHTML = "Оплат пока не было."; return; }
+      box.innerHTML = list.map(function (o) {
+        var st = o.status === "succeeded" ? "оплачен"
+               : o.status === "refunded" ? "возвращён" : o.status;
+        return '<div class="ord"><span>' + escapeHtml(prettyDate(o.paid_at || o.created_at)) +
+               ' · ' + escapeHtml(o.amount) + ' ₽</span><span class="t">' +
+               escapeHtml(st) + '</span></div>';
+      }).join("");
+    });
+
+    $("pf-del").addEventListener("click", function () {
+      var pass = prompt("Удаление учётной записи.\n\nВойти в неё больше будет нельзя. " +
+                        "История оплат сохранится — это документы по закону.\n\nВведите пароль:");
+      if (!pass) return;
+      accApi({ action: "delete", password: pass }).then(function (r) {
+        if (!r.data.ok) { say("bad", escapeHtml(r.data.error || "Не вышло")); return; }
+        body('<h1>Учётная запись удалена</h1><div class="note">' +
+             escapeHtml(r.data.note || "") + '</div>');
+      });
+    });
+  }
+
+  // Аватар и имя в шапке. Отдельной функцией, потому что имя меняется
+  // прямо на экране профиля и шапка должна это увидеть.
+  function paintWho() {
+    var u = (ME && ME.user) || {};
+    var label = u.nickname || u.email || "";
+    var av = $("who-av"), em = $("who-email");
+    if (av) av.innerHTML = avatarHtml((u.email || "") + "|" + label, label);
+    if (em) em.textContent = label;
+  }
+
   function showConnect(user) {
     $("auth").hidden = true;
     $("connect").hidden = false;
-    $("who-email").textContent = user.email;
+    paintWho();
+
+    var btn = $("who-btn");
+    if (btn && !btn.dataset.wired) {
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", showProfile);
+    }
 
     var q = new URLSearchParams(location.search);
     var paid = q.get("paid");

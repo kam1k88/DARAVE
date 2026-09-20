@@ -43,13 +43,17 @@ function current_user(): ?array
     }
     $hash = hash('sha256', $token);
     $st = db()->prepare(
-        'SELECT u.id, u.email, u.tier, u.tier_until, u.blocked
+        'SELECT u.id, u.email, u.nickname, u.tier, u.tier_until, u.blocked,
+                u.is_admin, u.deleted_at
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > NOW()'
     );
     $st->execute([$hash]);
     $row = $st->fetch();
-    if (!$row || (int)$row['blocked'] === 1) {
+    // Обезличенная учётка — это НЕ пользователь: почта затёрта, пароль
+    // невалиден, заказы остались только как документы. Старая сессия
+    // такой учётки не должна пускать никуда.
+    if (!$row || (int)$row['blocked'] === 1 || $row['deleted_at'] !== null) {
         return null;
     }
     return $row;
@@ -132,9 +136,56 @@ function user_public(array $u): array
 {
     return [
         'email'      => $u['email'],
+        'nickname'   => $u['nickname'] ?? null,
         'tier'       => effective_tier($u),
         'tier_paid'  => $u['tier'],
         'tier_until' => $u['tier_until'],
         'expired'    => !tier_active($u),
+        'is_admin'   => (int)($u['is_admin'] ?? 0) === 1,
     ];
+}
+
+/**
+ * Админ — это флаг на обычной учётной записи, а не вторая система входа.
+ *
+ * Так вся уже написанная и проверенная машинерия — защищённая кука,
+ * защита от перебора паролей, срок сессии, выход — работает и для
+ * админки без единой новой строки. Отдельный «вход для админа» означал
+ * бы второй логин, второй сброс пароля и второй шанс ошибиться.
+ *
+ * Цена решения: чужой доступ к вашей учётке — это сразу и админка.
+ * Поэтому пароль у неё должен быть отдельный и длинный.
+ *
+ * Флаг ставится ТОЛЬКО руками в базе (см. db-admin.sql). Через интерфейс
+ * его выдать нельзя — иначе первый же зашедший сделал бы админом себя.
+ */
+function require_admin(): array
+{
+    $u = require_user();
+    if ((int)($u['is_admin'] ?? 0) !== 1) {
+        // 404, а не 403: постороннему незачем знать, что админка есть.
+        json_out(['error' => 'Not found'], 404);
+    }
+    return $u;
+}
+
+/**
+ * След в журнале. Вызывается ПОСЛЕ удачного действия, а не до: запись о
+ * том, чего не произошло, хуже её отсутствия.
+ */
+function admin_log(int $adminId, string $action, ?int $targetId = null, $details = null): void
+{
+    try {
+        db()->prepare('INSERT INTO admin_log (admin_id, action, target_id, details, ip)
+                       VALUES (?, ?, ?, ?, ?)')
+            ->execute([
+                $adminId, $action, $targetId,
+                $details === null ? null : json_encode($details, JSON_UNESCAPED_UNICODE),
+                substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+            ]);
+    } catch (Throwable $e) {
+        // Журнал не должен ронять само действие: деньги уже вернули,
+        // тариф уже выдали. Но молчать тоже нельзя.
+        error_log('DARAVE admin_log: ' . $e->getMessage());
+    }
 }

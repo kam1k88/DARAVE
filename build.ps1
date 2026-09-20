@@ -16,7 +16,7 @@ param(
     [switch]$SkipInstaller,
     [switch]$StemsPack,
     [switch]$Clean,
-    [string]$Version = "1.0.0"
+    [string]$Version = "1.0.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,6 +119,26 @@ if (-not (Test-Path $ffExe)) {
 if (-not (Test-Path $ffExe)) { Fail "ffmpeg так и не появился в build\ffmpeg\bin" }
 Say "ffmpeg на месте" Green
 
+# ------------------------------------------------- версия внутри программы
+#
+# APP_VERSION в server.py — это то, что программа показывает в панели
+# аккаунта и сообщает сайту при входе. Раньше сюда не заглядывали, и
+# установщик 1.0.2 ставил exe, который всем представлялся как 1.0.1.
+# Источник правды один — параметр -Version, поэтому приводим файл к нему.
+$srvPath = Join-Path $root "server.py"
+$srv     = Get-Content -Raw -Encoding UTF8 $srvPath
+if ($srv -notmatch '(?m)^APP_VERSION\s*=\s*"[^"]*"') {
+    Fail "в server.py не нашёл строку APP_VERSION — версия внутри программы осталась бы старой"
+}
+$srvNew = [regex]::Replace($srv, '(?m)^APP_VERSION\s*=\s*"[^"]*"', "APP_VERSION = `"$Version`"")
+if ($srvNew -ne $srv) {
+    # Без BOM: PyInstaller и git одинаково не любят его в .py.
+    [System.IO.File]::WriteAllText($srvPath, $srvNew, (New-Object System.Text.UTF8Encoding $false))
+    Say "APP_VERSION в server.py приведён к $Version (это правка исходника — она попадёт в коммит)" Yellow
+} else {
+    Say "APP_VERSION в server.py уже $Version" Green
+}
+
 # ---------------------------------------------------------------- сборка
 if (Test-Path (Join-Path $root "dist\DARAVE")) {
     Remove-Item -Recurse -Force (Join-Path $root "dist\DARAVE")
@@ -175,23 +195,71 @@ if ($SkipInstaller) {
     exit 0
 }
 
+# Поиск ISCC.exe.
+#
+# Здесь был баг, из-за которого установщик не собирался НИКОГДА, а скрипт
+# говорил «Inno Setup не найден» даже когда он стоял:
+#
+#     "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe"
+#
+# В двойных кавычках PowerShell берёт за имя переменной $env:ProgramFiles,
+# а "(x86)" считает обычным текстом. Получается C:\Program Files(x86)\...
+# — БЕЗ пробела, и такой папки нет. Имена переменных со скобками нужно
+# писать в фигурных: ${env:ProgramFiles(x86)}.
+#
+# Заодно ищем не только "Inno Setup 6" — версии меняются. В PATH Inno себя
+# не прописывает, поэтому на Get-Command полагаться нельзя. Последняя
+# надежда — реестр, куда установщик пишет путь всегда.
 $iscc = $null
-foreach ($c in @("$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
-                 "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
-    if (Test-Path $c) { $iscc = $c; break }
+$roots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles, "$env:LOCALAPPDATA\Programs") |
+         Where-Object { $_ -and (Test-Path $_) }
+# $base, а НЕ $root: $root — корень проекта, он задан в начале скрипта и
+# нужен ниже, чтобы найти DARAVE.iss и папку installer. Цикл с именем
+# $root затирал его, и ISCC потом искал .iss в C:\Program Files (x86).
+foreach ($base in $roots) {
+    $found = Get-ChildItem -Path $base -Filter "Inno Setup*" -Directory -ErrorAction SilentlyContinue |
+             Sort-Object Name -Descending |
+             ForEach-Object { Join-Path $_.FullName "ISCC.exe" } |
+             Where-Object { Test-Path $_ } |
+             Select-Object -First 1
+    if ($found) { $iscc = $found; break }
+}
+if (-not $iscc) {
+    foreach ($key in @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*_is1",
+                       "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*_is1")) {
+        $loc = Get-ItemProperty $key -ErrorAction SilentlyContinue |
+               Where-Object { $_.DisplayName -like "Inno Setup*" } |
+               Select-Object -ExpandProperty InstallLocation -ErrorAction SilentlyContinue |
+               Select-Object -First 1
+        if ($loc -and (Test-Path (Join-Path $loc "ISCC.exe"))) { $iscc = Join-Path $loc "ISCC.exe"; break }
+    }
 }
 if (-not $iscc) {
     $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($cmd) { $iscc = $cmd.Source }
 }
+if ($iscc) { Say "Inno Setup: $iscc" }
 if (-not $iscc) {
-    Say "Inno Setup не найден — установщик не собран, но dist\DARAVE готов." Yellow
+    # ВАЖНО: exit 1, а не 0.
+    #
+    # Раньше здесь стоял exit 0, и сборка без Inno Setup заканчивалась
+    # «успехом»: dist\DARAVE свежий, установщик сентябрьский, а PowerShell
+    # показывает обычное приглашение. Один раз этого хватило, чтобы
+    # старый файл переименовали в новую версию и чуть не выложили.
+    # Скрипт, который не сделал то, ради чего запускался, обязан падать.
+    Say "Inno Setup НЕ НАЙДЕН — установщик НЕ собран. В папке installer лежит СТАРЫЙ файл." Red
     Say "Поставьте: winget install JRSoftware.InnoSetup — и запустите build.ps1 снова." Yellow
-    exit 0
+    Say "Папку dist\DARAVE при этом можно запускать как есть — она собрана." Gray
+    exit 1
+}
+
+$iss = Join-Path $root "DARAVE.iss"
+if (-not (Test-Path $iss)) {
+    Fail "не нашёл $iss. ISCC на такое отвечает «не удается найти указанный файл» без имени файла, поэтому проверяем сами."
 }
 
 Say "собираю установщик"
-& $iscc "/DMyAppVersion=$Version" (Join-Path $root "DARAVE.iss")
+& $iscc "/DMyAppVersion=$Version" $iss
 if ($LASTEXITCODE -ne 0) { Fail "Inno Setup завершился с ошибкой" }
 
 $out = Get-ChildItem (Join-Path $root "installer") -Filter "*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1

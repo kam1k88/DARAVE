@@ -32,8 +32,23 @@ cors();
 require_post();
 
 $in = body();
+
+// Два входа, оба надёжные.
+//
+// Секрет — для скриптов и боевой проверки из PROBE.md, когда браузера и
+// сессии нет вовсе. Админская сессия — для кнопки в админке: гонять
+// человека за секретом в _config.php на сервере каждый раз значит
+// сделать кнопку, которой не пользуются.
 $secret = (string)(cfg()['selftest_secret'] ?? '');
-if ($secret === '' || !hash_equals($secret, (string)($in['secret'] ?? ''))) {
+$bySecret = $secret !== '' && hash_equals($secret, (string)($in['secret'] ?? ''));
+$admin = null;
+if (!$bySecret) {
+    $u = current_user();
+    if ($u !== null && (int)($u['is_admin'] ?? 0) === 1) {
+        $admin = $u;
+    }
+}
+if (!$bySecret && $admin === null) {
     // 404, а не 403: постороннему незачем знать, что такой адрес есть.
     json_out(['error' => 'Not found'], 404);
 }
@@ -115,6 +130,11 @@ try {
         'error' => 'Деньги возвращены, но база не обновилась. Смотрите лог сайта.',
         'refund_id' => $r['id'],
     ], 500);
+}
+
+if ($admin !== null) {
+    admin_log((int)$admin['id'], 'refund', (int)$order['user_id'],
+              ['order' => $order_id, 'amount' => $amount, 'refund_id' => $r['id'] ?? null]);
 }
 
 $st = $pdo->prepare('SELECT email, tier, tier_until FROM users WHERE id = ?');

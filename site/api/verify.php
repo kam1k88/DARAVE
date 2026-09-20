@@ -56,10 +56,14 @@ try {
     json_out(['ok' => false, 'error' => 'Внутренняя ошибка'], 500);
 }
 
-$st = $pdo->prepare('SELECT id, email, tier, tier_until, blocked FROM users WHERE id = ?');
+$st = $pdo->prepare(
+    'SELECT id, email, nickname, tier, tier_until, blocked, deleted_at FROM users WHERE id = ?'
+);
 $st->execute([$uid]);
 $u = $st->fetch();
-if (!$u || (int)$u['blocked'] === 1) {
+// deleted_at: обезличенная учётная запись не должна впускать программу.
+// Её строка остаётся в базе ради чеков, но человека за ней уже нет.
+if (!$u || (int)$u['blocked'] === 1 || $u['deleted_at'] !== null) {
     json_out(['ok' => false, 'error' => 'Учётная запись недоступна'], 403);
 }
 
@@ -95,7 +99,12 @@ $pdo->prepare(
 
 json_out([
     'ok'      => true,
-    'user'    => ['email' => $u['email'], 'tier' => $tier, 'expired' => !tier_active($u)],
+    'user'    => [
+        'email'    => $u['email'],
+        'nickname' => (string)($u['nickname'] ?? ''),
+        'tier'     => $tier,
+        'expired'  => !tier_active($u),
+    ],
     // Сколько программа может работать, не переспрашивая. Не «навсегда»,
     // но и не «каждый запуск»: у диджея сеть пропадает в самый
     // неподходящий момент, и программа, требующая интернет на старте,

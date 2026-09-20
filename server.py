@@ -282,6 +282,66 @@ async def require_account(request: "Request", call_next):
     return await call_next(request)
 
 
+# ----------------------------------------------------------- платная часть
+#
+# Граница платного — решение продуктовое, и оно ровно одно, поэтому
+# живёт здесь одной функцией, а не рассыпано по обработчикам.
+#
+# БЕСПЛАТНО — всё, что можно посмотреть и послушать:
+#   разбор библиотеки любого размера, слои, подбор пар, прослушивание и
+#   отбор швов, план сета (порядок, дуга, длительность) и превью
+#   сведений — выборка переходов по всему сету.
+#
+# ПЛАТНО — унести результат:
+#   свести сет целиком в файл, собрать сет из пула одобренных швов,
+#   выгрузить порядок в Mixxx и Auto DJ, автопилот, проиграть переход
+#   из плана на деках.
+#
+# Одной фразой: смотреть и слушать — сколько угодно, унести — за деньги.
+#
+# Почему план отдан бесплатно. Соседи продают ровно его — порядок
+# треков, точки, подсказки, — а сводить всё равно приходится руками.
+# Свести кодом не умеет почти никто. Отдавать бесплатно то, на чём
+# зарабатывают другие, и брать за то, чего у них нет, — единственный
+# способ объяснить, чем DARAVE отличается, не уговаривая.
+#
+# И это честная демка: человек слышит, КАК программа сводит его
+# собственные треки, и упирается ровно в ту кнопку, ради которой всё
+# написано. Работает даже с торрент-копии.
+#
+# Ограничений по размеру библиотеки и длине сета НЕТ намеренно: счётчик
+# «до 50 треков» наказывает того, кто принёс свою музыку разбираться,
+# то есть самого заинтересованного человека.
+#
+# Здесь НЕ замок, а объяснение. Настоящая проверка — только эта функция
+# на сервере: страница открыта в браузере на машине пользователя, и
+# любая пометка в интерфейсе снимается за секунду.
+PAID_HINT = ("Сборка сета — в платной версии: 690 ₽ один раз на darave.ru. "
+             "Разбор, отбор швов, план и превью сведений работают без оплаты.")
+
+
+def require_paid(what: str) -> None:
+    """Отказать бесплатному режиму в сборке сета — внятно.
+
+    402 Payment Required, а не 403: по нему страница показывает не
+    «доступ запрещён», а что именно платное и сколько стоит. Отказ,
+    который не объясняет себя, читается как поломка — и человек уходит
+    не купив, а решив, что программа сломана.
+    """
+    if os.environ.get("DARAVE_NO_AUTH") == "1":
+        return
+    st = cloud_auth.status()
+    if str(st.get("tier") or "free") != "free" and not st.get("expired_tier"):
+        return
+    if st.get("expired_tier"):
+        why = "Срок оплаты истёк, работает бесплатный режим."
+    elif not st.get("signed_in"):
+        why = "Вы не вошли — работает бесплатный режим."
+    else:
+        why = "Сейчас работает бесплатный режим."
+    raise HTTPException(status_code=402, detail=f"«{what}» — платная часть. {why} {PAID_HINT}")
+
+
 @app.get("/health")
 async def health() -> JSONResponse:
     """Коротко: «я здесь». Открыт без входа — страница на darave.ru должна уметь
@@ -857,6 +917,7 @@ async def export_set(session_id: str, body: dict | None = None) -> JSONResponse:
 
     Плейлист — это и есть «нативно в Mixxx»: треки играет сам Mixxx, а не
     браузер. Загрузить его в Mixxx: Медиатека -> Импорт плейлиста."""
+    require_paid("Выгрузить сет плейлистом")
     room = sessions.get_or_create(session_id)
     if room.last_strategy is None:
         raise HTTPException(status_code=400, detail="Сначала постройте план (кнопка «Построить план»).")
@@ -889,6 +950,7 @@ async def export_autodj(session_id: str, body: dict | None = None) -> JSONRespon
     Плейлист .m3u8 порядок ИГРАТЬ не заставляет — он только список путей;
     ни точки, ни приёма в него положить нельзя, потому что таких полей
     нет в модели плейлиста Mixxx (см. mixxx_autodj.py)."""
+    require_paid("Отправить сет в Auto DJ")
     import mixxx_autodj
 
     room = sessions.get_or_create(session_id)
@@ -915,40 +977,78 @@ async def export_autodj(session_id: str, body: dict | None = None) -> JSONRespon
     return JSONResponse(out)
 
 
+_preview_tasks: dict[str, asyncio.Task] = {}
+_preview_status: dict[str, dict] = {}
+
+
 @app.post("/api/rooms/{session_id}/strategy/render")
 async def render_set(session_id: str, body: dict | None = None) -> JSONResponse:
-    """Рендерит весь сет одним аудиофайлом (превью: все переходы подряд).
+    """ВСЕ швы сета подряд одним файлом, на одной бит-сетке.
 
-    Считается в отдельном потоке — это CPU-bound работа на десятки секунд,
-    в event loop её пускать нельзя, иначе встанут телеметрия и чат."""
+    Не выборка: в файл идёт каждый переход плана. Тел треков между ними
+    нет, поэтому 46 сведений укладываются в двадцать минут вместо
+    полутора часов — слышно ровно то, ради чего это слушают, и подряд,
+    как один непрерывный микс.
+
+    Фоном, как и полная сборка. Раньше здесь считалась выборка из восьми
+    переходов, и ответ успевал прийти в открытый запрос. Все сорок шесть
+    считаются минутами, а браузер к тому времени давно оборвёт
+    соединение — и человек увидит не результат, а ошибку сети.
+    Прогресс забирается GET по тому же адресу.
+    """
     if demo_render is None:
         raise HTTPException(status_code=503,
                             detail="Нужны numpy/scipy/librosa: pip install -r requirements-analysis.txt")
     room = sessions.get_or_create(session_id)
     if room.last_strategy is None:
         raise HTTPException(status_code=400, detail="Сначала постройте план.")
+    task = _preview_tasks.get(session_id)
+    if task is not None and not task.done():
+        raise HTTPException(status_code=409, detail="Швы уже собираются — дождитесь окончания")
 
     body = body or {}
+    strategy = room.last_strategy
     out = SETS_DIR / f"{session_id}_{secrets.token_hex(4)}.wav"
-    try:
-        meta = await asyncio.to_thread(
-            set_export.render_set, room.last_strategy, str(out),
-            44100, float(body.get("seconds_between") or 50.0),
-            float(body.get("max_minutes") or 25.0),
-            float(body.get("join_bars") or 1.0),
-            None,
-            int(body.get("sample") or 8),
-            str(body.get("format") or "mp3"),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    total = len(strategy.get("transitions") or [])
+    _preview_status[session_id] = {"running": True, "done": 0, "total": total}
 
-    used = meta.get("techniques_used") or {}
-    out = Path(meta["path"])          # render_set сам меняет расширение под формат
-    logger.info(f"сет отрендерен: {meta['transitions_rendered']}/{meta['transitions_total']} переходов, "
-                f"{meta['duration_seconds']}с, техник использовано: {len(used)} "
-                f"({', '.join(f'{k}x{v}' for k, v in sorted(used.items()))})")
-    return JSONResponse({"ok": True, "url": f"/api/rooms/{session_id}/sets/{out.name}", **meta})
+    def _progress(done: int, all_n: int) -> None:
+        _preview_status[session_id] = {"running": True, "done": done, "total": all_n}
+
+    async def _run() -> None:
+        try:
+            meta = await asyncio.to_thread(
+                set_export.render_set, strategy, str(out),
+                44100, float(body.get("seconds_between") or 50.0),
+                float(body.get("max_minutes") or 120.0),
+                float(body.get("join_bars") or 1.0),
+                _progress,
+                int(body.get("sample") or 0),
+                str(body.get("format") or "mp3"),
+            )
+        except Exception as exc:
+            logger.exception("не смог собрать швы")
+            _preview_status[session_id] = {"running": False, "error": str(exc)}
+            return
+        used = meta.get("techniques_used") or {}
+        name = Path(meta["path"]).name      # render_set сам меняет расширение под формат
+        logger.info(f"швы собраны: {meta['transitions_rendered']}/{meta['transitions_total']} переходов, "
+                    f"{meta['duration_seconds']}с, сетка {'ровная' if meta.get('grid_ok') else 'СБИТА'}, "
+                    f"техник использовано: {len(used)} "
+                    f"({', '.join(f'{k}x{v}' for k, v in sorted(used.items()))})")
+        _preview_status[session_id] = {
+            "running": False, "done": meta["transitions_rendered"],
+            "total": meta["transitions_total"],
+            "url": f"/api/rooms/{session_id}/sets/{name}", **meta,
+        }
+
+    _preview_tasks[session_id] = asyncio.create_task(_run())
+    return JSONResponse({"ok": True, "started": True, "transitions": total})
+
+
+@app.get("/api/rooms/{session_id}/strategy/render")
+async def render_set_status(session_id: str) -> JSONResponse:
+    return JSONResponse(_preview_status.get(session_id, {"running": False}))
 
 
 @app.post("/api/rooms/{session_id}/strategy/transitions/{index}/demo")
@@ -1060,6 +1160,7 @@ async def render_full(session_id: str, body: dict | None = None) -> JSONResponse
     Запускается фоном: 90 минут аудио считаются пару минут, и держать всё
     это время открытый HTTP-запрос — верный способ получить таймаут в
     браузере. Прогресс забирается через GET того же адреса."""
+    require_paid("Свести сет целиком")
     if demo_render is None:
         raise HTTPException(status_code=503,
                             detail="Нужны numpy/scipy/librosa: pip install -r requirements-analysis.txt")
@@ -3124,6 +3225,7 @@ async def audition_pool_rerender_status(session_id: str) -> JSONResponse:
 @app.post("/api/rooms/{session_id}/audition/build")
 async def audition_build(session_id: str) -> JSONResponse:
     """Сет из одобренных швов — самая длинная цепочка, какая складывается."""
+    require_paid("Собрать сет из отобранных швов")
     import audition
 
     tracks = _room_tracks(session_id)
@@ -3321,6 +3423,7 @@ async def execute_strategy_transition(session_id: str, body: dict) -> JSONRespon
     """Материализует и сразу отправляет companion'у ОДИН переход из
     последнего построенного плана — кнопка "▶" у перехода в "Стратегии".
     body: {"transition_index": int, "source_deck": "A", "target_deck": "B"}"""
+    require_paid("Проиграть переход из плана")
     room = sessions.get_or_create(session_id)
     if room.last_strategy is None:
         raise HTTPException(status_code=400, detail="Сначала постройте план (POST .../strategy)")
@@ -3487,6 +3590,7 @@ async def autopilot_start(session_id: str, body: dict | None = None) -> JSONResp
     mode="set" — весь сет до конца; mode="clip" — один переход с разбегом
     в несколько тактов и коротким хвостом (чтобы посмотреть ОДИН стык,
     не слушая сет целиком)."""
+    require_paid("Автопилот")
     room = sessions.get_or_create(session_id)
     if room.last_strategy is None:
         raise HTTPException(status_code=400, detail="Сначала постройте план сета.")

@@ -95,6 +95,35 @@ function cors(): void
     }
 }
 
+/**
+ * Адрес сайта таким, каким его видит браузер.
+ *
+ * Не константа, потому что сайт отвечает и на darave.ru, и на
+ * www.darave.ru, а куку сессии браузер привязывает к ИМЕНИ хоста.
+ * Зашитый адрес означал бы, что человека, вошедшего на одном написании,
+ * после оплаты возвращают на другое — и он оказывается гостем ровно в
+ * тот момент, когда заплатил.
+ *
+ * Хост берём из белого списка origins, а не из заголовка Host как есть:
+ * заголовок подделывается, и подставная ссылка в return_url — известный
+ * способ увести человека на чужую страницу после оплаты.
+ */
+function base_url(): string
+{
+    $scheme = (($_SERVER['HTTPS'] ?? '') === 'on'
+            || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
+    $host = (string)($_SERVER['HTTP_HOST'] ?? '');
+    $candidate = $scheme . '://' . $host;
+    foreach (cfg()['origins'] as $allowed) {
+        if (strcasecmp($allowed, $candidate) === 0) {
+            return $allowed;
+        }
+    }
+    // Хост незнакомый — берём первый разрешённый. Лучше увести на
+    // правильный сайт, чем туда, куда попросил неизвестно кто.
+    return (string)(cfg()['origins'][0] ?? 'https://darave.ru');
+}
+
 function require_post(): void
 {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {

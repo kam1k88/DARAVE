@@ -1,0 +1,86 @@
+# Выкладка сайта на reg.ru.
+#
+# Что делает: при пуше в main копирует содержимое site/ в корень
+# darave.ru. Исходники DARAVE (Python) на хостинг НЕ едут — там им
+# нечего делать, сайт это только витрина, вход и оплата.
+#
+# Запустить вручную и посмотреть, что изменится, не трогая сервер:
+# вкладка Actions -> Deploy -> Run workflow -> dry_run = true.
+
+name: Deploy to reg.ru
+
+on:
+  push:
+    branches: [ main ]
+    # Пуш, который не трогал сайт, не должен дёргать сервер.
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Только показать, что изменится'
+        type: boolean
+        default: false
+
+# Две выкладки одновременно кладут файлы друг поверх друга, и на сервере
+# оказывается смесь двух версий. Лишнюю отменяем.
+concurrency:
+  group: deploy-darave
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ключ и known_hosts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # printf, а не echo: у секрета в GitHub может не быть перевода
+          # строки в конце, и ssh отказывается от такого ключа с
+          # «invalid format» — ошибка выглядит как «ключ неправильный».
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          test -s ~/.ssh/known_hosts
+
+      - name: Проверить связь
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.SSH_PORT || 22 }}" \
+              -o BatchMode=yes \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+              'test -d "${{ secrets.DEPLOY_PATH }}" || { echo "Нет каталога ${{ secrets.DEPLOY_PATH }}"; exit 1; }'
+
+      - name: Выкладка
+        run: |
+          set -euo pipefail
+          # --delete убирает с сервера всё, чего нет в site/. Поэтому
+          # исключения — не украшение, а защита: без них первая же
+          # выкладка сносит установщик и файл с ключами.
+          #
+          #   download/    173 МБ установщика, его там нет и быть не должно
+          #   _config.php  пароль базы и ключ ЮKassa, живут только на сервере
+          #   selftest.php страница диагностики, если вы её уже удалили
+          rsync -az --delete ${{ inputs.dry_run && '--dry-run --itemize-changes' || '' }} \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT || 22 }} -o BatchMode=yes" \
+            --exclude 'download/' \
+            --exclude 'api/_config.php' \
+            --exclude '*.log' \
+            --exclude '.DS_Store' \
+            site/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+
+      - name: Проверить, что сайт жив
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Выкладка «прошла успешно» и «сайт работает» — разные вещи.
+          # Без этой проверки сломанная выкладка выглядит зелёной галочкой.
+          for path in / /offer.html /requisites.html /app/ /api/me.php; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "https://darave.ru$path" || echo 000)
+            echo "  $code  $path"
+            [ "$code" = "200" ] || { echo "::error::https://darave.ru$path отдаёт $code"; exit 1; }
+          done
+          echo "Сайт отвечает."

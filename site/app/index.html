@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>DARAVE — вход</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
 <style>
   /* Палитра та же, что на витрине: человек приходит сюда с главной, и
      смена оформления на входе читается как «меня куда-то не туда
@@ -31,7 +33,7 @@
     display:flex; align-items:center; gap:9px; font-weight:800;
     letter-spacing:.08em; font-size:17px; margin-bottom:22px;
   }
-  .brand i { width:9px; height:9px; background:var(--flame); border-radius:2px; }
+  .brand img { width:1.3em; height:1.3em; display:block; }
   h1 { font-size:20px; margin:0 0 8px; letter-spacing:-.01em; }
   p  { margin:0 0 14px; color:var(--muted); font-size:14.5px; }
   p.tight { margin-bottom:8px; }
@@ -95,7 +97,7 @@
 </head>
 <body>
 <div class="card">
-  <div class="brand"><i></i>DARAVE</div>
+  <div class="brand"><img src="/mark.svg" alt="" width="20" height="20">DARAVE</div>
 
   <!-- ─────────── вход / регистрация ─────────── -->
   <section id="auth">
@@ -275,7 +277,7 @@
   // ─────────── оплата ───────────
 
   function startPayment(tier) {
-    var names = { personal: "Личная", workshop: "Мастерская" };
+    var names = { personal: "Полная", workshop: "С разбором" };
     body('<h1>Оплата тарифа «' + names[tier] + '»</h1>' +
          '<p><span class="spin">◐</span> Готовлю платёж…</p>');
 
@@ -433,7 +435,7 @@
     $("retry").addEventListener("click", findClient);
   }
 
-  var TIERS = { free: "Бесплатная", personal: "Личная", workshop: "Мастерская" };
+  var TIERS = { free: "Бесплатная", personal: "Полная", workshop: "С разбором" };
 
   function ready(health) {
     var acc = (health && health.account) || {};
@@ -444,7 +446,7 @@
       '<div class="note good">' +
       '<div class="tier-row"><b>Тариф: ' + escapeHtml(tier) + '</b>' +
       (acc.tier === "free"
-        ? '<a href="/app/?buy=personal" style="color:var(--flame)">Купить «Личную»</a>' : '') +
+        ? '<a href="/app/?buy=personal" style="color:var(--flame)">Купить «Полную»</a>' : '') +
       '</div>' +
       (acc.expired_tier ? 'Срок оплаты истёк — работает бесплатный режим.<br>' : '') +
       'Проверка входа действует ещё ' + (acc.days_left || 0) + ' дн.</div>' +

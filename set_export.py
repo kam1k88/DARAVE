@@ -357,12 +357,27 @@ PREVIEW_TAIL_BARS = 4.0
 
 def render_set(strategy: dict, out_path: str, sr: int = 44100,
                seconds_between: float = 50.0,
-               max_minutes: float = 30.0,
+               max_minutes: float = 120.0,
                join_bars: float = 1.0,
                progress=None,
-               sample: int = 10,
+               sample: int = 0,
                fmt: str = "mp3") -> dict:
-    """Рендерит весь сет в один WAV.
+    """Все швы сета подряд, одним файлом, на одной бит-сетке.
+
+    Это не выборка и не нарезка: в файл попадает КАЖДЫЙ переход плана,
+    сшитый со следующим по границе такта. Тел треков между ними нет —
+    только сами сведения, поэтому 46 переходов укладываются в 20 минут
+    вместо полутора часов, и слышно ровно то, ради чего это слушают.
+
+    Бит-сетка одна на весь файл. Такт считается один раз от мастер-темпа
+    сета, каждый кусок обрезается до целого числа тактов, склейка идёт с
+    перекрытием тоже в целых тактах — поэтому пульс не сбивается на
+    границах и двадцать минут читаются как один непрерывный микс, а не
+    как склеенные огрызки. Проверка этого — в grid_ok возвращаемых
+    сведений, а не на слух через двадцать минут.
+
+    sample > 0 оставлен для отладки (взять N переходов вразбивку);
+    по умолчанию выключен.
 
     Каждый переход рендерится тем же движком, что и кнопка «Демо», в тех
     точках треков, которые выбраны в плане (from_point / to_point) — раньше
@@ -386,7 +401,6 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
 
     by_name = {t["name"]: t for t in tracks}
     pieces: list = []
-    bar_ns: list[int] = []
     solos: list[float] = []
     rendered = 0
     skipped: list[str] = []
@@ -394,10 +408,24 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
     budget = max_minutes * 60.0
     used = 0.0
 
-    # 47 сведений подряд без музыки между ними — это не превью, это каша:
-    # материал меняется каждые 6 секунд. Берём выборку по всему сету.
+    # Такт считается ОДИН РАЗ на весь файл, от мастер-темпа сета.
+    #
+    # Раньше он брался из meta каждого куска и округлялся до целых
+    # сэмплов отдельно. Пока все куски рендерятся под общий master_bpm,
+    # числа совпадают — но стоит одному переходу отдать свой темп, и
+    # сетка на этом месте разъезжается, а услышать это в двадцатиминутном
+    # файле можно только досидев до него. Одно число на весь файл делает
+    # такую ошибку невозможной, а не маловероятной.
+    master = set_master_bpm(strategy)
+    bar_seconds_canon = 4.0 * 60.0 / master if master > 0 else 1.4
+    bar_n = int(round(bar_seconds_canon * sr))
+    overlap_n = int(round(join_bars * bar_n))
+
     picked = transitions
     if sample and len(transitions) > sample:
+        # Только для отладки: по умолчанию sample=0 и в файл идут ВСЕ
+        # переходы. Выборка была уступкой времени рендера, а диджею нужно
+        # слышать каждый шов — иначе непонятно, какой из них чинить.
         step = len(transitions) / sample
         picked = [transitions[int(i * step)] for i in range(sample)]
 
@@ -458,7 +486,14 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
             import librosa
             chunk = librosa.resample(chunk, orig_sr=chunk_sr, target_sr=sr, axis=0)
 
-        bar_n = int(round(float(meta.get("bar_seconds") or 1.4) * sr))
+        # Такт у куска обязан совпадать с общим. Если нет — это не
+        # «почти то же самое», а сбитый пульс на этом стыке: говорим
+        # вслух, а не молча кладём кусок в файл.
+        chunk_bar = float(meta.get("bar_seconds") or 0.0)
+        if chunk_bar and abs(chunk_bar - bar_seconds_canon) > 0.002:
+            skipped.append(f"{t['from']} -> {t['to']}: такт {chunk_bar:.3f}с "
+                           f"вместо общего {bar_seconds_canon:.3f}с — пульс на стыке уедет")
+
         # Хвост после сведения обрезаем до нескольких тактов.
         #
         # Превью существует, чтобы слушать ШВЫ, а не интро входящих
@@ -469,15 +504,22 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
         # образуется пустое пространство». Пары тактов хватает, чтобы
         # услышать, чем сведение кончилось.
         sync = float(meta.get("sync_time_seconds") or 0.0)
-        bar_sec = float(meta.get("bar_seconds") or 1.4)
+        bar_sec = bar_seconds_canon
         blend_bars = float(t.get("blend_bars") or t.get("bars") or 8)
         end_of_blend = sync + blend_bars * bar_sec
         tail_limit = int(round((end_of_blend + PREVIEW_TAIL_BARS * bar_sec) * sr))
         chunk = chunk[:max(bar_n * 2, min(len(chunk), tail_limit))]
         chunk = _trim_to_bars(chunk, bar_n)
+        # _trim_to_bars отдаёт кусок как есть, если тот короче двух
+        # тактов. Такой кусок — не целое число тактов, и он сдвигает
+        # сетку всему, что идёт после. Одно сведение потерять не жалко,
+        # сбитый пульс на остатке файла — жалко.
+        if len(chunk) < bar_n or len(chunk) % bar_n:
+            skipped.append(f"{t['from']} -> {t['to']}: сведение короче такта — пропускаю, "
+                           f"иначе съедет сетка дальше по файлу")
+            continue
         pieces.append(chunk)
         solos.append(_solo_level(chunk, sr, meta.get("sync_time_seconds")) or 0.0)
-        bar_ns.append(bar_n)
         used += len(chunk) / sr
         rendered += 1
         used_techniques[t["technique_id"]] = used_techniques.get(t["technique_id"], 0) + 1
@@ -503,11 +545,24 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
 
     mix = pieces[0]
     joins: list[float] = []
+    starts: list[int] = [0]          # где начинается каждый кусок, в сэмплах
     for i in range(1, len(pieces)):
-        overlap = int(round(join_bars * bar_ns[i]))
-        nxt = _match_join_level(mix, pieces[i], overlap, bar_ns[i] * 4)
-        joins.append(round((len(mix) - overlap / 2) / sr, 2))
-        mix = _equal_power_join(mix, nxt, overlap)
+        starts.append(len(mix) - overlap_n)
+        nxt = _match_join_level(mix, pieces[i], overlap_n, bar_n * 4)
+        joins.append(round((len(mix) - overlap_n / 2) / sr, 2))
+        mix = _equal_power_join(mix, nxt, overlap_n)
+
+    # Проверяем то, что обещали, а не надеемся на это.
+    #
+    # Каждый кусок — целое число тактов, перекрытие — целое число тактов,
+    # значит начало КАЖДОГО куска обязано лежать на границе такта. Если
+    # где-то не лежит, «непрерывный микс» спотыкается ровно там, и
+    # узнать об этом из файла можно только досидев до нужной минуты.
+    off_grid = [i for i, st in enumerate(starts) if st % bar_n]
+    grid_ok = not off_grid and len(mix) % bar_n == 0
+    if not grid_ok:
+        skipped.append(f"бит-сетка разъехалась на кусках {off_grid[:5]} — "
+                       f"стыки будут спотыкаться")
 
     # общий уровень — один раз на весь файл, чтобы динамика внутри осталась
     mix = demo_render._soft_limit(mix * SET_MAKEUP)
@@ -534,6 +589,9 @@ def render_set(strategy: dict, out_path: str, sr: int = 44100,
         "bitrate": enc["bitrate"] if want_mp3 else 1411,
         "encoder": enc["name"] if want_mp3 else "wav",
         "sampled": len(picked),
+        "grid_ok": grid_ok,
+        "bar_seconds": round(bar_seconds_canon, 4),
+        "master_bpm": round(master, 2),
         "transitions_rendered": rendered,
         "transitions_total": len(transitions),
         "duration_seconds": round(len(mix) / sr, 1),

@@ -127,6 +127,11 @@
     transition: border-color .12s, background .12s, color .12s, opacity .12s;
   }
   button:hover:not(:disabled) { border-color: var(--muted); background: var(--panel-2); }
+  /* Платное в бесплатном режиме. Кнопка НЕ исчезает и не гаснет: человек
+     должен видеть, что программа это умеет, иначе он про возможность
+     просто не узнает и покупать будет нечего. */
+  button.paid-locked { border-style: dashed; color: var(--muted); }
+  button.paid-locked::after { content: " 🔒"; font-size: 11px; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button:active:not(:disabled) { transform: translateY(1px); }
   button:disabled { opacity: .4; cursor: default; }
@@ -1068,10 +1073,10 @@
             <button id="suggest-length-btn" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
             <span id="length-picks" style="display:flex;gap:4px;align-items:center"></span>
             <div class="spacer"></div>
-            <button id="mixxx-play-btn" title="Играть весь сет в самом Mixxx. Всё готовит сам: если очередь Auto DJ разошлась с планом, закроет Mixxx, перепишет очередь и поднимет его обратно. Видно волны, фейдер и ручки.">▶ В Mixxx</button>
+            <button id="mixxx-play-btn" data-paid="1" title="Играть весь сет в самом Mixxx. Всё готовит сам: если очередь Auto DJ разошлась с планом, закроет Mixxx, перепишет очередь и поднимет его обратно. Видно волны, фейдер и ручки.">▶ В Mixxx</button>
             <button id="mixxx-stop-btn" style="display:none" title="Остановить автопилот">⏹ Стоп</button>
-            <button id="render-set-btn" title="Выборка сведений по всему сету — послушать характер, не весь микс">🎬 Превью сведений</button>
-            <button id="render-full-btn" title="Весь сет целиком одним треком, в едином темпе, без потерь">💿 Собрать сет</button>
+            <button id="render-set-btn" title="Все переходы плана подряд, одним файлом и на одной бит-сетке. Тел треков между ними нет: слышно только сами сведения, двадцать минут вместо полутора часов.">🎬 Все швы подряд</button>
+            <button id="render-full-btn" data-paid="1" title="Весь сет целиком одним треком, в едином темпе, без потерь">💿 Собрать сет</button>
             <button id="build-strategy-btn">🗺 Построить план</button>
             <button id="strategy-more-btn" title="Дуга, вариант, длительность, жанр, формат файла">⚙</button>
           </div>
@@ -1107,7 +1112,7 @@
                     style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
               <option value="">+ добавить трек…</option>
             </select>
-            <button id="autodj-queue-btn" title="Положить порядок сета в очередь Auto DJ. Ею автопилот и наполняет деки: контрола «загрузи файл по пути» в Mixxx нет. Mixxx должен быть ЗАКРЫТ.">↧ Очередь для Mixxx</button>
+            <button id="autodj-queue-btn" data-paid="1" title="Положить порядок сета в очередь Auto DJ. Ею автопилот и наполняет деки: контрола «загрузи файл по пути» в Mixxx нет. Mixxx должен быть ЗАКРЫТ.">↧ Очередь для Mixxx</button>
             <button id="mixxx-settings-btn" title="Проверить настройки самого Mixxx: от кривой кроссфейдера зависит, звучит ли живое сведение так же, как демо">🔧 Настройки Mixxx</button>
           </div>
           <!-- Ход автопилота. Пока сет играет в Mixxx, диджей смотрит В
@@ -1259,6 +1264,14 @@
     }
     return rawFetch(input, init).then(function (r) {
       if (r.status === 401 && sameOrigin) needLogin();
+      // 402 — не поломка и не запрет, а «это платная часть». Показываем
+      // текст, который прислал бэкенд (там написано, что именно платное
+      // и что бесплатно), и НЕ трогаем остальное: человек закрывает
+      // окошко и продолжает слушать швы.
+      if (r.status === 402 && sameOrigin) {
+        r.clone().json().then(function (j) { paywall(j && j.detail); },
+                              function () { paywall(""); });
+      }
       return r;
     });
   };
@@ -1282,6 +1295,106 @@
       'Открыть darave.ru</a></div>';
     document.body.appendChild(box);
   }
+
+  // Платная часть. Отдельно от needLogin: тот перекрывает всё насовсем,
+  // потому что без входа работать нечем. Здесь наоборот — бесплатный
+  // режим полноценный, и окошко закрывается.
+  let paywallOpen = false;
+  function paywall(detail) {
+    if (paywallOpen) return;
+    paywallOpen = true;
+    const box = document.createElement("div");
+    box.style.cssText =
+      "position:fixed;inset:0;z-index:9998;display:flex;align-items:center;" +
+      "justify-content:center;background:rgba(0,10,14,.82);padding:24px";
+    const card = document.createElement("div");
+    card.style.cssText =
+      "max-width:460px;background:var(--panel,#002936);border:1px solid var(--border,#10505f);" +
+      "border-radius:var(--r-lg,12px);padding:22px 24px;font:15px/1.6 var(--font-ui,system-ui,sans-serif);" +
+      "color:var(--text,#e6f0f3)";
+    const head = document.createElement("div");
+    head.style.cssText = "font-size:17px;font-weight:600;margin-bottom:10px";
+    head.textContent = "Это платная часть";
+    const body = document.createElement("div");
+    body.style.cssText = "color:var(--muted,#7fa0ab);margin-bottom:18px";
+    // textContent, а не innerHTML: текст приходит с бэкенда, и однажды
+    // в нём окажется название трека с угловой скобкой.
+    body.textContent = detail ||
+      "Сборка сета — в платной версии. Разбор библиотеки, подбор пар и " +
+      "прослушивание швов работают без оплаты.";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:10px;align-items:center";
+    const buy = document.createElement("a");
+    buy.href = "https://darave.ru/app/?buy=personal";
+    buy.target = "_blank";
+    buy.rel = "noopener";
+    buy.textContent = "Открыть darave.ru";
+    buy.style.cssText =
+      "background:var(--accent,#f75700);color:#fff;text-decoration:none;font-weight:600;" +
+      "padding:10px 18px;border-radius:var(--r-md,8px)";
+    const close = document.createElement("button");
+    close.textContent = "Вернуться к швам";
+    close.onclick = function () { box.remove(); paywallOpen = false; };
+    row.appendChild(buy); row.appendChild(close);
+    card.appendChild(head); card.appendChild(body); card.appendChild(row);
+    box.appendChild(card);
+    box.addEventListener("click", function (e) {
+      if (e.target === box) { box.remove(); paywallOpen = false; }
+    });
+    document.body.appendChild(box);
+  }
+
+  // Замок на платных кнопках.
+  //
+  // Это ВЕЖЛИВОСТЬ, а не защита. Страница открыта в браузере на машине
+  // пользователя: снять класс через инструменты разработчика — секунда,
+  // а послать POST на 127.0.0.1 напрямую и того проще. Настоящая
+  // проверка одна и живёт в server.py (require_paid). Здесь мы только
+  // избавляем человека от нажатия, после которого он узнаёт, что кнопка
+  // платная, — узнавать так неприятно.
+  //
+  // До ответа /account считаем, что всё можно: ошибочный замок у
+  // купившего хуже, чем отсутствующий замок у не купившего. Второе
+  // поймает сервер, первое — потерянный покупатель.
+  let PAID = true;
+  const PAID_NOTE = "Платная часть: 690 ₽ один раз на darave.ru. " +
+    "Разбор, отбор швов, план и все швы подряд работают без оплаты.";
+
+  function lockPaid() {
+    if (PAID) return;
+    document.querySelectorAll('[data-paid]:not([data-paid-locked])').forEach(function (b) {
+      b.setAttribute("data-paid-locked", "1");
+      b.classList.add("paid-locked");
+      const t = b.getAttribute("title") || "";
+      b.setAttribute("title", (t ? t + "\n\n" : "") + PAID_NOTE);
+      // Перехват в фазе ПОГРУЖЕНИЯ и stopImmediatePropagation: иначе
+      // сработает собственный обработчик кнопки и человек увидит
+      // «Сначала постройте план» вместо объяснения про оплату.
+      b.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        paywall("«" + (b.textContent || "Это").trim() + "» — платная часть. " + PAID_NOTE);
+      }, true);
+    });
+  }
+
+  fetch("/account").then(function (r) { return r.json(); }).then(function (a) {
+    PAID = !!(a && a.tier && a.tier !== "free" && !a.expired_tier);
+    lockPaid();
+  }).catch(function () { /* не ответил — не запираем: см. выше */ });
+
+  // Часть кнопок рисуется на ходу (вкладка «Отбор»), поэтому одного
+  // прохода мало. Наблюдатель дешёвый: селектор узкий, а data-paid-locked
+  // не даёт обрабатывать одну и ту же кнопку дважды.
+  (function watchPaid() {
+    if (PAID === false) lockPaid();
+    let queued = false;
+    new MutationObserver(function () {
+      if (queued || PAID) return;
+      queued = true;
+      requestAnimationFrame(function () { queued = false; lockPaid(); });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  })();
 
   // WebSocket заголовков не принимает — токен уходит параметром.
   function wsToken() {
@@ -2032,7 +2145,7 @@
   }
 
   function audBuildButton() {
-    return '<div style="margin-top:18px"><button id="aud-build" class="big-act">' +
+    return '<div style="margin-top:18px"><button id="aud-build" data-paid="1" class="big-act">' +
       t("aud.build", "🧩 Собрать сет из пула → в ControlC") + '</button>' +
       '<span style="margin-left:10px;font-size:12px;color:var(--muted)">' +
       'порядок и точки берутся из одобренных швов, длительность — фактическая</span></div>';
@@ -4710,24 +4823,43 @@
   document.getElementById("render-set-btn").addEventListener("click", async function () {
     if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
     const out = _setOut();
-    out.textContent = "Собираю превью: выборка сведений по всему сету...";
+    const base = "/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/render";
+    out.textContent = "Собираю все швы подряд...";
     try {
-      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/render",
-        { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seconds_between: 50, max_minutes: 25, sample: 8,
-            format: document.getElementById("set-format").value }) });
+      const r = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seconds_between: 50,
+          format: document.getElementById("set-format").value }) });
       const d = await r.json();
-      if (!r.ok) { out.textContent = d.detail || "Не удалось собрать"; return; }
-      const techs = d.techniques_used ? Object.keys(d.techniques_used).length : 0;
-      out.innerHTML = 'Превью: ' + d.transitions_rendered + ' сведений из ' + d.transitions_total +
-        ', ' + Math.round(d.duration_seconds) + 'с' + (techs ? ', техник: ' + techs : '') +
-        '<br><span style="opacity:.6">выборка по всему сету — характер сведений, не весь микс. ' +
-        'Весь микс: «Собрать сет целиком»</span><br>' +
-        '<audio controls src="' + d.url + '" style="margin-top:6px;height:32px"></audio> ' +
-        '<a href="' + d.url + '" download>скачать ' + _quality(d) + '</a>' +
-        (d.skipped && d.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
-          d.skipped.slice(0, 3).join("; ") + '</span>' : '');
-    } catch (e) { out.textContent = "Ошибка сети: " + e; }
+      if (!r.ok) { out.textContent = d.detail || "Не удалось запустить"; return; }
+    } catch (e) { out.textContent = "Ошибка сети: " + e; return; }
+    // Считается фоном. Раньше сюда шла выборка из восьми переходов и
+    // ответ успевал прийти в открытый запрос; все сорок шесть считаются
+    // минутами, и браузер оборвал бы соединение раньше.
+    const timer = setInterval(async function () {
+      let st;
+      try { st = await (await fetch(base)).json(); } catch (e) { return; }
+      if (st.running) {
+        out.textContent = "Собираю швы: " + (st.done || 0) + " из " + (st.total || "?");
+        return;
+      }
+      clearInterval(timer);
+      if (st.error) { out.textContent = "Не удалось собрать: " + st.error; return; }
+      if (!st.url) { out.textContent = "Сборка не запускалась"; return; }
+      const techs = st.techniques_used ? Object.keys(st.techniques_used).length : 0;
+      const mins = Math.round((st.duration_seconds || 0) / 6) / 10;
+      out.innerHTML = 'Все швы: ' + st.transitions_rendered + ' из ' + st.transitions_total +
+        ', ' + mins + ' мин' + (techs ? ', техник: ' + techs : '') +
+        ', темп ' + (st.master_bpm || '?') + ' BPM' +
+        (st.grid_ok === false
+          ? ' <span style="color:var(--warn)">— бит-сетка сбита, см. пропущенное</span>'
+          : ' <span style="opacity:.6">— сетка ровная</span>') +
+        '<br><span style="opacity:.6">только сведения, без тел треков: сет целиком — ' +
+        '«Собрать сет»</span><br>' +
+        '<audio controls src="' + st.url + '" style="margin-top:6px;height:32px"></audio> ' +
+        '<a href="' + st.url + '" download>скачать ' + _quality(st) + '</a>' +
+        (st.skipped && st.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
+          st.skipped.slice(0, 3).join("; ") + '</span>' : '');
+    }, 3000);
   });
 
   // Подпись качества выходного файла: mp3 может оказаться 320 (lameenc/ffmpeg)

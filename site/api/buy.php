@@ -6,8 +6,9 @@ require_once __DIR__ . '/_yookassa.php';
 /**
  * Создать платёж и отдать ссылку, куда отправить покупателя.
  *
- * По умолчанию СБП: на 3 900 ₽ это ~16 ₽ комиссии против ~137 ₽ по
- * карте. Карта остаётся вторым способом — «bank_card».
+ * По умолчанию СБП: на 690 ₽ это ~3 ₽ комиссии против ~24 ₽ по карте.
+ * В рублях немного, но это 3 % выручки с каждой продажи. Карта
+ * остаётся вторым способом — «bank_card».
  */
 
 cors();
@@ -19,6 +20,22 @@ $tier = (string)($in['tier'] ?? 'personal');
 $method = (string)($in['method'] ?? 'sbp');
 
 $tiers = tiers();
+
+// Скрытый тариф для боевой проверки: 100 ₽ вместо 690. Нужен потому,
+// что СБП в тестовом магазине ЮKassa не работает вовсе, и убедиться, что
+// приём и возврат денег действительно работают, можно только на живых
+// деньгах. Сто рублей для этого достаточно.
+//
+// Закрыт тем же секретом, что и selftest: иначе любой, кто прочитает
+// исходник страницы, купит «Полную» за сто рублей.
+if ($tier === 'test') {
+    $secret = (string)(cfg()['selftest_secret'] ?? '');
+    if ($secret === '' || !hash_equals($secret, (string)($in['secret'] ?? ''))) {
+        json_out(['error' => 'Неизвестный тариф'], 400);
+    }
+    $tiers['test'] = ['title' => 'Проверка приёма оплаты', 'amount' => '100.00'];
+}
+
 if (!isset($tiers[$tier])) {
     json_out(['error' => 'Неизвестный тариф'], 400);
 }
@@ -42,7 +59,7 @@ $st = db()->prepare(
         AND created_at > (NOW() - INTERVAL 1 HOUR)
       ORDER BY id DESC LIMIT 1"
 );
-$st->execute([(int)$u['id'], $tier]);
+$st->execute([(int)$u['id'], $tier === 'test' ? 'personal' : $tier]);
 $existing = $st->fetch();
 
 if ($existing && $existing['payment_id']) {
@@ -62,9 +79,14 @@ $idem   = $existing['idem_key'] ?? sprintf(
 );
 $idem = substr($idem, 0, 36);
 
+// В таблице orders колонка tier — это ENUM('personal','workshop'), и
+// 'test' туда не ляжет. Пишем personal: проверочный платёж и правда
+// открывает «Полную», просто за сто рублей.
+$db_tier = $tier === 'test' ? 'personal' : $tier;
+
 if (!$existing) {
     db()->prepare('INSERT INTO orders (user_id, tier, amount, idem_key) VALUES (?, ?, ?, ?)')
-        ->execute([(int)$u['id'], $tier, $amount, $idem]);
+        ->execute([(int)$u['id'], $db_tier, $amount, $idem]);
     $order_id = (int)db()->lastInsertId();
 } else {
     $order_id = (int)$existing['id'];
@@ -75,12 +97,18 @@ $payload = [
     'capture' => true,          // списываем сразу, без двухстадийности
     'confirmation' => [
         'type' => 'redirect',
-        'return_url' => 'https://darave.ru/app/?paid=' . $order_id,
+        // Возвращаем на ТОТ ЖЕ хост, с которого человек пришёл.
+        // Жёстко зашитый darave.ru ломал оплату у всех, кто открыл сайт
+        // как www.darave.ru: куку сессии браузер привязывает к имени
+        // хоста, и после возврата с ЮKassa человек оказывался гостем —
+        // «Нужно войти» сразу после того, как заплатил.
+        'return_url' => base_url() . '/app/?paid=' . $order_id,
     ],
     'description' => 'DARAVE — лицензия «' . $tiers[$tier]['title'] . '»',
     // Метаданные возвращаются в уведомлении и в API: по ним мы поймём,
     // чей это платёж, не доверяя тому, что пришлёт браузер.
-    'metadata' => ['order_id' => (string)$order_id, 'user_id' => (string)$u['id'], 'tier' => $tier],
+    'metadata' => ['order_id' => (string)$order_id, 'user_id' => (string)$u['id'],
+                   'tier' => $db_tier, 'probe' => $tier === 'test' ? '1' : '0'],
     'payment_method_data' => ['type' => $method],
 ];
 

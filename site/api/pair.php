@@ -30,5 +30,5 @@ json_out([
     'ok'           => true,
     'pair_token'   => $token,
     'expires_in'   => $minutes * 60,
-    'verify_url'   => 'https://darave.ru/api/verify.php',
+    'verify_url'   => base_url() . '/api/verify.php',
 ]);

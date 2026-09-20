@@ -72,18 +72,40 @@ if ($status === 'succeeded') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $pdo->prepare("UPDATE orders SET status='succeeded', paid_at=NOW() WHERE id=?")
-            ->execute([$order_id]);
-        // Лицензия на год. Если у человека уже есть неистёкший срок —
-        // продлеваем от него, а не от сегодня: иначе досрочная оплата
-        // съедала бы оплаченные дни.
-        $pdo->prepare(
-            "UPDATE users
-                SET tier = ?,
-                    tier_until = DATE_ADD(
-                        GREATEST(COALESCE(tier_until, NOW()), NOW()), INTERVAL 1 YEAR)
-              WHERE id = ?"
-        )->execute([$tier ?: $order['tier'], (int)$order['user_id']]);
+        // Запоминаем тариф ДО повышения. При возврате человека надо
+        // вернуть туда, где он был, а не просто в 'free': иначе тот, кто
+        // купил «Полную», потом доплатил за «С разбором» и попросил
+        // вернуть деньги за доплату, потерял бы заодно и первую покупку.
+        $st = $pdo->prepare('SELECT tier, tier_until FROM users WHERE id = ? FOR UPDATE');
+        $st->execute([(int)$order['user_id']]);
+        $was = $st->fetch() ?: ['tier' => 'free', 'tier_until' => null];
+
+        $pdo->prepare("UPDATE orders SET status='succeeded', paid_at=NOW(),
+                              tier_before=?, tier_until_before=? WHERE id=?")
+            ->execute([$was['tier'], $was['tier_until'], $order_id]);
+        // Лицензия БЕССРОЧНАЯ: tier_until = NULL. Мы продаём разовую
+        // покупку, а не подписку (почему — в PRICING.md). NULL здесь не
+        // «неизвестно когда», а «срок не истекает»: так он и читается
+        // в tier_active() и так подписан в db.sql.
+        //
+        // Оплата не должна ПОНИЖАТЬ тариф. Если человек уже купил
+        // «С разбором», а потом зачем-то оплатил «Полную» — он остаётся
+        // на «С разбором». Иначе покупка отнимала бы оплаченное, и
+        // разбираться с этим пришлось бы письмами.
+        $rank = ['free' => 0, 'personal' => 1, 'workshop' => 2];
+        $new  = (string)($tier ?: $order['tier']);
+        $had  = (string)($was['tier'] ?? 'free');
+        $had_active = $had !== 'free'
+            && ($was['tier_until'] === null
+                || strtotime((string)$was['tier_until']) > time());
+        $final = ($had_active && ($rank[$had] ?? 0) > ($rank[$new] ?? 0)) ? $had : $new;
+        if ($final !== $new) {
+            error_log("DARAVE webhook: заказ {$order_id} на «{$new}», "
+                    . "но у пользователя уже «{$had}» — тариф не понижаем");
+        }
+
+        $pdo->prepare('UPDATE users SET tier = ?, tier_until = NULL WHERE id = ?')
+            ->execute([$final, (int)$order['user_id']]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();

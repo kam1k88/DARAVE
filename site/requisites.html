@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Реквизиты — DARAVE</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
@@ -27,7 +29,7 @@
   .brand { font-family:var(--display); font-weight:800; font-size:16px;
            letter-spacing:.08em; display:flex; align-items:center; gap:9px;
            color:var(--text); text-decoration:none; }
-  .brand i { width:9px; height:9px; background:var(--flame); border-radius:2px; }
+  .brand img { width:1.3em; height:1.3em; display:block; }
   .back { margin-left:auto; color:var(--muted); text-decoration:none; font-size:14px; }
   .back:hover { color:var(--text); }
   h1 { font-family:var(--display); font-size:clamp(22px,3.4vw,30px); font-weight:600;
@@ -51,7 +53,7 @@
 </head>
 <body>
 <header><div class="bar">
-  <a class="brand" href="/"><i></i>DARAVE</a>
+  <a class="brand" href="/" aria-label="DARAVE, на главную"><img src="/mark.svg" alt="" width="20" height="20">DARAVE</a>
   <a class="back" href="/">На главную</a>
 </div></header>
 <div class="wrap">

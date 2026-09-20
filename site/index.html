@@ -3,15 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="DARAVE — программа для сборки диджейского сета: разбирает вашу библиотеку, предлагает переходы, даёт послушать и сводит в файл. Windows, работает локально.">
+<meta name="description" content="DARAVE размечает вашу библиотеку собственными моделями, предлагает переходы и сводит одобренное в файл. Windows, считает на вашем компьютере.">
 <meta name="theme-color" content="#001b24">
 <link rel="canonical" href="https://darave.ru/">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://darave.ru/">
-<meta property="og:title" content="DARAVE — сет собирается ушами">
-<meta property="og:description" content="Разбирает библиотеку, предлагает переход, даёт послушать и решить. Одобренное сводится в файл.">
+<meta property="og:title" content="DARAVE — программа, которая сводит треки">
+<meta property="og:description" content="Размечает библиотеку, предлагает переход, даёт послушать каждый шов. Одобренное сводится в файл.">
 <meta property="og:locale" content="ru_RU">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23001b24'/%3E%3Crect x='9' y='9' width='14' height='14' rx='3' fill='%23f75700'/%3E%3C/svg%3E">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta property="og:image" content="https://darave.ru/icon.svg">
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; }
@@ -77,8 +79,12 @@
   .brand {
     font-family: var(--display); font-weight: 800; font-size: 17px;
     letter-spacing: .08em; display: flex; align-items: center; gap: 9px;
+    color: var(--text); text-decoration: none;
   }
   .brand .dot { width: 9px; height: 9px; background: var(--flame); border-radius: 2px; }
+  /* Знак вместо квадратика-заглушки. Ширина задана в em, чтобы он
+     оставался в пропорции к слову, если поменяется кегль шапки. */
+  .brand img { width: 1.35em; height: 1.35em; display: block; }
   header nav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
   header nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
   header nav a:hover { color: var(--text); }
@@ -97,8 +103,21 @@
   a:focus-visible, button:focus-visible { outline: 2px solid var(--flame); outline-offset: 3px; }
 
   /* --- герой --- */
-  .hero { padding-block: 84px 64px; }
-  .hero .stack { gap: 26px; }
+  /* --- первый экран: две волны сходятся в шве ---
+     Фон рисуется не ради красоты: это буквально то, что делает
+     программа, и человек понимает, о чём страница, ещё не дочитав
+     заголовок. Поэтому он тут единственное украшение — всё остальное
+     на странице без картинок. */
+  .hero { padding-block: 84px 64px; position: relative; overflow: hidden; }
+  .hero .stack { gap: 26px; position: relative; }
+  #herobg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  /* Затемнение обязательно: без него волна рано или поздно перечеркнёт
+     строку заголовка — на узком экране это видно сразу. */
+  .hero-scrim {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(100deg,
+      rgba(0,27,36,.95) 0%, rgba(0,27,36,.88) 36%, rgba(0,27,36,.42) 64%, rgba(0,27,36,0) 90%);
+  }
   .hero-note {
     font-family: var(--mono); font-size: 12.5px; color: var(--muted);
     display: flex; gap: 8px; align-items: baseline;
@@ -110,6 +129,28 @@
   .step { background: var(--panel); padding: 20px 18px; display: flex; flex-direction: column; gap: 8px; }
   .step .n { font-family: var(--mono); font-size: 11px; color: var(--flame); letter-spacing: .1em; }
   .step p { font-size: 14px; color: var(--muted); }
+
+  /* --- что считается внутри ---
+     Намеренно без номеров, в отличие от «шагов» выше: это не
+     последовательность, а четыре части одной разметки. Нумерация
+     говорила бы неправду о порядке. */
+  .parts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .part { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 20px 20px 22px; display: flex; flex-direction: column; gap: 8px; }
+  .part h3 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0; }
+  .part p { font-size: 14.5px; color: var(--muted); margin: 0; }
+  .part .tag { font-family: var(--mono); font-size: 11px; color: var(--flame);
+               letter-spacing: .1em; text-transform: uppercase; }
+
+  /* --- чего пока нет ---
+     Отдельный блок, а не мелкий шрифт внизу: человек должен прочесть
+     это ДО оплаты, а не узнать после. */
+  .limits { display: flex; flex-direction: column; gap: 0;
+            border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .limit { background: var(--panel); padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  .limit:last-child { border-bottom: 0; }
+  .limit b { display: block; margin-bottom: 4px; }
+  .limit p { margin: 0; font-size: 14.5px; color: var(--muted); }
 
   /* --- замеры: центр страницы ---
      Раньше здесь была таблица «было -> стало» из чистых цифр: +10.8 dB,
@@ -185,7 +226,28 @@
 
   @media (max-width: 820px) {
     .steps { grid-template-columns: repeat(2, 1fr); }
+    .parts { grid-template-columns: 1fr; }
     .tiers { grid-template-columns: 1fr; }
+  }
+  /* --- узкий экран ---
+     Две правки, обе из-за того, что на 390 пикселях всё ведёт себя иначе.
+
+     Затемнение первого экрана становится почти сплошным: наклонный
+     градиент рассчитан на широкую колонку, а на телефоне текст занимает
+     всю ширину, и волна шла прямо по строкам. Немного волны видно
+     по-прежнему — но уже как фон, а не как помеха.
+
+     Шапка перестаёт быть одной строкой: пять ссылок с margin-left:auto
+     переносились ВЫШЕ логотипа и разлетались на три ряда. Знак занимает
+     свою строку, ссылки идут под ним слева. */
+  @media (max-width: 720px) {
+    .hero-scrim {
+      background: linear-gradient(180deg,
+        rgba(0,27,36,.97) 0%, rgba(0,27,36,.93) 58%, rgba(0,27,36,.74) 100%);
+    }
+    .hero { padding-block: 52px 48px; }
+    .bar { flex-wrap: wrap; gap: 12px 18px; }
+    header nav { margin-left: 0; width: 100%; gap: 16px; }
   }
   @media (max-width: 440px) { .steps { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -194,9 +256,10 @@
 <body>
 <header>
   <div class="wrap bar">
-    <span class="brand"><span class="dot"></span>DARAVE</span>
+    <a class="brand" href="/" aria-label="DARAVE, на главную"><img src="/mark.svg" alt="" width="23" height="23">DARAVE</a>
     <nav>
       <a href="#how">Как это работает</a>
+      <a href="#inside">Что считается</a>
       <a href="#proof">Замеры</a>
       <a href="#price">Цены</a>
       <a href="#get">Скачать</a>
@@ -206,20 +269,23 @@
 
 <main>
   <section class="hero">
+    <canvas id="herobg" aria-hidden="true"></canvas>
+    <div class="hero-scrim" aria-hidden="true"></div>
     <div class="wrap stack">
-      <span class="eyebrow">Сборка диджейского сета · Windows · работает локально</span>
-      <h1>Сет собирается ушами.<br>Всё остальное считает DARAVE.</h1>
+      <span class="eyebrow">Диджейский инструмент · Windows · считает на вашем компьютере</span>
+      <h1>Программа, которая сводит треки.<br>Пока — только это.</h1>
       <p class="lede">
-        Программа разбирает вашу библиотеку, предлагает переход — пару треков, приём
-        и две точки в секциях, — даёт послушать и решить. Одобренное складывается
-        в сет и сводится в файл.
+        DARAVE размечает вашу библиотеку собственными моделями, предлагает переход —
+        пару треков, приём и две точки в секциях, — и даёт послушать. Одобренное
+        складывается в сет и сводится в файл. Вся работа сейчас идёт в одно:
+        чтобы стык звучал чисто.
       </p>
       <div class="actions">
-        <a class="cta" href="#get">Скачать пробную</a>
-        <a class="cta quiet" href="#proof">Посмотреть замеры</a>
+        <a class="cta" href="#get">Скачать бесплатно</a>
+        <a class="cta quiet" href="#inside">Что считается внутри</a>
       </div>
       <p class="hero-note">
-        <b>↑</b> Музыка не покидает ваш компьютер: анализ и сведение идут на нём,
+        <b>↑</b> Музыка не покидает ваш компьютер: разметка и сведение идут на нём,
         загружать библиотеку никуда не нужно.
       </p>
     </div>
@@ -253,8 +319,51 @@
         <div class="step">
           <span class="n">04 · СЕТ</span>
           <h3>Сборка</h3>
-          <p>Порядок, энергетическая дуга, хронометраж. Короткие куски подсвечены
-             и чинятся в один клик. На выходе — файл.</p>
+          <p>Порядок, энергетическая дуга, хронометраж — из того, что вы одобрили.
+             Короткие куски подсвечены и чинятся в один клик. На выходе — файл.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="inside">
+    <div class="wrap stack-lg">
+      <div class="stack">
+        <span class="eyebrow">Что считается</span>
+        <h2>Разметка своя, и она вся на вашем компьютере</h2>
+        <p class="lede">
+          Сет собирается не по тегам и не по чужой базе. Библиотека сначала
+          размечается, и дальше каждое решение принимается по этой разметке —
+          поэтому программе всё равно, есть ли трек в каких-нибудь каталогах.
+        </p>
+      </div>
+      <div class="parts">
+        <div class="part">
+          <span class="tag">Разметка</span>
+          <h3>Сетка и точки</h3>
+          <p>Маппинг, бит-грид, cue-точки, нормализация громкости. Всё, без чего
+             два трека нельзя поставить рядом и сравнить честно.</p>
+        </div>
+        <div class="part">
+          <span class="tag">Звук</span>
+          <h3>Гармония и слои</h3>
+          <p>Гармонический анализ и разделение на стемы: бас, ударные, голос,
+             остальное. Отсюда берутся приёмы, которые работают не со всем
+             треком, а с одним его слоем.</p>
+        </div>
+        <div class="part">
+          <span class="tag">Основная модель</span>
+          <h3>Границы фраз и стиль</h3>
+          <p>Отвечает на два вопроса: где кончается музыкальная фраза и что это
+             за трек по стилю. От этих двух ответов зависит всё дальнейшее —
+             и где уводить, и чем.</p>
+        </div>
+        <div class="part">
+          <span class="tag">Вспомогательные модели</span>
+          <h3>Параметры сведения</h3>
+          <p>Регрессии поверх выходов основной. Считают, с какими параметрами
+             сводятся именно эти два трека выбранным приёмом: длину сведения,
+             точки ухода и входа, поведение низа.</p>
         </div>
       </div>
     </div>
@@ -346,49 +455,88 @@
     </div>
   </section>
 
+  <section id="limits">
+    <div class="wrap stack-lg">
+      <div class="stack">
+        <span class="eyebrow">Честно</span>
+        <h2>Чего пока нет</h2>
+        <p class="lede">
+          Это версия 1.0 и работа одного человека. Лучше прочесть здесь, чем
+          обнаружить после оплаты.
+        </p>
+      </div>
+      <div class="limits">
+        <div class="limit">
+          <b>Сама вечеринку не отыграет.</b>
+          <p>Автопилот проигрывает в Mixxx уже собранный сет. Порядок, точки и
+             приёмы выбирает человек: программа считает варианты, а решения
+             не принимает.</p>
+        </div>
+        <div class="limit">
+          <b>Отлажено не на всех жанрах.</b>
+          <p>Настраивалось на той музыке, которую я слушаю сам. На другом
+             материале границы фраз находятся хуже — если так вышло, напишите,
+             это чинится.</p>
+        </div>
+        <div class="limit">
+          <b>Всё сейчас уходит в чистый стык.</b>
+          <p>Пока сведение не звучит чисто, ничего сверх этого не добавляется.
+             Развитие — после того, как этот кусок будет доведён.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="price">
     <div class="wrap stack-lg">
       <div class="stack">
         <span class="eyebrow">Цены</span>
-        <h2>Покупается один раз</h2>
-        <p class="lede">Без подписки: обработка идёт на вашем компьютере, серверов
-          у нас нет, и платить за них вам незачем.</p>
+        <h2>Платится один раз, остаётся навсегда</h2>
+        <p class="lede">Смотреть и слушать — сколько угодно и бесплатно, включая план
+          сета и все его швы одним файлом. Платное начинается там, где сет
+          забирают себе. Без подписки: обработка идёт на вашем компьютере,
+          серверов у нас нет, и платить за них вам незачем.</p>
       </div>
       <div class="tiers">
         <div class="tier">
-          <h3>Пробная</h3>
+          <h3>Бесплатно</h3>
           <div class="price">0 ₽</div>
           <ul>
-            <li>Библиотека до 50 треков</li>
-            <li>Отбор переходов без ограничений</li>
-            <li>Сет до 15 минут</li>
-            <li>Все приёмы сведения</li>
+            <li>Библиотека любого размера</li>
+            <li>Разбор, разделение на слои, подбор пар</li>
+            <li>Прослушивание и отбор швов — без ограничений</li>
+            <li>План сета и все его швы подряд одним файлом</li>
           </ul>
           <a class="cta quiet" href="#get">Скачать</a>
         </div>
         <div class="tier pick">
-          <h3>Личная</h3>
-          <div class="price">3 900 ₽ <span>разово</span></div>
+          <h3>Полная</h3>
+          <div class="price">690 ₽ <span>один раз</span></div>
           <ul>
-            <li>Библиотека и сет без ограничений</li>
-            <li>Разделение на слои и стем-приёмы</li>
-            <li>Экспорт в FLAC и WAV</li>
-            <li>Обновления год</li>
+            <li>Сет целиком одним файлом, FLAC или WAV</li>
+            <li>Сборка сета из отобранных швов</li>
+            <li>Выгрузка в Mixxx, Auto DJ, автопилот</li>
+            <li>Два компьютера, обновления версий 1.x</li>
           </ul>
           <a class="cta" href="/app/?buy=personal">Купить</a>
         </div>
         <div class="tier">
-          <h3>Мастерская</h3>
-          <div class="price">12 000 ₽ <span>разово</span></div>
+          <h3>С разбором</h3>
+          <div class="price">1 890 ₽ <span>один раз</span></div>
           <ul>
-            <li>Всё из «Личной»</li>
-            <li>Установка под ключ с подключением</li>
-            <li>Разбор вашей библиотеки вместе</li>
-            <li>Обновления два года</li>
+            <li>Всё из «Полной»</li>
+            <li>Разбираю ваш первый сет и пишу, что поправить</li>
+            <li>Ваши письма отвечаются первыми</li>
+            <li>Пять компьютеров</li>
           </ul>
           <a class="cta quiet" href="/app/?buy=workshop">Купить</a>
         </div>
       </div>
+      <p class="tier-note">Составить план микса умеют многие программы — поэтому план
+        здесь бесплатный. Свести его в готовый файл не умеет почти никто; за это
+        и берутся деньги.</p>
+      <p class="tier-note">Это цена версии 1.x — она вырастет вместе с программой.
+        Купленная лицензия бессрочная, доплачивать не придётся.</p>
       <p class="tier-note">Цены в рублях, НДС не облагается. Возврат в течение 14 дней без вопросов.</p>
     </div>
   </section>
@@ -444,6 +592,93 @@
     Музыка обрабатывается на вашем компьютере и никуда не передаётся.
   </div>
 </footer>
+
+<script>
+/* Фон первого экрана: две деки.
+   Две волны идут навстречу и пересекаются в шве — оранжевая колонка и
+   есть точка сведения. Единственная анимация на странице, поэтому она
+   имеет право быть про продукт, а не про красоту.
+
+   Всё считается на месте, без библиотек и без звука: это рисунок, а не
+   анализатор. Шум детерминированный, поэтому картинка одинакова при
+   каждом заходе. */
+(function () {
+  "use strict";
+  var cv = document.getElementById("herobg");
+  if (!cv || !cv.getContext) return;
+  var ctx = cv.getContext("2d");
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var W = 0, H = 0;
+
+  function hash(n) { var v = Math.sin(n * 127.1) * 43758.5453; return v - Math.floor(v); }
+  function noise(x) {
+    var i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+    return hash(i) * (1 - u) + hash(i + 1) * u;
+  }
+  function fbm(x) { return noise(x) * 0.5 + noise(x * 2.1) * 0.3 + noise(x * 4.3) * 0.2; }
+
+  function size() {
+    var r = cv.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(1, Math.round(r.width));
+    H = Math.max(1, Math.round(r.height));
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw(t) {
+    ctx.fillStyle = "#001b24";
+    ctx.fillRect(0, 0, W, H);
+    var seam = W * 0.66;
+    var lanes = [
+      { y: H * 0.36, col: "#2fbf9b", dir: 1,  right: true  },
+      { y: H * 0.70, col: "#f75700", dir: -1, right: false }
+    ];
+    for (var li = 0; li < 2; li++) {
+      var L = lanes[li];
+      ctx.beginPath();
+      for (var x = 0; x <= W; x += 2) {
+        var p = (x + t * 26 * L.dir + li * 900) / 34;
+        var amp = (fbm(p) - 0.45) * H * 0.20;
+        /* Огибающая: у шва звучат обе деки, к краям остаётся одна. */
+        var d = (x - seam) / (W * 0.55);
+        var g = L.right ? 1 - Math.max(0, d) * 0.85 : 1 - Math.max(0, -d) * 0.85;
+        var y = L.y + amp * Math.max(0.12, g);
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = L.col;
+      ctx.globalAlpha = 0.42;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    var g2 = ctx.createLinearGradient(seam - 60, 0, seam + 60, 0);
+    g2.addColorStop(0, "rgba(247,87,0,0)");
+    g2.addColorStop(0.5, "rgba(247,87,0,0.13)");
+    g2.addColorStop(1, "rgba(247,87,0,0)");
+    ctx.fillStyle = g2;
+    ctx.fillRect(seam - 60, 0, 120, H);
+    ctx.strokeStyle = "rgba(247,87,0,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(seam, 0); ctx.lineTo(seam, H); ctx.stroke();
+  }
+
+  var t0 = performance.now();
+  function frame() {
+    draw((performance.now() - t0) / 1000);
+    requestAnimationFrame(frame);
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { size(); if (still.matches) draw(4.2); }).observe(cv);
+  } else {
+    window.addEventListener("resize", function () { size(); if (still.matches) draw(4.2); });
+  }
+  size();
+  /* 4.2 с — «типичный» кадр: волна уже разошлась, но ничего не обрезано. */
+  if (still.matches) draw(4.2); else requestAnimationFrame(frame);
+})();
+</script>
 
 </body>
 </html>

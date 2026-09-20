@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.so
 python/darave.log
+site/api/_config.php
 
 # Build artifacts
 build/

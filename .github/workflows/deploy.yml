@@ -1,3 +1,23 @@
+name: Deploy to reg.ru
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'site/**'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Только показать изменения, ничего не трогать'
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -5,10 +25,20 @@
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy via SSH
+      - name: Deploy via rsync
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd /var/www/u3647882/data/www/darave.ru
-            git pull origin main
-            touch tmp/restart.txt
-          EOF
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY="--dry-run"
+            echo "=== DRY RUN: реальных изменений на сервере не будет ==="
+          fi
+
+          rsync -avz --delete $DRY \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude="_config.php" \
+            --exclude="db.sql" \
+            --exclude="*.log" \
+            --exclude="*.md" \
+            --exclude="nginx.conf.example" \
+            --exclude="deploy.yml.new" \
+            site/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/

@@ -298,26 +298,54 @@
   .seam-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
   .seam-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
 
-  /* Слот под ролик. Пустого плеера на странице нет: блок показывается
-     только когда в data-yt появится настоящий идентификатор. До клика
-     не грузится ничего с чужих серверов — только обложка. */
-  .film { display: none; }
-  .film.on { display: block; }
-  .film .frame {
+  /* --- переходы ---------------------------------------------------
+     Одна рамка на все фрагменты: вкладки только меняют таймкод. Так
+     на странице ровно один плеер, а не четыре чёрных прямоугольника. */
+  .reels { display: flex; flex-direction: column; gap: 18px; }
+  .reel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .reel-tabs button {
+    font: 500 13px/1.35 var(--body); color: var(--muted); cursor: pointer;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 14px; text-align: left;
+  }
+  .reel-tabs button b { display: block; color: var(--text); font-weight: 600; }
+  .reel-tabs button:hover { border-color: var(--muted); }
+  .reel-tabs button[aria-pressed="true"] { border-color: var(--flame); background: var(--panel); }
+  .reel-tabs button[aria-pressed="true"] b { color: var(--flame); }
+  .reel-frame {
     position: relative; aspect-ratio: 16 / 9; border-radius: 14px;
     overflow: hidden; border: 1px solid var(--line); background: var(--panel);
     cursor: pointer;
   }
-  .film .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .film .frame iframe { width: 100%; height: 100%; border: 0; display: block; }
-  .film .play {
+  .reel-frame img, .reel-frame iframe { width: 100%; height: 100%; display: block; border: 0; }
+  .reel-frame img { object-fit: cover; }
+  .reel-play {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(0,27,36,.35);
+    background: rgba(0,27,36,.32);
   }
-  .film .play span {
-    width: 68px; height: 68px; border-radius: 50%; background: var(--flame);
-    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 24px;
+  .reel-play span {
+    width: 72px; height: 72px; border-radius: 50%; background: var(--flame);
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    font-size: 26px; padding-left: 4px;
   }
+  .reel-note { font-size: 13.5px; color: var(--muted); }
+  /* Подпись поверх кадра. Обложку отдаёт ютуб, и она может не доехать —
+     у кого-то блокировщик, у кого-то сеть. Пустой тёмный прямоугольник
+     выглядит как поломка, подпись — как кадр. */
+  .reel-badge {
+    position: absolute; left: 14px; bottom: 12px; z-index: 1;
+    font-family: var(--mono); font-size: 12px; color: var(--text);
+    background: rgba(0,27,36,.72); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 10px;
+  }
+
+  /* --- снимок интерфейса --- */
+  .shot {
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--panel); line-height: 0;
+  }
+  .shot img { width: 100%; height: auto; display: block; }
+  .shot-cap { font-size: 13px; color: var(--muted); line-height: 1.6; padding-top: 12px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -398,18 +426,50 @@
         </div>
       </div>
 
-      <!-- Ролик. Чтобы включить: поставьте идентификатор ютуб-видео в
-           data-yt, и блок появится сам. Пустого плеера на странице нет —
-           лучше никакого видео, чем чёрный прямоугольник. -->
-      <div class="film" id="film" data-yt="">
+      <!-- Переходы из собственных записей автора.
+           Не нарезаны в отдельные файлы намеренно: у встраивания ютуба
+           есть start и end, и фрагмент играет ровно от и до. Значит
+           видео одно, монтировать нечего, а обновить таймкод — это
+           поправить строку ниже.
+           До нажатия с ютуба берётся только обложка: плеер тянет за
+           собой куки и счётчики, и грузить их всем подряд ради кнопки
+           «play» неприлично. -->
+      <div class="reels" id="reels">
         <div class="stack">
-          <span class="eyebrow">Видео</span>
-          <h2>Как это выглядит в работе</h2>
+          <span class="eyebrow">Как это звучит</span>
+          <h2>Четыре шва, записанных в программе</h2>
+          <p class="lede">
+            Записи сделаны в DARAVE на библиотеке автора. Выберите переход —
+            он проиграет ровно свой кусок, без поиска по таймлайну.
+          </p>
         </div>
-        <div class="frame" id="film-frame" role="button" tabindex="0" aria-label="Смотреть видео">
-          <img id="film-cover" alt="" loading="lazy">
-          <span class="play" aria-hidden="true"><span>&#9654;</span></span>
+        <div class="reel-tabs" id="reel-tabs" role="group" aria-label="Переходы"></div>
+        <div class="reel-frame" id="reel-frame" role="button" tabindex="0" aria-label="Смотреть переход">
+          <img id="reel-cover" alt="" loading="lazy">
+          <span class="reel-play" aria-hidden="true"><span>&#9654;</span></span>
         </div>
+        <p class="reel-note" id="reel-note"></p>
+      </div>
+
+      <div class="stack">
+        <span class="eyebrow">Экран сборки</span>
+        <h2>Сет виден целиком до того, как он сведён</h2>
+        <p class="lede">
+          Столбцы — энергия каждого трека, их высота и есть та самая дуга.
+          Ниже — сколько играет каждый, где стыки и что получится по времени.
+          Кнопка «Собрать сет целиком» отдаёт один файл.
+        </p>
+        <div class="shot">
+          <picture>
+            <source srcset="/shot-controlc.webp" type="image/webp">
+            <img src="/shot-controlc.jpg" width="1600" height="706" loading="lazy" decoding="async"
+                 alt="Вкладка ControlC: энергетическая дуга сета из 23 треков, список сведений и треки с темпом, тональностью и уровнем энергии">
+          </picture>
+        </div>
+        <p class="shot-cap">
+          Настоящий экран, не макет: 23 трека, 22 сведения, 22:52 на выходе.
+          Библиотека — своя, у вас будет своя.
+        </p>
       </div>
     </div>
   </section>
@@ -1086,37 +1146,90 @@
   if (!still.matches) requestAnimationFrame(frame);
 })();
 
-/* Ролик. Появляется, только если в data-yt стоит идентификатор.
-   До клика с ютуба берётся одна обложка и ничего больше: плеер тянет
-   за собой куки и счётчики, и грузить их всем подряд ради кнопки
-   «play» неприлично. */
+/* Переходы из записей автора.
+   ------------------------------------------------------------------
+   Фрагменты не нарезаны в файлы: у встраивания ютуба есть start и end,
+   и кусок играет ровно от и до. Одно видео, никакого монтажа, а
+   поправить границу — это поправить два числа ниже.
+
+   Обложка берётся с ютуба, плеер — только по нажатию. Пока на кнопку
+   не нажали, чужие счётчики к посетителю не приезжают. */
 (function () {
   "use strict";
-  var box = document.getElementById("film");
+  var box = document.getElementById("reels");
   if (!box) return;
-  var id = (box.getAttribute("data-yt") || "").trim();
-  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return;   /* нет ролика — нет блока */
 
-  var frame = document.getElementById("film-frame");
-  var cover = document.getElementById("film-cover");
-  cover.src = "https://i.ytimg.com/vi/" + id + "/maxresdefault.jpg";
-  cover.onerror = function () { cover.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"; };
-  box.classList.add("on");
+  function sec(m, s) { return m * 60 + s; }
 
-  function open() {
+  var REELS = [
+    { id: "MqEeh-P4wbQ", from: sec(0, 21), to: sec(0, 57), name: "Переход 1", note: "Первая запись, 0:21–0:57" },
+    { id: "MqEeh-P4wbQ", from: sec(1, 2),  to: sec(1, 35), name: "Переход 2", note: "Первая запись, 1:02–1:35" },
+    { id: "MqEeh-P4wbQ", from: sec(2, 42), to: sec(3, 10), name: "Переход 3", note: "Первая запись, 2:42–3:10" },
+    { id: "SVIfsrEl9zM", from: sec(2, 10), to: sec(3, 0),  name: "Переход 4", note: "Вторая запись, 2:10–3:00" }
+  ];
+  var cur = REELS[0];
+
+  var tabs  = document.getElementById("reel-tabs");
+  var frame = document.getElementById("reel-frame");
+  var cover = document.getElementById("reel-cover");
+  var note  = document.getElementById("reel-note");
+
+  function mmss(t) {
+    var m = Math.floor(t / 60), s = t % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function showCover() {
+    frame.innerHTML =
+      '<img id="reel-cover" alt="" loading="lazy">' +
+      '<span class="reel-play" aria-hidden="true"><span>&#9654;</span></span>' +
+      '<span class="reel-badge"></span>';
+    frame.querySelector(".reel-badge").textContent =
+      cur.name + " · " + mmss(cur.from) + "–" + mmss(cur.to);
+    var img = document.getElementById("reel-cover");
+    img.src = "https://i.ytimg.com/vi/" + cur.id + "/maxresdefault.jpg";
+    img.onerror = function () { img.src = "https://i.ytimg.com/vi/" + cur.id + "/hqdefault.jpg"; };
+    frame.style.cursor = "pointer";
+    note.textContent = cur.note + " · " + (cur.to - cur.from) + " секунд. " +
+      "Запись сделана в программе; ничего, кроме границ фрагмента, не менялось.";
+  }
+
+  function play() {
     var f = document.createElement("iframe");
-    f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0";
-    f.title = "DARAVE в работе";
+    /* youtube-nocookie + rel=0: без «похожих видео» чужих каналов в
+       конце — на странице, которая продаёт, это лишняя дверь наружу. */
+    f.src = "https://www.youtube-nocookie.com/embed/" + cur.id +
+            "?start=" + cur.from + "&end=" + cur.to + "&autoplay=1&rel=0&modestbranding=1";
+    f.title = cur.name + " — DARAVE";
     f.allow = "accelerometer; autoplay; encrypted-media; picture-in-picture";
     f.allowFullscreen = true;
     frame.innerHTML = "";
     frame.appendChild(f);
     frame.style.cursor = "default";
   }
-  frame.addEventListener("click", open);
-  frame.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+
+  REELS.forEach(function (r, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = "<b>" + r.name + "</b>" + mmss(r.from) + " – " + mmss(r.to);
+    b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", function () {
+      cur = r;
+      Array.prototype.forEach.call(tabs.children, function (n) {
+        n.setAttribute("aria-pressed", n === b ? "true" : "false");
+      });
+      /* Переключение всегда возвращает обложку: продолжать играть
+         старый фрагмент под новой подписью — врать. */
+      showCover();
+    });
+    tabs.appendChild(b);
   });
+
+  frame.addEventListener("click", function () { if (!frame.querySelector("iframe")) play(); });
+  frame.addEventListener("keydown", function (e) {
+    if ((e.key === "Enter" || e.key === " ") && !frame.querySelector("iframe")) { e.preventDefault(); play(); }
+  });
+  showCover();
 })();
 </script>
 

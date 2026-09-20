@@ -261,14 +261,22 @@
     // Вернулись с оплаты — ждём подтверждения и только потом ищем
     // программу: иначе человек увидит «программа не найдена» раньше,
     // чем «оплата прошла», и решит, что деньги ушли впустую.
-    if (paid) { watchPayment(paid); return; }
+    if (paid) {
+      // Если вкладку открыли мы сами (window.open из кнопки оплаты), у неё
+      // есть opener. Тогда это ВКЛАДКА ОПЛАТЫ, а не та, в которой человек
+      // работал: ей нечего искать программу, за это отвечает исходная.
+      var fromPayTab = false;
+      try { fromPayTab = !!(window.opener && !window.opener.closed); } catch (e) {}
+      watchPayment(paid, { closeHint: fromPayTab });
+      return;
+    }
 
-    // Пришли с витрины по кнопке «Купить». Тариф запоминаем и
-    // запускаем оплату сразу: человек уже нажал кнопку, второй раз
-    // просить его нажимать незачем.
+    // Пришли с витрины по кнопке «Купить». Показываем экран с кнопкой,
+    // а не уводим на оплату сразу: оплата открывается в новой вкладке, а
+    // новую вкладку браузер разрешает открыть только из клика.
     if (buy === "personal" || buy === "workshop") {
       pendingBuy = buy;
-      startPayment(buy);
+      showPayScreen(buy);
       return;
     }
     findClient();
@@ -276,55 +284,143 @@
 
   // ─────────── оплата ───────────
 
+  var TIER_NAMES = { personal: "Полная", workshop: "С разбором" };
+
+  // Экран с кнопкой перед оплатой.
+  //
+  // Раньше оплата открывалась сразу и В ЭТОЙ ЖЕ вкладке. Теперь она
+  // уходит в новую, а новую вкладку браузер разрешает открыть только
+  // СИНХРОННО из обработчика клика — всё, что после ответа сервера,
+  // считается всплывающим окном и блокируется. Отсюда лишний экран: он
+  // даёт тот самый клик.
+  function showPayScreen(tier) {
+    body('<h1>Оплата тарифа «' + TIER_NAMES[tier] + '»</h1>' +
+         '<p>Страница оплаты откроется в новой вкладке. Эту не закрывайте — ' +
+         'результат придёт сюда.</p>' +
+         '<button id="pay">Оплатить по СБП</button>' +
+         '<button id="skip" class="quiet" style="margin-top:10px">Продолжить бесплатно</button>');
+    $("pay").addEventListener("click", function () { startPayment(tier); });
+    $("skip").addEventListener("click", function () {
+      history.replaceState(null, "", "/app/");
+      findClient();
+    });
+  }
+
   function startPayment(tier) {
-    var names = { personal: "Полная", workshop: "С разбором" };
-    body('<h1>Оплата тарифа «' + names[tier] + '»</h1>' +
+    // Вкладку открываем ЗДЕСЬ, до запроса: после него будет поздно.
+    // Пока ответа нет, в ней стоит заглушка, иначе человек секунд пять
+    // смотрит на пустое белое окно и успевает его закрыть.
+    var win = null;
+    try { win = window.open("", "_blank"); } catch (e) { win = null; }
+    if (win) {
+      try {
+        win.document.write('<!doctype html><meta charset="utf-8">' +
+          '<title>Оплата DARAVE</title><body style="margin:0;background:#001b24;' +
+          'color:#7fa0ab;font:15px/1.6 system-ui,sans-serif;display:flex;' +
+          'align-items:center;justify-content:center;height:100vh">' +
+          'Открываю страницу оплаты…</body>');
+      } catch (e) { /* в части браузеров в about:blank писать нельзя */ }
+    }
+
+    body('<h1>Оплата тарифа «' + TIER_NAMES[tier] + '»</h1>' +
          '<p><span class="spin">◐</span> Готовлю платёж…</p>');
 
     api("buy.php", { tier: tier, method: "sbp" }).then(function (r) {
       if (r.status === 401) {
-        // Сюда мы не попадём из showConnect (он вызывается только после
-        // входа), но пусть будет: истёкшая кука выглядит именно так.
+        if (win) win.close();
         location.href = "/app/?buy=" + tier;
         return;
       }
-      if (r.data && r.data.confirmation_url) {
-        location.href = r.data.confirmation_url;
+      var url = (r.data && r.data.confirmation_url) || null;
+      if (url) {
+        var order = r.data.order_id || null;
+        if (win) {
+          win.location.href = url;
+          watchPayment(order, { url: url, waitingForHuman: true });
+        } else {
+          // Всплывающие окна запрещены настройками. Молча уводить эту
+          // вкладку нельзя — человек просил новую; даём ссылку и решает он.
+          // Кнопка, а не ссылка: клик по ней — снова жест пользователя,
+          // и window.open из него браузер уже пропускает.
+          body('<h1>Браузер не дал открыть вкладку</h1>' +
+               '<div class="note">Всплывающие окна для darave.ru запрещены. ' +
+               'Нажмите кнопку — откроется оплата.</div>' +
+               '<button id="paybtn">Открыть оплату</button>');
+          $("paybtn").addEventListener("click", function () {
+            window.open(url, "_blank", "noopener");
+            watchPayment(order, { url: url, waitingForHuman: true });
+          });
+        }
         return;
       }
+      if (win) win.close();
       body('<h1>Не смог создать платёж</h1>' +
-           '<div class="note bad">' + escapeHtml(r.data.error || "Платёжный сервис не ответил") + '</div>' +
+           '<div class="note bad">' + escapeHtml((r.data && r.data.error) || "Платёжный сервис не ответил") + '</div>' +
            '<button id="retry">Попробовать снова</button>' +
            '<button id="skip" class="quiet" style="margin-top:10px">Пропустить, продолжить бесплатно</button>');
-      $("retry").addEventListener("click", function () { startPayment(tier); });
+      $("retry").addEventListener("click", function () { showPayScreen(tier); });
       $("skip").addEventListener("click", function () {
         history.replaceState(null, "", "/app/");
         findClient();
       });
     }).catch(function () {
+      if (win) win.close();
       body('<h1>Сайт не отвечает</h1>' +
            '<div class="note bad">Проверьте интернет и попробуйте снова.</div>' +
            '<button id="retry">Попробовать снова</button>');
-      $("retry").addEventListener("click", function () { startPayment(tier); });
+      $("retry").addEventListener("click", function () { showPayScreen(tier); });
     });
   }
 
   // Ждём, пока ЮKassa подтвердит оплату. Уведомление до нашего сервера
   // доходит за секунды, но иногда и за минуту — поэтому опрашиваем, а не
   // показываем сразу «не получилось».
-  function watchPayment(orderId) {
+  function watchPayment(orderId, opts) {
+    opts = opts || {};
     var tries = 0;
-    var MAX = 20;                        // ~60 секунд, дальше врать нельзя
 
-    body('<h1>Проверяю оплату</h1>' +
-         '<p><span class="spin">◐</span> Платёжный сервис подтверждает перевод. ' +
-         'Обычно это пара секунд.</p>');
+    // Два разных ожидания, и сроки у них разные.
+    //
+    // Вернулись по ?paid= — человек УЖЕ заплатил, ждём только уведомления
+    // от ЮKassa: это секунды, и минуты хватает с запасом.
+    //
+    // Открыли оплату в соседней вкладке — там человек ещё идёт в
+    // банковское приложение, подтверждает, возвращается. Минуты тут мало,
+    // даём десять: оборвать ожидание раньше — значит сказать «не знаю»
+    // тому, кто вот-вот заплатит.
+    var MAX = opts.waitingForHuman ? 200 : 20;   // шаг 3 с
+
+    if (!orderId) {
+      body('<h1>Оплата открыта в новой вкладке</h1>' +
+           '<div class="note">Номер заказа не пришёл, поэтому следить за ним ' +
+           'отсюда не могу. Оплатите в соседней вкладке и обновите эту.</div>' +
+           '<button id="reload">Обновить</button>');
+      $("reload").addEventListener("click", function () { location.href = "/app/"; });
+      return;
+    }
+
+    body('<h1>' + (opts.waitingForHuman ? "Оплата открыта в новой вкладке" : "Проверяю оплату") + '</h1>' +
+         '<p><span class="spin">◐</span> ' +
+         (opts.waitingForHuman
+            ? "Оплатите по СБП в соседней вкладке — результат появится здесь сам."
+            : "Платёжный сервис подтверждает перевод. Обычно это пара секунд.") + '</p>' +
+         (opts.url ? '<p><a id="reopen" target="_blank" rel="noopener">Открыть оплату снова</a></p>' : ''));
+    if (opts.url && $("reopen")) $("reopen").href = opts.url;
 
     (function poll() {
       api("order.php?id=" + encodeURIComponent(orderId)).then(function (r) {
         var o = (r.data && r.data.order) || null;
         if (o && o.status === "succeeded") {
           history.replaceState(null, "", "/app/");
+          if (opts.closeHint) {
+            // Это вкладка оплаты. Программу ищет та, из которой её открыли,
+            // — две вкладки, наперегонки ищущие один порт, только мешают.
+            body('<h1>Оплачено</h1>' +
+                 '<div class="note good">Лицензия активирована. Спасибо!<br>' +
+                 'Чек придёт на вашу почту — его формирую я, обычно в тот же день.</div>' +
+                 '<p>Эту вкладку можно закрыть и вернуться в предыдущую.</p>');
+            return;
+          }
           body('<h1>Оплачено</h1>' +
                '<div class="note good">Лицензия активирована. Спасибо!<br>' +
                'Чек придёт на вашу почту — его формирую я, обычно в тот же день.</div>' +

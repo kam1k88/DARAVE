@@ -123,6 +123,10 @@ db()->prepare("UPDATE orders SET payment_id = ?, status = 'pending' WHERE id = ?
 
 json_out([
     'ok' => true,
+    // order_id нужен странице: оплата уходит в ОТДЕЛЬНУЮ вкладку, а эта
+    // остаётся следить за заказом. Без номера следить не за чем.
+    'order_id' => $order_id,
+    'amount' => $tiers[$tier]['amount'],
     'payment_id' => $p['id'],
     'confirmation_url' => $p['confirmation']['confirmation_url'] ?? null,
     'test_mode' => $test,

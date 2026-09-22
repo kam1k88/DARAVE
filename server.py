@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -2842,6 +2842,58 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
         raise HTTPException(status_code=404, detail="для этой пары нет содержательных стыковок")
     return JSONResponse({"ok": True, "seam": items[0], "tried": len(items),
                          "seed": seed, "combo": audition.combo_key(items[0])})
+
+
+@app.post("/api/rooms/{session_id}/audition/roll")
+async def audition_roll(session_id: str, body: dict) -> JSONResponse:
+    """Один перебор на всё: варианты этой пары, а когда кончились — новая пара.
+
+    Раньше это были три отдельные кнопки («повезёт», окно seed, «другая
+    пара»), и человек должен был сам догадываться, какая из них сейчас
+    уместна. Догадка простая и всегда одна: сначала выжимаем пару, потом
+    берём следующую. Значит это одна кнопка, а не три.
+
+    Seed по умолчанию считается ОТ БИБЛИОТЕКИ: одна и та же библиотека
+    даёт одну и ту же последовательность вариантов, и её можно назвать
+    словами. Добавили треков — расклад честно стал другим."""
+    import audition
+
+    seam = body.get("seam") or {}
+    tracks = _room_tracks(session_id)
+    seed = _roll_seed(body.get("seed"), tracks)
+
+    items = audition.lucky(session_id, tracks, seam.get("a_path"),
+                           seam.get("b_path"), limit=1,
+                           exclude=list(body.get("seen") or ()), seed=seed)
+    source = "pair"
+    if not items:
+        items = audition.other_pair(
+            session_id, tracks,
+            exclude=list(body.get("exclude") or ()),
+            avoid=[p for p in (seam.get("a_path"), seam.get("b_path")) if p],
+            limit=1)
+        source = "pair_new"
+    if not items:
+        raise HTTPException(status_code=404,
+                            detail="в библиотеке не осталось ни вариантов, ни свободных пар")
+    return JSONResponse({"ok": True, "seam": items[0], "seed": seed,
+                         "source": source, "tried": len(items),
+                         "combo": audition.combo_key(items[0])})
+
+
+def _roll_seed(raw, tracks: list[dict]) -> int:
+    """Номер расклада. Пришёл от человека — берём его; нет — считаем от
+    библиотеки, чтобы он был устойчивым, а не новым на каждое нажатие."""
+    try:
+        if raw not in (None, ""):
+            return int(raw)
+    except (TypeError, ValueError):
+        pass
+    import hashlib
+
+    paths = sorted(str(t.get("path") or "") for t in tracks)
+    h = hashlib.sha256(("\n".join(paths)).encode("utf-8")).hexdigest()
+    return int(h[:8], 16) % 10_000
 
 
 @app.post("/api/rooms/{session_id}/audition/other-sections")

@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -272,6 +272,17 @@ async def require_account(request: "Request", call_next):
 
     auth = request.headers.get("authorization", "")
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    # Тег <audio src="..."> и ссылка «скачать» заголовков НЕ ставят: их
+    # грузит сам браузер, а не наш fetch. Поэтому у файлов токен едет
+    # параметром — иначе кнопка «Послушать» молча отдаёт 401, и человек
+    # видит подпись «играет» при полной тишине.
+    #
+    # Только GET: параметр в адресе оседает в логах и в Referer, и
+    # позволять им ЧТО-ТО МЕНЯТЬ не стоит. Читать — можно: программа
+    # слушает 127.0.0.1, и у того, кто способен подставить этот адрес,
+    # токен и так уже есть.
+    if not token and request.method == "GET":
+        token = str(request.query_params.get("token") or "").strip()
     if not cloud_auth.token_ok(token):
         st = cloud_auth.status()
         if st.get("signed_in") is False and st.get("email"):
@@ -3698,6 +3709,27 @@ async def autopilot_status(session_id: str) -> JSONResponse:
     return JSONResponse(room.autopilot.status())
 
 
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+def _is_local_origin(origin: str) -> bool:
+    """Страница, которую отдала сама программа.
+
+    ALLOWED_ORIGINS — про САЙТ: оттуда приходит вход. Но интерфейс
+    программа отдаёт сама, с 127.0.0.1, и браузер честно ставит этот
+    origin на WebSocket. Список для сайта его не знал, и собственный же
+    интерфейс получал 403 на /ws/chat: телеметрия и чат молча не
+    подключались, а по HTTP всё работало — потому что там origin никто
+    не проверяет.
+    """
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(origin).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in _LOCAL_HOSTS
+
+
 async def ws_allowed(websocket: "WebSocket") -> bool:
     """Пустить ли WebSocket. Закрывает дыру, которую HTTP-прослойка не видит.
 
@@ -3714,7 +3746,7 @@ async def ws_allowed(websocket: "WebSocket") -> bool:
     if os.environ.get("DARAVE_NO_AUTH") == "1":
         return True
     origin = websocket.headers.get("origin")
-    if origin and origin not in ALLOWED_ORIGINS:
+    if origin and origin not in ALLOWED_ORIGINS and not _is_local_origin(origin):
         return False
     token = websocket.query_params.get("token", "")
     if not token:

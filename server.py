@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -2827,13 +2827,21 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
     # seen — комбинации, которые диджей на этой паре уже видел. Без них
     # перебор детерминированный: лучшая комбинация одна, и кнопка со
     # второго нажатия ничего не меняла.
+    # Seed — номер расклада. Пришёл от клиента — берём его, не пришёл —
+    # выдаём новый и ВОЗВРАЩАЕМ: иначе воспроизвести находку нечем.
+    raw = body.get("seed")
+    try:
+        seed = int(raw) if raw not in (None, "") else secrets.randbelow(10_000)
+    except (TypeError, ValueError):
+        seed = secrets.randbelow(10_000)
+
     items = audition.lucky(session_id, tracks, seam.get("a_path"),
                            seam.get("b_path"), limit=int(body.get("limit") or 1),
-                           exclude=list(body.get("seen") or ()))
+                           exclude=list(body.get("seen") or ()), seed=seed)
     if not items:
         raise HTTPException(status_code=404, detail="для этой пары нет содержательных стыковок")
     return JSONResponse({"ok": True, "seam": items[0], "tried": len(items),
-                         "combo": audition.combo_key(items[0])})
+                         "seed": seed, "combo": audition.combo_key(items[0])})
 
 
 @app.post("/api/rooms/{session_id}/audition/other-sections")

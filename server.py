@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -2834,6 +2834,30 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
         raise HTTPException(status_code=404, detail="для этой пары нет содержательных стыковок")
     return JSONResponse({"ok": True, "seam": items[0], "tried": len(items),
                          "combo": audition.combo_key(items[0])})
+
+
+@app.post("/api/rooms/{session_id}/audition/other-sections")
+async def audition_other_sections(session_id: str, body: dict) -> JSONResponse:
+    """Другие точки стыка — треки и приём остаются те же.
+
+    Отказ НЕ записывается: диджей не отверг переход, он ищет для него
+    место. Записывать это как «не нравится» значит портить вкусовую
+    модель ровно там, где человек сказал обратное."""
+    import audition
+
+    seam = body.get("seam") or {}
+    tracks = _room_tracks(session_id)
+    items = audition.other_junction(session_id, tracks, seam,
+                                    exclude=list(body.get("seen") or ()))
+    if not items:
+        raise HTTPException(
+            status_code=404,
+            detail="у этой пары одна-единственная стыковка — поменяйте приём или трек")
+    top = items[0]
+    rec = sum(1 for x in items if x.get("junction_kind") == "recommended")
+    return JSONResponse({"ok": True, "seam": top, "combo": audition.combo_key(top),
+                         "kind": top.get("junction_kind"),
+                         "total": len(items), "recommended": rec})
 
 
 @app.post("/api/rooms/{session_id}/audition/swap-b")

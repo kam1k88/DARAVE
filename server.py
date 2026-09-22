@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.1.0"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -732,7 +732,21 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     seam_bars = body.get("bars")
     mix_profile = body.get("mix_profile") or None
     vocal_loop = body.get("vocal_loop")
-    extra_events = body.get("extra_events") or None
+    extra_events = list(body.get("extra_events") or [])
+    # FX по сторонам приходят ИДЕНТИФИКАТОРАМИ, а не готовыми событиями:
+    # словарь эффектов должен жить в одном месте, иначе клиент начнёт
+    # собирать события сам и они разъедутся с рендером.
+    fx_out = body.get("fx_out")
+    fx_in = body.get("fx_in")
+    if fx_out or fx_in:
+        import fx_presets
+
+        beats = max(4.0, float(seam_bars or 16) * 4.0)
+        extra_events += fx_presets.events_for(
+            fx_out, fx_in, beats,
+            genre_out=(track_a.get("subgenre") or track_a.get("genre")),
+            genre_in=(track_b.get("subgenre") or track_b.get("genre")))
+    extra_events = extra_events or None
     # Луп вокала уходящего включается ЯВНО (кнопкой или приёмом), а не
     # сам собой: автоматика здесь один раз уже сломала все демо разом.
     if source_at is None or target_at is None:
@@ -2842,6 +2856,25 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
         raise HTTPException(status_code=404, detail="для этой пары нет содержательных стыковок")
     return JSONResponse({"ok": True, "seam": items[0], "tried": len(items),
                          "seed": seed, "combo": audition.combo_key(items[0])})
+
+
+@app.get("/api/rooms/{session_id}/audition/fx")
+async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str = "",
+                              bars: float = 16.0) -> JSONResponse:
+    """Какие эффекты предложить на уход и на вход для этой пары.
+
+    Жанр сужает список, а не задаёт его: свои идут первыми, чужие следом
+    и помечены. Запрещать чужие незачем — диджей имеет право на гейтер в
+    ликвиде, если он знает, зачем."""
+    import fx_presets
+
+    beats = max(4.0, float(bars) * 4.0)
+    short = lambda items: [{"id": x["id"], "name": x["name"], "unit": x["unit"],
+                            "why": x["why"], "native": x["native"]} for x in items]
+    return JSONResponse({
+        "out": short(fx_presets.presets("out", beats, a_genre)),
+        "in": short(fx_presets.presets("in", beats, b_genre)),
+    })
 
 
 @app.post("/api/rooms/{session_id}/audition/roll")

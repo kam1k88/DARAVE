@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -1344,8 +1344,35 @@ _bpm_refine_status: dict[str, dict] = {}
 _bpm_refine_done: set[str] = set()  # чинить один раз за жизнь процесса, а не на каждый план
 
 
+def stems_child_cmd(paths_file: str, backend: str) -> list[str]:
+    """Команда запуска разделения на слои.
+
+    Отдельной функцией, чтобы самопроверка могла посмотреть на неё в
+    СОБРАННОЙ программе. Раньше здесь стоял «--dir <угаданная папка>», и
+    угадывание уводило шаг обходить весь домашний каталог; проверять
+    такое чтением исходника нельзя — в сборке исходника нет."""
+    return child_cmd("stems", "--paths-file", str(paths_file),
+                     "--backend", backend, "--all")
+
+
+def _safe_room_key(session_id: str) -> str:
+    """Код комнаты, пригодный для имени файла.
+
+    Сгенерированный код — это token_urlsafe, там только буквы, цифры,
+    «-» и «_». Но код можно ВВЕСТИ руками в поле на входном экране, и
+    оттуда он попадает прямо в имя файла базы. «../..» или имя со слэшем
+    означали бы запись мимо папки — в лучшем случае невнятная ошибка, в
+    худшем перезапись чужого файла. Сервер слушает только 127.0.0.1, то
+    есть навредить может лишь сам хозяин машины, но отказ должен быть
+    внятным, а не «FileNotFoundError» из глубины.
+    """
+    safe = "".join(ch if (ch.isalnum() or ch in "-_") else "_"
+                   for ch in str(session_id or ""))[:64]
+    return safe or "room"
+
+
 def _room_db_path(session_id: str) -> str:
-    return str(SCAN_DB_DIR / f"{session_id}.db")
+    return str(SCAN_DB_DIR / f"{_safe_room_key(session_id)}.db")
 
 
 async def _refine_room_bpm(session_id: str, force: bool = False) -> None:
@@ -1882,6 +1909,31 @@ def _parse_scan_line(line: str) -> dict | None:
             "name": m.group(3), "stage": ""}
 
 
+async def _step_heartbeat(session_id: str, key: str, st: dict,
+                          every: float = 60.0) -> None:
+    """Раз в минуту писать в журнал, что шаг ещё жив и на чём он.
+
+    Нужно потому, что молчание — это не отсутствие новостей, а отсутствие
+    СПОСОБА узнать новости. Разделение на слои идёт часами и печатает
+    строку раз в несколько минут; между строками журнал выглядел как
+    оборванный, и «дальше анализ не идёт» — ровно то, что видел диджей.
+    Собственных строк ребёнка для этого мало: он может молчать и по делу.
+    """
+    started = time.time()
+    try:
+        while True:
+            await asyncio.sleep(every)
+            mins = (time.time() - started) / 60.0
+            done, total = int(st.get("done") or 0), int(st.get("total") or 0)
+            where = f", {done}/{total}" if total else ""
+            name = str(st.get("name") or "")
+            logger.info(f"[анализ:{key}] идёт {mins:.0f} мин{where}"
+                        + (f" — {name}" if name else "")
+                        + " (это не зависание)")
+    except asyncio.CancelledError:
+        pass
+
+
 async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
                                parse=None) -> dict:
     """Запуск подпроцесса с живым прогрессом.
@@ -1917,6 +1969,14 @@ async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
                 # строке на трек вытеснял бы из него настоящую причину.
                 tail.append(line)
                 del tail[:-40]
+                # И В ЖУРНАЛ — СРАЗУ, а не после конца процесса.
+                #
+                # Раньше tail писался в лог одним куском, когда ребёнок
+                # уже завершился. Для скана это незаметно, а для стемов
+                # это четыре часа полной тишины: в журнале не появляется
+                # НИ ОДНОЙ строки, и отличить «идёт» от «повисло»
+                # невозможно ничем. Ровно на это диджей и жаловался.
+                logger.info(f"[анализ:{key}] {line}")
             if upd:
                 st.update({"done": int(upd.get("i", 0)),
                            "total": int(upd.get("total", 0)),
@@ -1928,9 +1988,11 @@ async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
                     lambda: asyncio.create_task(_analyze_push(session_id)))
         proc.wait()
 
-    await asyncio.to_thread(_pump)
-    for line in tail[-10:]:
-        logger.info(f"[анализ:{key}] {line}")
+    hb = asyncio.create_task(_step_heartbeat(session_id, key, st))
+    try:
+        await asyncio.to_thread(_pump)
+    finally:
+        hb.cancel()
     if proc.returncode != 0:
         return {"state": "fail", "note": f"код возврата {proc.returncode}",
                 "tail": tail[-5:]}
@@ -1954,6 +2016,8 @@ async def _analyze_run(session_id: str, path: str, steps: list[str],
         for key in steps:
             _analyze_status[session_id]["current"] = key
             await _mark(key, state="run")
+            logger.info(f"[анализ] шаг «{_la.ANALYZE_TITLES.get(key, key)}» начат")
+            _t0 = time.time()
             try:
                 res = await _analyze_one(session_id, key, path, force, backend,
                                          db_path, room, _stems)
@@ -1968,6 +2032,9 @@ async def _analyze_run(session_id: str, path: str, steps: list[str],
             except Exception as exc:                 # noqa: BLE001
                 logger.exception(f"[анализ] шаг {key} упал")
                 res = {"state": "fail", "note": str(exc)[:200]}
+            logger.info(f"[анализ] шаг «{_la.ANALYZE_TITLES.get(key, key)}» — "
+                        f"{res.get('state')} за {(time.time() - _t0) / 60.0:.1f} мин"
+                        + (f": {res.get('note')}" if res.get("note") else ""))
             await _mark(key, **res)
     finally:
         _analyze_status[session_id]["running"] = False
@@ -2048,10 +2115,26 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
         problem = _stems.backend_problem(_stems.resolve_backend(backend))
         if problem:
             return {"state": "fail", "note": problem}
-        root = path or _la.common_root(paths)
-        if not root:
-            return {"state": "fail", "note": "не понял, какую папку считать"}
-        cmd = child_cmd("stems", "--dir", root, "--backend", backend, "--all")
+        # Список треков, а НЕ папку.
+        #
+        # Раньше сюда шла папка: указанная в поле или общий корень путей
+        # библиотеки. У диджея треки лежат в «music/Phonk» и в «Music», и
+        # общим корнем этих двух оказывается C:\Users\kam1k88 — весь
+        # профиль целиком. Шаг уходил обходить AppData и Downloads,
+        # молчал десятки минут и видеокарту не трогал вовсе: до
+        # разделения дело не доходило. Именно это он и видел как
+        # «анализ дальше не идёт».
+        #
+        # Библиотека уже отсканирована — значит список треков у нас есть,
+        # и угадывать по нему папку незачем.
+        todo_file = (_paths.data_subdir("scan_dbs")
+                     / f"stems_todo_{_safe_room_key(session_id)}.txt")
+        try:
+            todo_file.write_text("\n".join(todo if not force else paths),
+                                 encoding="utf-8")
+        except OSError as exc:
+            return {"state": "fail", "note": f"не смог записать список треков: {exc}"}
+        cmd = stems_child_cmd(str(todo_file), backend)
         res = await _run_subprocess_step(session_id, key, cmd,
                                          parse=_la.parse_progress_line)
         cov = _stems.library_coverage(paths)
@@ -2178,14 +2261,34 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
     if key == "cleanup":
         import housekeeping
 
+        import track_analysis as _ta
+
         r = await asyncio.to_thread(housekeeping.session_cleanup, False, logger.info)
         removed = int(r.get("removed_count", 0) or 0)
         merged = int((r.get("library_dedupe") or {}).get("merged", 0) or 0)
-        if not removed and not merged:
+
+        # Треки, которых нет на диске. У диджея их было 47 из 187: в базе
+        # есть, файла нет. Это не косметика — подбор считает их
+        # кандидатами, предлагает в пару и ставит в сет, а сыграть
+        # нельзя. «Файлов не найдено 47» писал перемер темпа, и на этом
+        # всё: никто их не убирал.
+        gone = await asyncio.to_thread(_ta.dedupe_library_db, db_path, True)
+        missing = int(gone.get("missing", 0) or 0)
+        if missing:
+            fresh = await asyncio.to_thread(load_library_from_db, db_path)
+            if fresh:
+                room.library_tracks = fresh
+                persistence.save_library(session_id, fresh)
+                await room.broadcast_to_chat({"type": "library_updated",
+                                              "count": len(fresh)})
+
+        if not removed and not merged and not missing:
             return {"state": "skip", "note": "мусора нет"}
         note = f"убрано {removed} файлов, {r.get('freed_mb', 0)} МБ"
         if merged:
             note += f"; схлопнуто дублей по регистру пути: {merged}"
+        if missing:
+            note += f"; убрано из базы треков, которых нет на диске: {missing}"
         return {"state": "ok", "done": removed, "total": removed, "note": note}
 
     if key == "cues":

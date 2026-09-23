@@ -759,6 +759,26 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     # написано на карточке, — диджей слушал не то, что одобрял.
     seam_bars = body.get("bars")
     mix_profile = body.get("mix_profile") or None
+    if mix_profile is None:
+        # Профиль НЕ приходит из интерфейса и не хранится в нём. Раньше
+        # четыре ползунка жили в переменной экрана: подобрал форму на
+        # одной паре — те же числа уехали на следующую, к другому приёму
+        # и другой длине. Диджей: «на других стыках остаются на своих
+        # значениях и ломают переходы».
+        #
+        # Теперь считаем здесь, из того, что относится к ЭТОМУ переходу:
+        # длина в тактах, тип стыка, конфликт слоёв. Меняются такты —
+        # меняется и форма, сама.
+        import mix_profile as _mp
+
+        _lay = None
+        try:
+            import stem_features as _sf
+
+            _lay = _sf.gap(_sf.features(track_a_path), _sf.features(track_b_path))
+        except Exception:                            # noqa: BLE001
+            _lay = None
+        mix_profile = _mp.auto(seam_bars, body.get("pair_label"), _lay)
     vocal_loop = body.get("vocal_loop")
     extra_events = list(body.get("extra_events") or [])
     # FX по сторонам приходят ИДЕНТИФИКАТОРАМИ, а не готовыми событиями:
@@ -812,6 +832,7 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
 
     return JSONResponse({
         "ok": True,
+        "mix_profile": mix_profile,
         "url": f"/api/rooms/{session_id}/techniques/demo/{out_name}",
         **meta,
     })
@@ -1615,7 +1636,7 @@ async def start_library_scan(session_id: str, body: dict) -> JSONResponse:
         должна вытесняться оттуда именами файлов."""
         if proc.stdout is not None:
             for raw_line in proc.stdout:
-                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                line = decode_child_line(raw_line).rstrip()
                 if not line:
                     continue
                 status = _scan_status[session_id]
@@ -1775,6 +1796,64 @@ async def library_scan_status(session_id: str) -> JSONResponse:
 ANALYZE_STEPS = _la.ANALYZE_STEPS
 ANALYZE_DEFAULT = _la.ANALYZE_DEFAULT
 
+# --------------------------------- кодировка вывода дочерних процессов
+#
+# В журнале диджея строка скана выглядела так:
+#
+#   [анализ:scan] [����] ��� ��������� � �������� ����: 140 � �������� 0
+#
+# Причина: Python, печатая в ТРУБУ (а не в консоль), берёт кодировку из
+# locale.getpreferredencoding() — на русской Windows это cp1251. Мы же
+# читали байты как UTF-8, и каждая кириллическая буква превращалась в
+# «замену». Сообщение об ошибке, напечатанное дочерним процессом,
+# становилось нечитаемым ровно тогда, когда оно и нужно.
+#
+# Лечим с двух сторон. Первая: просим дочерний процесс печатать в UTF-8
+# явно. Вторая: всё равно умеем прочитать cp1251/cp866 — потому что
+# PYTHONUTF8 понимает не всякий процесс (ffmpeg, PowerShell, чужие
+# утилиты), а ломаться на них нельзя.
+def child_env() -> dict:
+    """Окружение для дочернего процесса: печатай в UTF-8."""
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def decode_child_line(raw: bytes) -> str:
+    """Строка из трубы. UTF-8, иначе кодировки Windows, иначе с заменами.
+
+    Порядок не случайный: cp1251 — то, что отдаёт сам Python на русской
+    Windows при печати в трубу, cp866 — то, что отдают консольные утилиты
+    старой закалки. Обе однобайтовые и декодируют почти всё, поэтому
+    UTF-8 обязан идти первым и СТРОГО: иначе правильный вывод молча
+    превратится в кракозябры другого сорта."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    # Обе однобайтовые: любая последовательность байт в них «валидна», и
+    # отличить их проверкой на ошибку НЕЛЬЗЯ. Поэтому не проверяем, а
+    # выбираем по результату: настоящий текст — это кириллица и пробелы,
+    # а не псевдографика и не надстрочные знаки. Побеждает вариант, где
+    # осмысленных символов больше.
+    best, best_score = None, -1
+    for enc in ("cp1251", "cp866"):
+        try:
+            text = raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        score = sum(1 for ch in text
+                    if ("а" <= ch <= "я" or "А" <= ch <= "Я" or ch in "ёЁ"
+                        or ch.isascii() and (ch.isalnum() or ch in " .,:;!?()[]/-+%"))
+                    ) - sum(1 for ch in text if "\u2500" <= ch <= "\u25ff")
+        if score > best_score:
+            best, best_score = text, score
+    if best is not None:
+        return best
+    return raw.decode("utf-8", errors="replace")
+
+
 _analyze_tasks: dict[str, asyncio.Task] = {}
 _analyze_status: dict[str, dict] = {}
 
@@ -1818,7 +1897,7 @@ async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
     loop = asyncio.get_running_loop()
     try:
         proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                         cwd=str(_paths.data_dir()),
+                         cwd=str(_paths.data_dir()), env=child_env(),
                          creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         return {"state": "fail", "note": f"не смог запустить: {exc}"}
@@ -1828,7 +1907,7 @@ async def _run_subprocess_step(session_id: str, key: str, cmd: list[str],
             proc.wait()
             return
         for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").rstrip()
+            line = decode_child_line(raw).rstrip()
             if not line:
                 continue
             upd = parse(line) if parse else None
@@ -2326,7 +2405,7 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
 
     try:
         proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                         cwd=str(_paths.data_dir()),
+                         cwd=str(_paths.data_dir()), env=child_env(),
                          creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Не смог запустить stems.py: {exc}") from exc
@@ -2341,7 +2420,7 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
     def _pump() -> None:
         if proc.stdout is not None:
             for raw in proc.stdout:
-                line = raw.decode("utf-8", errors="replace").rstrip()
+                line = decode_child_line(raw).rstrip()
                 if line:
                     st = _stem_status[session_id]
                     st["tail"] = (st["tail"] + [line])[-40:]
@@ -2440,7 +2519,7 @@ async def install_stems_pack(session_id: str) -> JSONResponse:
     def _pump() -> None:
         if proc.stdout is not None:
             for raw in proc.stdout:
-                line = raw.decode("utf-8", errors="replace").rstrip()
+                line = decode_child_line(raw).rstrip()
                 if line:
                     st = _stem_setup_status[session_id]
                     st["tail"] = (st["tail"] + [line])[-60:]

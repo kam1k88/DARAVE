@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -2210,7 +2210,7 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
     try:
         import stems as _st
 
-        info = _st.device_info()
+        info = await asyncio.to_thread(_st.device_info)
         # Цифры не выдуманы: они взяты из самого stems.device_info —
         # «2-4 минуты на трек» на видеокарте и «20-40 минут» на
         # процессоре. Берём верх вилки, потому что ошибиться в меньшую
@@ -2331,7 +2331,7 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Не смог запустить stems.py: {exc}") from exc
 
-    info = _stems.device_info()
+    info = await asyncio.to_thread(_stems.device_info)
     logger.info(f"стемы: запуск для '{path}', способ {backend}, "
                 f"устройство {'CUDA ' + str(info.get('name')) if info.get('cuda') else 'CPU'}")
     _stem_processes[session_id] = proc
@@ -2364,6 +2364,117 @@ async def start_stems_build(session_id: str, body: dict | None = None) -> JSONRe
                   + ("видеокарта " + str(info.get("name")) if info.get("cuda")
                      else "ПРОЦЕССОР, это долго: поставьте torch с CUDA")))
     return JSONResponse({"ok": True, "started": True, "detail": "Разделение запущено: " + hint})
+
+
+# --------------------------------------------- установка пакета слоёв
+#
+# Пакет слоёв — это torch и demucs, 2-3 ГБ. В установщик они не входят:
+# всё остальное весит 200 МБ, а слои нужны не всем (EQ- и фильтровые
+# приёмы работают без них). Ставятся они в ОТДЕЛЬНЫЙ Python, не в саму
+# программу, — так устроен stems.demucs_python, и так это переживает
+# переустановку DARAVE.
+#
+# Почему это кнопка, а не строчка в документации. В интерфейсе уже была
+# написана кнопка «Скачать пакет слоёв», которой не существовало: текст
+# писался по комментарию-намерению. Человек с установленной версией
+# оказывался в тупике — скрипта в сборке тоже не было. Теперь в сборке
+# лежит setup_stems.ps1, а кнопка его запускает и показывает вывод.
+#
+# Ставит скрипт, а не мы: он умеет находить Python 3.10-3.12, различать
+# CUDA-колёса и обычные, и ставить audio-separator так, чтобы его падение
+# не уносило demucs. Дублировать это в Python значит завести вторую
+# реализацию, которая разойдётся с первой.
+_stem_setup_proc: dict[str, object] = {}
+_stem_setup_status: dict[str, dict] = {}
+
+
+def stems_setup_script() -> Path | None:
+    """setup_stems.ps1 из сборки или из исходников. None — файла нет."""
+    p = _paths.resource_dir() / "setup_stems.ps1"
+    return p if p.is_file() else None
+
+
+@app.post("/api/rooms/{session_id}/stems/install")
+async def install_stems_pack(session_id: str) -> JSONResponse:
+    """Поставить torch и demucs в подходящий Python.
+
+    Долгая операция: качает из PyPI гигабайты. Поэтому запускаем и сразу
+    отвечаем, а вывод копится в статусе — как у самого разделения."""
+    import stems as _stems
+
+    if os.name != "nt":
+        raise HTTPException(
+            status_code=400,
+            detail="Автоустановка пока только для Windows. На других системах: "
+                   "pip install -r requirements-stems.txt в отдельный Python 3.10-3.12.")
+
+    proc = _stem_setup_proc.get(session_id)
+    if proc is not None and getattr(proc, "poll", lambda: 0)() is None:
+        raise HTTPException(status_code=409, detail="Установка уже идёт")
+
+    script = stems_setup_script()
+    if script is None:
+        raise HTTPException(
+            status_code=500,
+            detail="setup_stems.ps1 не найден в сборке. Это наша ошибка сборки, "
+                   "а не ваша: сообщите, пожалуйста.")
+
+    # -ExecutionPolicy Bypass — иначе на машине с политикой по умолчанию
+    # скрипт не запустится вовсе, а ошибка будет выглядеть как «ничего не
+    # произошло». Bypass действует ТОЛЬКО на этот процесс.
+    cmd = ["powershell", "-NoProfile", "-NonInteractive",
+           "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    import subprocess as _sp
+
+    try:
+        proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                         cwd=str(script.parent),
+                         creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+    except OSError as exc:
+        raise HTTPException(status_code=500,
+                            detail=f"Не смог запустить PowerShell: {exc}") from exc
+
+    _stem_setup_proc[session_id] = proc
+    _stem_setup_status[session_id] = {"running": True, "tail": [], "ok": None}
+
+    def _pump() -> None:
+        if proc.stdout is not None:
+            for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    st = _stem_setup_status[session_id]
+                    st["tail"] = (st["tail"] + [line])[-60:]
+        proc.wait()
+
+    async def _watch() -> None:
+        await asyncio.to_thread(_pump)
+        st = _stem_setup_status[session_id]
+        st["running"] = False
+        # Код возврата у скрипта не единственная правда: он ставит
+        # audio-separator отдельно и намеренно не падает, если тот не
+        # встал. Настоящий ответ — появился ли Python с demucs.
+        _stems._demucs_py_cache = None
+        _stems._ext_dev_cache.clear()
+        found = bool(_stems.demucs_python())
+        st["ok"] = found
+        st["device"] = await asyncio.to_thread(_stems.device_info)
+        for line in st["tail"][-15:]:
+            logger.info(f"[пакет слоёв] {line}")
+        room = sessions.get_or_create(session_id)
+        await room.broadcast_to_chat({"type": "stems_pack_ready", "ok": found})
+
+    asyncio.create_task(_watch())
+    return JSONResponse({"ok": True, "started": True,
+                         "detail": "Ставлю пакет слоёв. Это гигабайты из PyPI — "
+                                   "20-40 минут на обычном канале."})
+
+
+@app.get("/api/rooms/{session_id}/stems/install")
+async def install_stems_status(session_id: str) -> JSONResponse:
+    st = dict(_stem_setup_status.get(session_id,
+                                     {"running": False, "tail": [], "ok": None}))
+    st["available"] = stems_setup_script() is not None and os.name == "nt"
+    return JSONResponse(st)
 
 
 @app.get("/api/rooms/{session_id}/stems/status")

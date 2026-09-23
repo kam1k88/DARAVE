@@ -169,7 +169,11 @@ def main() -> int:
 
     scan_db = args.scan_db
     if scan_db is None:
-        candidates = sorted((Path(__file__).parent / "scan_dbs").glob("*.db"),
+        import paths as _paths
+
+        # Базы сканера лежат в data_dir, а не рядом с кодом: в сборке
+        # это разные места (см. stems.STEM_DIR).
+        candidates = sorted((_paths.data_dir() / "scan_dbs").glob("*.db"),
                             key=lambda p: p.stat().st_mtime, reverse=True)
         if not candidates:
             print("Нет ни одной БД сканера в scan_dbs/ — сначала отсканируйте библиотеку "

@@ -71,8 +71,22 @@ try:
 except Exception:  # модуль независим от stems.py, но без него нет живого режима
     stem_mp4 = None
 
-HERE = Path(__file__).parent
-STEM_DIR = HERE / "stems"
+# Куда писать слои, демо и базы.
+#
+# НЕ рядом с кодом. В собранной программе `__file__` — это
+# C:\Program Files\DARAVE\_internal\..., а туда без прав администратора
+# не записать. Выглядело это так (журнал диджея, 1.1.4):
+#
+#   PermissionError: [WinError 5] Отказано в доступе:
+#   'C:\Program Files\DARAVE\_internal\stems'
+#
+# paths.data_dir() отвечает правильно в ОБОИХ режимах: из исходников это
+# папка рядом с кодом (то есть ничего не меняется и уже посчитанные слои
+# на месте), в сборке — %LOCALAPPDATA%\DARAVE, куда писать можно.
+import paths as _paths
+
+HERE = Path(__file__).parent          # только для чтения, если понадобится
+STEM_DIR = _paths.data_dir() / "stems"
 
 MODEL = "htdemucs_ft"        # дообученная htdemucs: лучше базовой, считает вчетверо дольше
 FAST_MODEL = "htdemucs"
@@ -109,6 +123,26 @@ ROFORMER_MODELS = (
 
 AUDIO_EXT = (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg", ".opus")
 
+# Папки, которые DARAVE делает сам, плюс служебные. Обход --dir в них
+# не заходит: слои слоёв никому не нужны, а .build-venv и dist ещё и
+# содержат тестовые аудиофайлы библиотек.
+_OWN_DIRS = frozenset({
+    "stems", "demos", "sets", "recordings", "scan_dbs", "mixxx-export",
+    ".build-venv", "dist", "build", "__pycache__", ".git", "node_modules",
+    "appdata",
+})
+
+
+def _is_own_output(path) -> bool:
+    """Файл, сделанный самим DARAVE. Делегируем track_analysis,
+    чтобы список «нашего» жил в одном месте."""
+    try:
+        import track_analysis
+
+        return bool(track_analysis.is_own_output(path))
+    except Exception:                                # noqa: BLE001
+        return False
+
 
 # --------------------------------------------------------------- окружение
 
@@ -138,6 +172,46 @@ _demucs_py_cache: list | None = None
 # работают без них). Программа докачивает пакет по кнопке и распаковывает
 # сюда, рядом со своими настройками, а не в Program Files: туда без прав
 # администратора не записать.
+def legacy_stem_dir() -> Path | None:
+    """Слои, посчитанные ПРЕЖНЕЙ версией рядом с кодом.
+
+    До 1.1.5 STEM_DIR был `Path(__file__).parent / "stems"`. Из
+    исходников это та же папка, что и сейчас, и разницы нет. Но кто
+    считал слои из исходников, а потом поставил собранную версию,
+    получает пустую `%LOCALAPPDATA%\DARAVE\stems` — и программа молча
+    пересчитывает всё заново. У диджея это 93 папки и 4,9 ГБ, то есть
+    часы работы видеокарты впустую и ни слова о причине.
+
+    Автоматически НЕ переносим: пять гигабайт, скопированные молча при
+    первом запуске, — сюрприз хуже проблемы. Читать из двух мест сразу
+    тоже нельзя: новые слои уедут в одну папку, старые останутся в
+    другой, и «есть ли слои у трека» станет зависеть от того, когда его
+    посчитали. Поэтому просто говорим, где они лежат.
+
+    None — переносить нечего: папки нет, она пуста или это та же самая
+    папка (запуск из исходников)."""
+    old = HERE / "stems"
+    try:
+        if old.resolve() == STEM_DIR.resolve():
+            return None                          # из исходников это одно и то же
+        if not old.is_dir():
+            return None
+        for d in old.iterdir():
+            if (d / "meta.json").is_file():
+                return old
+    except OSError:
+        return None
+    return None
+
+
+def legacy_stem_count(path: Path) -> int:
+    """Сколько готовых комплектов лежит в старой папке."""
+    try:
+        return sum(1 for d in path.iterdir() if (d / "meta.json").is_file())
+    except OSError:
+        return 0
+
+
 def stems_pack_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     return Path(base) / "DARAVE" / "stems-python"
@@ -200,6 +274,115 @@ def demucs_python() -> str | None:
     return found
 
 
+# Что говорить, когда слоёв считать нечем. Текст один на всех: он нужен
+# и панели анализа, и проверке способа перед проходом, и разъехаться им
+# нельзя — иначе в одном месте написано «нажмите кнопку», которой нет, а
+# в другом правильное «запустите setup_stems.ps1». Именно так и было.
+STEMS_MISSING_HINT = (
+    "Разделение на слои требует Python с torch и demucs — в саму программу "
+    "они не входят (2-3 ГБ против 200 МБ всего остального). "
+    "Поставить: запустите setup_stems.ps1 из папки DARAVE — он найдёт "
+    "подходящий Python 3.10-3.12, определит видеокарту и поставит всё сам. "
+    "Посмотреть на слои без модели можно способом hpss (хуже, но сразу)."
+)
+
+
+# ---------------------------------------------- где считать и чем
+#
+# Важное про ДВА интерпретатора. В собранной программе `sys.executable` —
+# это DARAVE.exe, и torch в неё не кладётся (2-3 ГБ против 200 МБ всего
+# остального). Сам demucs живёт во ВНЕШНЕМ Python, который находит
+# demucs_python(). Поэтому спрашивать «есть ли torch» у себя бессмысленно:
+# ответ всегда «нет», причём одинаковый и когда стемов правда нечем
+# считать, и когда рядом стоит Python с CUDA-сборкой.
+#
+# Именно на этом панель анализа и врала: диджей с посчитанными 127
+# треками видел «Пакет слоёв не установлен», а вместе с ним — оценку «40
+# минут на трек», выведенную из cuda=False. То есть интерфейс отговаривал
+# от запуска на видеокарте, которая стоит в машине.
+#
+# Поэтому: не нашли torch у себя — спрашиваем тот интерпретатор, который
+# будет считать. Ответ кэшируется: `import torch` на Windows стоит
+# секунды, а панель открывают часто.
+_DEVICE_PROBE = (
+    "import json\n"
+    "try:\n"
+    "    import torch\n"
+    "    b = getattr(getattr(torch, 'version', None), 'cuda', None)\n"
+    "    try:\n"
+    "        c = bool(torch.cuda.is_available())\n"
+    "        n = torch.cuda.get_device_name(0) if c else None\n"
+    "    except Exception:\n"
+    "        c, n = False, None\n"
+    "    print(json.dumps({'torch': True, 'v': getattr(torch, '__version__', '?'),\n"
+    "                      'build': b, 'cuda': c, 'name': n}))\n"
+    "except Exception as e:\n"
+    "    print(json.dumps({'torch': False, 'error': str(e)[:200]}))\n"
+)
+_ext_dev_cache: dict[str, dict] = {}
+
+
+def _probe_device(exe: str) -> dict:
+    """Спросить ВНЕШНИЙ Python про torch и видеокарту."""
+    hit = _ext_dev_cache.get(exe)
+    if hit is not None:
+        return hit
+    out = {"torch": False, "error": "не ответил"}
+    try:
+        r = subprocess.run([exe, "-c", _DEVICE_PROBE], capture_output=True,
+                           text=True, timeout=120)
+        if r.returncode == 0 and r.stdout.strip():
+            out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        out = {"torch": False, "error": str(exc)[:200]}
+    _ext_dev_cache[exe] = out
+    return out
+
+
+def _device_note(cuda: bool, build, name) -> str:
+    """Один текст на оба интерпретатора — чтобы они не разъехались."""
+    if cuda:
+        return f"GPU {name}: примерно 2-4 минуты на трек в максимальном качестве"
+    if not build:
+        return ("torch собран БЕЗ CUDA (это обычное колесо с PyPI) — считать будет "
+                "процессор, 20-40 минут на трек. Переустановите с индекса PyTorch:\n"
+                "  pip uninstall -y torch torchaudio\n"
+                "  pip install torch --index-url https://download.pytorch.org/whl/cu128\n"
+                "Если под вашу версию Python колёс cu* нет, поставьте Python 3.12 и "
+                "запустите setup_stems.ps1 — он положит стем-стек туда.")
+    return (f"torch собран под CUDA {build}, но видеокарта не видна — "
+            f"проверьте драйвер NVIDIA. Пока считает процессор, 20-40 минут на трек.")
+
+
+def _device_info_external() -> dict:
+    """torch у нас нет — спрашиваем тот Python, который будет считать."""
+    py = demucs_python()
+    if not py:
+        # Вот это и есть честное «считать нечем»: demucs не нашёлся НИ В
+        # ОДНОМ Python, а не «в этом exe нет torch».
+        return {"torch": False, "cuda": False, "name": None, "torch_build": None,
+                "demucs": False, "audio_separator": has_module("audio_separator"),
+                "note": STEMS_MISSING_HINT}
+    p = _probe_device(py)
+    if not p.get("torch"):
+        return {"torch": False, "cuda": False, "name": None, "torch_build": None,
+                "demucs": True, "demucs_python": py,
+                "audio_separator": has_module("audio_separator"),
+                "note": (f"demucs найден ({os.path.basename(py)}), но torch в нём не "
+                         f"импортируется: {p.get('error') or 'неизвестно'}. "
+                         f"Переустановите стем-стек: setup_stems.ps1")}
+    build = p.get("build")
+    return {
+        "torch": True, "torch_version": p.get("v", "?"),
+        "torch_build": build or "cpu",
+        "cuda": bool(p.get("cuda")), "name": p.get("name"),
+        "demucs": True, "demucs_python": py,
+        "where": "внешний Python",
+        "audio_separator": has_module("audio_separator"),
+        "note": _device_note(bool(p.get("cuda")), build, p.get("name")),
+    }
+
+
 def device_info() -> dict:
     """Есть ли GPU и КАКАЯ у torch сборка.
 
@@ -215,9 +398,9 @@ def device_info() -> dict:
     try:
         import torch
     except Exception:
-        return {"torch": False, "cuda": False, "name": None, "torch_build": None,
-                "demucs": has_module("demucs"), "audio_separator": has_module("audio_separator"),
-                "note": "torch не установлен: pip install -r requirements-stems.txt"}
+        # НЕ «torch не установлен»: в собранной программе его тут не
+        # бывает никогда. Спрашиваем интерпретатор, который считает.
+        return _device_info_external()
     build = getattr(getattr(torch, "version", None), "cuda", None)
     try:
         cuda = bool(torch.cuda.is_available())
@@ -225,18 +408,7 @@ def device_info() -> dict:
     except Exception:
         cuda, name = False, None
 
-    if cuda:
-        note = f"GPU {name}: примерно 2-4 минуты на трек в максимальном качестве"
-    elif not build:
-        note = ("torch собран БЕЗ CUDA (это обычное колесо с PyPI) — считать будет "
-                "процессор, 20-40 минут на трек. Переустановите с индекса PyTorch:\n"
-                "  pip uninstall -y torch torchaudio\n"
-                "  pip install torch --index-url https://download.pytorch.org/whl/cu128\n"
-                "Если под вашу версию Python колёс cu* нет, поставьте Python 3.12 и "
-                "запустите setup_stems.ps1 — он положит стем-стек туда.")
-    else:
-        note = (f"torch собран под CUDA {build}, но видеокарта не видна — "
-                "проверьте драйвер NVIDIA. Пока считает процессор, 20-40 минут на трек.")
+    note = _device_note(cuda, build, name)
 
     return {
         "torch": True, "torch_version": getattr(torch, "__version__", "?"),
@@ -355,12 +527,7 @@ def backend_problem(backend: str) -> str | None:
     if backend == "hpss":
         return None
     if not demucs_python():
-        return ("demucs не установлен ни в одном найденном Python. "
-                "В установленной версии DARAVE нажмите «Скачать пакет слоёв» "
-                "(≈2,5 ГБ, ставится сам, права администратора не нужны). "
-                "Из исходников: запустите setup_stems.ps1 из папки DARAVE — "
-                "он найдёт подходящий Python и поставит всё сам. "
-                "Быстрый способ посмотреть без модели: --backend hpss.")
+        return STEMS_MISSING_HINT
     if backend == "roformer":
         py = demucs_python()
         if not (has_module("audio_separator")
@@ -605,6 +772,19 @@ def has_stems(track_path: str) -> bool:
     return bool(stem_paths(track_path)) or stem_mp4_for(track_path) is not None
 
 
+def has_layers(track_path: str) -> bool:
+    """Есть ли у трека ПАПКА слоёв — четыре файла, с которыми можно
+    работать и рядом с которыми можно записать результат.
+
+    Отличается от has_stems тем, что НЕ считает голый .stem.mp4. Для
+    «сыграть по слоям» мп4 достаточно, и has_stems прав. А для «посчитать
+    карту вокала» или «посчитать признаки слоёв» — нет: считать по нему
+    можно (см. _decode_layers), а записать результат некуда, meta.json
+    живёт в папке. Шаг честно пропускал такой трек, счётчик оставался
+    прежним, и выглядело это как «анализ не сохраняется»."""
+    return bool(track_path) and stem_paths(track_path) is not None
+
+
 def vocals_db(track_path: str) -> float | None:
     """Громкость вокального слоя в dBFS, или None если слоёв нет вовсе.
 
@@ -805,24 +985,12 @@ def compute_vocal_map(track_path: str, save: bool = True) -> dict | None:
     res = {"vocal": vocal, "share": round(share, 3), "spans": out}
 
     if save:
-        d = stem_dir_for(track_path)
-        f_meta = d / "meta.json"
-        try:
-            meta = json.loads(f_meta.read_text(encoding="utf-8")) if f_meta.exists() else {}
-        except (OSError, ValueError):
-            meta = {}
-        # Пишем только туда, где уже лежит готовый комплект: заводить
-        # meta.json ради одной карты значило бы объявить стемы готовыми.
-        if meta.get("complete"):
-            meta["vocal_map"] = out
-            meta["vocal_share"] = res["share"]
-            meta["vocal_track"] = vocal
-            try:
-                f_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=1),
-                                  encoding="utf-8")
-                _meta_cache.clear()
-            except OSError:
-                pass
+        # Куда писать — решает write_meta: папка слоёв, если она есть, и
+        # файл-спутник рядом с .stem.mp4, если папки нет. Раньше здесь
+        # был только первый путь, и у 54 треков карта молча пропадала.
+        write_meta(track_path, {"vocal_map": out,
+                                "vocal_share": res["share"],
+                                "vocal_track": vocal})
     return res
 
 
@@ -871,7 +1039,10 @@ def stem_meta(track_path: str) -> dict:
 def _stem_meta_uncached(track_path: str) -> dict:
     f = stem_dir_for(track_path) / "meta.json"
     if not f.exists():
-        return {}
+        # Папки слоёв нет — но разметка могла лечь спутником рядом с
+        # .stem.mp4 (см. write_meta). Возвращать {} значило бы объявить
+        # непосчитанным то, что посчитано.
+        return _sidecar_meta(track_path)
     try:
         return json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1769,10 +1940,34 @@ def emit_progress(stage: str, i: int, total: int, done: int = 0,
     """Строка прогресса для родительского процесса. Печатаем с flush:
     stdout подпроцесса буферизуется поблочно, и без flush полоса
     обновлялась бы раз в 4 КБ вывода — то есть никогда."""
-    print(PROGRESS_PREFIX + json.dumps(
-        {"stage": stage, "i": i, "total": total, "done": done,
-         "failed": failed, "name": os.path.basename(name)[:60]},
-        ensure_ascii=False), flush=True)
+    payload = {"stage": stage, "i": i, "total": total, "done": done,
+               "failed": failed, "name": os.path.basename(name)[:60]}
+    try:
+        print(PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
+        return
+    except UnicodeEncodeError:
+        pass
+    # Строка прогресса не стоит прохода на четыре часа.
+    #
+    # Ровно это и случилось: «Ü» в имени трека, stdout в cp1251,
+    # UnicodeEncodeError прямо здесь — и разделение умирало на первом же
+    # треке, не тронув видеокарту. Кодировку чинит
+    # child.force_utf8_output, но падать тут нельзя в любом случае: имя
+    # файла приходит извне и бывает каким угодно.
+    #
+    # ensure_ascii=True, а не escape всей строки: ПРЕФИКС — это контракт
+    # с разбором на той стороне (library_analysis.parse_progress_line
+    # ищет его дословно). Заэкранировав строку целиком, мы бы спасли
+    # процесс и потеряли полосу прогресса — то есть ровно то, ради чего
+    # она печатается.
+    try:
+        print(PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=True), flush=True)
+        return
+    except UnicodeEncodeError:
+        pass
+    # Третьего уровня нет: префикс теперь ASCII, а ensure_ascii=True
+    # делает ASCII и всё остальное. Строка, которая не пролезла в эти
+    # два способа, не пролезет никуда.
 
 
 def redo_vocals_library(track_paths: list[str], log=print, live: bool = True,
@@ -1976,9 +2171,17 @@ def vocal_maps_library(paths: list[str], rebuild: bool = False,
 
 
 def main() -> int:
+    try:
+        import child as _child
+
+        _child.force_utf8_output()
+    except Exception:                                # noqa: BLE001
+        pass
     ap = argparse.ArgumentParser(description="DARAVE — разделение треков на четыре слоя")
     ap.add_argument("--track", help="один файл")
     ap.add_argument("--dir", help="папка с музыкой")
+    ap.add_argument("--paths-file",
+                    help="файл со списком треков, по одному на строку")
     # flac по умолчанию: mp3-слои несли задержку кодировщика LAME, из-за
     # которой все слои в .stem.mp4 отставали на 50 мс, и тратили лишнее
     # поколение сжатия. См. claude/stem-mp4-shift.md. mp3 оставлен только
@@ -2040,17 +2243,50 @@ def main() -> int:
     paths = []
     if args.track:
         paths = [args.track]
+    elif args.paths_file:
+        # Явный список — то, чем пользуется бэкенд.
+        #
+        # Раньше он передавал ПАПКУ, а папку угадывал как общий корень
+        # путей библиотеки. У диджея треки лежали в «music/Phonk» и в
+        # «Music», и общим корнем этих двух оказался C:\Users\kam1k88 —
+        # весь профиль. Шаг «слои» уходил обходить AppData, Downloads и
+        # собственную папку сборки: десятки минут без единой строки в
+        # журнале и без нагрузки на видеокарту, потому что до разделения
+        # дело не доходило вовсе.
+        #
+        # Файлом, а не аргументами командной строки: в Windows у неё
+        # предел около 8191 символа, а 187 путей это втрое больше.
+        try:
+            with open(args.paths_file, encoding="utf-8") as fh:
+                paths = [ln.strip() for ln in fh if ln.strip()]
+        except OSError as exc:
+            print(f"не смог прочитать список треков: {exc}")
+            return 1
     elif args.dir:
-        for root, _d, files in os.walk(args.dir):
+        skipped = 0
+        for root, dirs, files in os.walk(args.dir):
+            # В свои папки не заходим ВООБЩЕ. Там лежат уже посчитанные
+            # слои (stems/<ключ>/drums.flac и ещё три), отрендеренные
+            # демо и записи сетов. Без этого разделение считало бы слои
+            # слоёв: у диджея это 93 папки по четыре файла, то есть 372
+            # лишних «трека» — больше, чем вся его библиотека.
+            dirs[:] = [d for d in dirs if d.lower() not in _OWN_DIRS]
             for f in files:
                 low = f.lower()
                 # сами стемовые файлы — не исходники, иначе разделим стем стема
                 if low.endswith((".stem.mp4", ".stem.m4a")):
                     continue
-                if low.endswith(AUDIO_EXT):
-                    paths.append(os.path.join(root, f))
+                if not low.endswith(AUDIO_EXT):
+                    continue
+                p = os.path.join(root, f)
+                if _is_own_output(p):
+                    skipped += 1
+                    continue
+                paths.append(p)
+        if skipped:
+            print(f"пропущено своих файлов (сеты, демо, записи): {skipped}")
     if not paths:
-        print("Укажите --track или --dir")
+        print("Укажите --track, --dir или --paths-file")
         return 1
 
     if args.vocal_maps:
@@ -2113,3 +2349,87 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ------------------------------------------------ разметка для .stem.mp4
+#
+# 54 трека библиотеки диджея имеют только `.stem.mp4` и НЕ имеют папки
+# слоёв. Играть по слоям они умеют — `stem_mp4.decode_layer` читает их
+# напрямую, — а вот записать карту вокала и признаки слоёв было
+# НЕКУДА: и `compute_vocal_map`, и `stem_features._save` пишут в
+# `meta.json` внутри папки слоёв, а её нет. Обе разметки молча не
+# сохранялись, и панель честно показывала «нечем».
+#
+# Разделять такой трек на файлы ради двух json-полей — 4 минуты работы
+# видеокарты и полтора гигабайта на диске на трек. Вместо этого кладём
+# файл-спутник РЯДОМ с mp4: `Трек.stem.mp4` → `Трек.stem.darave.json`.
+#
+# Почему рядом с mp4, а не в базе: разметка описывает КОНКРЕТНЫЕ слои.
+# Переразделили трек — она обязана уехать вместе с ними; в базе она
+# пережила бы пересчёт и описывала бы то, чего уже нет. Это то же
+# правило, по которому `meta.json` лежит в папке слоёв.
+
+SIDECAR_SUFFIX = ".darave.json"
+
+
+def sidecar_for(track_path: str) -> "Path | None":
+    """Файл-спутник рядом с .stem.mp4, или None, если mp4 нет."""
+    mp4 = stem_mp4_for(track_path)
+    if not mp4:
+        return None
+    p = Path(mp4)
+    return p.with_name(p.name[:-len(p.suffix)] + SIDECAR_SUFFIX)
+
+
+def _sidecar_meta(track_path: str) -> dict:
+    f = sidecar_for(track_path)
+    if not f or not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def write_meta(track_path: str, patch: dict) -> bool:
+    """Дописать разметку туда, где она для этого трека живёт.
+
+    Папка слоёв — если она есть и комплект объявлен готовым; иначе
+    файл-спутник рядом с .stem.mp4. Возвращает, получилось ли: тихое
+    «не записали» здесь недопустимо, панель по нему считает счётчики.
+
+    Комплект в спутнике объявляется готовым сразу: слои у .stem.mp4 есть
+    по построению, их не надо досчитывать."""
+    if not patch:
+        return False
+    d = stem_dir_for(track_path)
+    f = d / "meta.json"
+    if f.exists():
+        try:
+            meta = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            meta = {}
+        if meta.get("complete"):
+            meta.update(patch)
+            try:
+                f.write_text(json.dumps(meta, ensure_ascii=False, indent=1),
+                             encoding="utf-8")
+                _meta_cache.clear()
+                return True
+            except OSError:
+                return False
+        return False
+    side = sidecar_for(track_path)
+    if not side:
+        return False
+    meta = _sidecar_meta(track_path)
+    meta.setdefault("complete", True)
+    meta.setdefault("source", "stem.mp4")
+    meta.update(patch)
+    try:
+        side.write_text(json.dumps(meta, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+        _meta_cache.clear()
+        return True
+    except OSError:
+        return False

@@ -50,11 +50,52 @@ class Technique:
     # равно звучит правильно. Акапелла на пустом слое даёт тишину.
     needs_vocals: bool = False
 
+    # --- КАКУЮ ЗАДАЧУ ПРИЁМ РЕШАЕТ -------------------------------------
+    #
+    # Главная ось каталога, и до сих пор её не было вовсе. Каталог был
+    # разложен по ЖАНРУ (префиксы DNB/ST/SF/TT/FX), а жанр не отвечает на
+    # вопрос, который диджей задаёт себе у пульта: «у меня два баса
+    # спорят — чем это лечить?». Отсюда и 107 пар приёмов со схожестью
+    # действий ≥0.7 при 60 приёмах: одно и то же решение переизобретено
+    # в каждом жанровом семействе под своим именем.
+    #
+    # Значения — не мнение, а перечень конфликтов, которые программа
+    # УЖЕ УМЕЕТ ИЗМЕРИТЬ (stem_features.gap, camelot_distance, tempo):
+    #
+    #   bass_clash   — два непрерывных баса в одной полосе;
+    #   harm_clash   — две плотные гармонии, верх слипается;
+    #   vocal_clash  — голос звучит с обеих сторон;
+    #   key_gap      — тональности не сходятся по Камелоту;
+    #   tempo_gap    — темпы не сходятся даже с учётом половинного счёта;
+    #   energy_up / energy_down — нужен подъём или спад;
+    #   none         — рабочая лошадь, конфликта не решает.
+    #
+    # Пустой набор = none. Приём может решать несколько задач сразу.
+    solves: frozenset[str] = frozenset()
+
+    # Ярус каталога. «core» — то, чем сводят 90% переходов; «solver» —
+    # лечит конкретный конфликт; «energy» — ведёт энергию; «trick» —
+    # эффектный трюк; «archived» — оставлено ради обратной совместимости
+    # со старыми швами, но в списках не показывается.
+    tier: str = "core"
+
     def param_defaults(self) -> dict[str, float]:
         return {p.key: p.default for p in self.params}
 
     def to_dict(self) -> dict:
+        """Словарь, который МОЖНО отдать в JSON.
+
+        `asdict` честно копирует `solves` как frozenset, а JSON множеств
+        не знает — и `/api/techniques` падал с 500 на КАЖДЫЙ запрос.
+        Снаружи это выглядело как «Technician стал пустым»: список техник
+        приходил пустым, а ошибка оседала в console.error.
+
+        Сортированный список, а не множество: одинаковый порядок нужен и
+        коду шва, и глазу в отладке."""
         d = asdict(self)
+        for key, val in list(d.items()):
+            if isinstance(val, (frozenset, set)):
+                d[key] = sorted(val)
         return d
 
 
@@ -914,7 +955,7 @@ _register(Technique(
 
 
 _register(Technique(
-    id="DNB-25", name="Классика", category="dnb", difficulty=1,
+    id="DNB-25", name="Classic Blend", category="dnb", difficulty=1,
     description="Основной ход: новый заводится своим интро под старый со снятым низом, фразу-две они идут вместе, потом один обмен низом и старый уводится фильтром с эхом. Длина сведения — 4-12 тактов, как у живого диджея.",
     bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1184,7 +1225,7 @@ def _build_rewind(source: str, target: str, bpm: float, p: dict) -> list[dict]:
 
 
 _register(Technique(
-    id="TT-01", name="Спинбэк в рез", category="turntable", difficulty=3,
+    id="TT-01", name="Spinback Cut", category="turntable", difficulty=3,
     description="Пластинку кидают назад на последней доле фразы: обороты и высота улетают вверх и гаснут, трек умирает, новый входит на «раз». Темпы и тональности при этом могут не сходиться вовсе — их ничто не накладывает.",
     bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1197,7 +1238,7 @@ _register(Technique(
 ), _build_spinback_cut)
 
 _register(Technique(
-    id="TT-02", name="Тейп-стоп", category="turntable", difficulty=2,
+    id="TT-02", name="Tape Stop", category="turntable", difficulty=2,
     description="Выбег до полной остановки: темп и высота уезжают вниз ВМЕСТЕ, потому что это одно движение, а не эффект. Работает как знак препинания между кусками сета и как единственный честный способ сменить темп.",
     bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1210,7 +1251,7 @@ _register(Technique(
 ), _build_tape_stop)
 
 _register(Technique(
-    id="TT-03", name="Выключение мотора", category="turntable", difficulty=2,
+    id="TT-03", name="Motor Off", category="turntable", difficulty=2,
     description="Очень долгий выбег с эхом — «выдернули из розетки». Приём на один раз за сет: им ломают сет пополам или закрывают его.",
     bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=False, requires_decks=2,
     params=[TechniqueParam("coast_beats", "Длительность выбега", 8, 4, 32, "долей")],
@@ -1219,7 +1260,7 @@ _register(Technique(
 ), _build_power_off)
 
 _register(Technique(
-    id="TT-04", name="Реверс-ролл", category="turntable", difficulty=3,
+    id="TT-04", name="Reverse Roll", category="turntable", difficulty=3,
     description="Последний такт уходящего идёт задом наперёд, но со слипом: фраза кончается ровно там же, где кончилась бы. Новый трек уже играет под ним и забирает низ на «раз».",
     bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1232,7 +1273,7 @@ _register(Technique(
 ), _build_reverse_roll_in)
 
 _register(Technique(
-    id="TT-05", name="Лупролл-билд", category="turntable", difficulty=4,
+    id="TT-05", name="Loop Roll Build", category="turntable", difficulty=4,
     description="Лупролл, вдвое короче на каждом шаге: 4 → 2 → 1 → ½ → ¼. Сжимающийся луп ухо читает как разгон, и рез после него звучит как разрешение. Ролл идёт со слипом — трек не сбивается.",
     bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
     params=[
@@ -1245,7 +1286,7 @@ _register(Technique(
 ), _build_loop_roll_build)
 
 _register(Technique(
-    id="TT-06", name="Луп-хвост", category="turntable", difficulty=2,
+    id="TT-06", name="Loop Tail", category="turntable", difficulty=2,
     description="Уходящий уходит в луп на последней фразе и висит там, пока новый заходит целиком. Единственный способ дождаться фразы нового трека, не обрывая старый на полуслове — и то, чем чинят «у нового слишком длинное интро».",
     bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1259,7 +1300,7 @@ _register(Technique(
 ), _build_loop_out)
 
 _register(Technique(
-    id="TT-07", name="Эхо-хвост + спинбэк", category="turntable", difficulty=3,
+    id="TT-07", name="Echo Tail + Spinback", category="turntable", difficulty=3,
     description="Эхо забирает последнюю фразу, поверх хвоста — бэкспин. Эхо держит гармонию, когда трека уже нет, поэтому приём работает и на спорящих тональностях, и на несводимых темпах.",
     bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -1273,7 +1314,7 @@ _register(Technique(
 ), _build_echo_spinback)
 
 _register(Technique(
-    id="TT-08", name="Ревайнд", category="turntable", difficulty=4,
+    id="TT-08", name="Rewind", category="turntable", difficulty=4,
     description="Wheel-up: пластинку уводят далеко назад, и новый трек поднимается с нуля до рабочей скорости. В джангле, DnB и дабстепе это часть культуры — так объявляют дроп.",
     bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
     params=[
@@ -1533,7 +1574,7 @@ def _build_vocal_echo_out(source: str, target: str, bpm: float, p: dict) -> list
 
 
 _register(Technique(
-    id="ST-15", name="Передача вокала", category="stems", difficulty=3,
+    id="ST-15", name="Vocal Handover", category="stems", difficulty=3,
     description=(
         "Голос уходящего ЛУПИТСЯ и поёт над барабанами, басом и гармонией "
         "входящего, а потом кроссфейдом меняется на голос входящего. От "
@@ -1554,7 +1595,7 @@ _register(Technique(
 ), _build_vocal_handover)
 
 _register(Technique(
-    id="ST-01", name="Акапелла поверх", category="stems", difficulty=4,
+    id="ST-01", name="Acappella On Top", category="stems", difficulty=4,
     description="Голос уходящего поёт над инструменталом входящего: у нового вокал выключен, у старого выключено всё, кроме голоса. Приём открытого формата и главная причина выделять вокал отдельным слоем.",
     bpm_delta_max=6, key_rule="compatible", energy_direction="any", requires_stems=True, requires_decks=2,
     needs_vocals=True,
@@ -1569,7 +1610,7 @@ _register(Technique(
 ), _build_acappella_over)
 
 _register(Technique(
-    id="ST-02", name="Обмен барабанами", category="stems", difficulty=3,
+    id="ST-02", name="Drum Swap", category="stems", difficulty=3,
     description="Новый заходит ОДНИМИ барабанами под гармонию старого — складывать нечего, потому что барабаны старого в этот момент выключены. Ухо слышит смену ритма раньше, чем смену трека.",
     bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=True, requires_decks=2,
     params=[
@@ -1582,7 +1623,7 @@ _register(Technique(
 ), _build_drum_swap)
 
 _register(Technique(
-    id="ST-03", name="Обмен басом по слою", category="stems", difficulty=2,
+    id="ST-03", name="Stem Bass Swap", category="stems", difficulty=2,
     description="Меняется ровно бас — инструмент, а не полоса ниже 180 Гц. Обмен низом эквалайзером всегда уносит с собой бочку и тело пэда, и поэтому слышен как провал; здесь бочка обеих дек остаётся на месте.",
     bpm_delta_max=4, key_rule="compatible", energy_direction="any", requires_stems=True, requires_decks=2,
     params=[
@@ -1596,7 +1637,7 @@ _register(Technique(
 ), _build_bass_handover)
 
 _register(Technique(
-    id="ST-04", name="Дабл-дроп по слоям", category="stems", difficulty=5,
+    id="ST-04", name="Stem Double Drop", category="stems", difficulty=5,
     description="Ритм-секция от одного трека, гармония и голос от другого. Слышно оба трека сразу, а складывать нечего — то, чего обычный дабл-дроп из двух полных мастеров не умеет.",
     bpm_delta_max=3, key_rule="compatible", energy_direction="up", requires_stems=True, requires_decks=2,
     params=[TechniqueParam("hold_bars", "Сколько держать совмещение", 8, 2, 32, "тактов")],
@@ -1606,7 +1647,7 @@ _register(Technique(
 ), _build_stem_double_drop)
 
 _register(Technique(
-    id="ST-05", name="Разбор на слои", category="stems", difficulty=3,
+    id="ST-05", name="Strip To Layers", category="stems", difficulty=3,
     description="Уходящий разбирается по частям: сначала уходят барабаны, потом бас, потом гармония, последним остаётся голос — и уходит в эхо. Способ закончить трек, когда следующий совсем другой.",
     bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=True, requires_decks=2,
     params=[
@@ -1884,7 +1925,7 @@ def _build_stem_eq_hybrid(source: str, target: str, bpm: float, p: dict) -> list
 
 
 _register(Technique(
-    id="ST-09", name="Соло-слой + обычный EQ", category="stems", difficulty=3,
+    id="ST-09", name="Solo Stem + EQ", category="stems", difficulty=3,
     description=(
         "Слои работают ТОЛЬКО в режиме соло: входящий заходит одним слоем "
         "(по умолчанию гармонией), а разводит деки обычный трёхполосный "
@@ -1906,7 +1947,7 @@ _register(Technique(
 ), _build_stem_solo_eq)
 
 _register(Technique(
-    id="ST-10", name="Кроссфейдер по слоям", category="stems", difficulty=2,
+    id="ST-10", name="Stem Crossfade", category="stems", difficulty=2,
     description=(
         "Громкость дек не меняется вообще: кроссфейдер стоит посередине, а "
         "переходят слои — сначала барабаны, за ними бас, потом гармония, "
@@ -1925,7 +1966,7 @@ _register(Technique(
 ), _build_stem_crossfader)
 
 _register(Technique(
-    id="SF-01", name="Эхо на слое", category="stems", difficulty=3,
+    id="SF-01", name="Stem Echo", category="stems", difficulty=3,
     description=(
         "Уходящий сжимается до одного слоя (голос или мелодия), и в эхо "
         "уходит именно он — поверх уже играющей ритм-секции нового. Эхо с "
@@ -1947,7 +1988,7 @@ _register(Technique(
 ), _build_stem_echo_out)
 
 _register(Technique(
-    id="SF-02", name="Луп из барабанов", category="stems", difficulty=3,
+    id="SF-02", name="Drum Stem Loop", category="stems", difficulty=3,
     description=(
         "У уходящего остаются одни барабаны и уходят в луп — получается "
         "ритмическая подложка без гармонии, с которой новому треку нечем "
@@ -1966,7 +2007,7 @@ _register(Technique(
 ), _build_stem_loop_bed)
 
 _register(Technique(
-    id="SF-03", name="Реверб-заливка по слоям", category="stems", difficulty=4,
+    id="SF-03", name="Stem Reverb Wash", category="stems", difficulty=4,
     description=(
         "Гармония и голос уходящего уходят в комнату, ритм-секция в это же "
         "время передаётся входящему пересечением слоёв. Реверб с полного "
@@ -1986,7 +2027,7 @@ _register(Technique(
 ), _build_stem_reverb_wash)
 
 _register(Technique(
-    id="SE-01", name="STEMS EQ: бас слоем, верх ручками", category="stems", difficulty=2,
+    id="SE-01", name="Stem Bass + EQ Top", category="stems", difficulty=2,
     description=(
         "Гибрид, который на стем-пультах используют чаще всего: слоем "
         "меняется только бас (ручка низа забирает вместе с ним бочку и низ "
@@ -2361,7 +2402,7 @@ def _build_piecewise_intro(source: str, target: str, bpm: float, p: dict) -> lis
 
 
 _register(Technique(
-    id="ST-11", name="Коллаж из трёх дек", category="stems", difficulty=5,
+    id="ST-11", name="Three-Deck Collage", category="stems", difficulty=5,
     description=(
         "Барабаны с одной деки, бас со второй, гармония и голос с третьей — "
         "живой ремикс вместо перехода. Каждый слой берётся ровно с одной "
@@ -2382,7 +2423,7 @@ _register(Technique(
 ), _build_stem_collage)
 
 _register(Technique(
-    id="ST-12", name="Дабл-дроп с сайдчейном", category="stems", difficulty=4,
+    id="ST-12", name="Sidechained Double Drop", category="stems", difficulty=4,
     description=(
         "Барабаны у уходящего, бас и мелодия у входящего — и мелодия "
         "приседает на каждый удар чужой бочки. Насос связывает две записи "
@@ -2403,7 +2444,7 @@ _register(Technique(
 ), _build_sidechain_double_drop)
 
 _register(Technique(
-    id="ST-13", name="Собранный брейкдаун", category="stems", difficulty=3,
+    id="ST-13", name="Built Breakdown", category="stems", difficulty=3,
     description=(
         "Короткий брейк растягивается вручную: у уходящего в брейке гаснут "
         "барабаны и бас, а грув держит перкуссия входящего — с срезанным "
@@ -2422,7 +2463,7 @@ _register(Technique(
 ), _build_built_breakdown)
 
 _register(Technique(
-    id="SF-04", name="Эхо-вокал без потери бита", category="stems", difficulty=3,
+    id="SF-04", name="Vocal Echo, Beat Intact", category="stems", difficulty=3,
     description=(
         "Посыл на эхо или огромный реверб открывается ТОЛЬКО на вокальном "
         "слое: голос растворяется в воздухе, а барабаны и бас продолжают "
@@ -2443,7 +2484,7 @@ _register(Technique(
 ), _build_vocal_echo_dry_beat)
 
 _register(Technique(
-    id="ST-14", name="Мелодия на октаву", category="stems", difficulty=4,
+    id="ST-14", name="Octave Shift", category="stems", difficulty=4,
     description=(
         "Мелодия входящего сдвигается на ±12 полутонов и заходит поверх "
         "чужого баса. Октава не меняет тональность — она уводит мелодию из "
@@ -2464,7 +2505,7 @@ _register(Technique(
 ), _build_octave_melody)
 
 _register(Technique(
-    id="SF-05", name="Ввод по частям", category="stems", difficulty=3,
+    id="SF-05", name="Layer-by-Layer Entry", category="stems", difficulty=3,
     description=(
         "Новый трек вводится тремя шагами по фразе: сначала верх его "
         "ударных как подложка, потом целиком меняется бас, потом барабаны, "
@@ -2487,7 +2528,7 @@ _register(Technique(
 
 
 _register(Technique(
-    id="TT-09", name="Луп в бэкспин", category="turntable", difficulty=4,
+    id="TT-09", name="Loop To Backspin", category="turntable", difficulty=4,
     description="Луп делится пополам до предела — 4 доли, 2, 1, ½, ¼ — пока трек не свернётся в гудящую точку, и на пределе разгон разрешается бэкспином. То, что диджеи делают руками чаще всего.",
     bpm_delta_max=None, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
     params=[
@@ -2694,7 +2735,7 @@ def _build_melody_stab_swap(source: str, target: str, bpm: float, p: dict) -> li
 
 
 _register(Technique(
-    id="ST-06", name="Вход с акапеллы", category="stems", difficulty=4,
+    id="ST-06", name="Acappella In", category="stems", difficulty=4,
     description="Новый трек объявляет себя голым голосом поверх ещё играющего старого, старый разбирается по слоям и уходит — и какое-то время звучит почти одна акапелла. Приём НА ПОНИЖЕНИЕ: после нескольких жёстких треков подряд залу нужно отдышаться, и пауза, сделанная голосом, работает лучше, чем просто тихий трек.",
     bpm_delta_max=6, key_rule="compatible", energy_direction="down",
     requires_stems=True, requires_decks=2, needs_vocals=True,
@@ -2709,7 +2750,7 @@ _register(Technique(
 ), _build_acappella_in)
 
 _register(Technique(
-    id="HS-01", name="Луп-мельница", category="universal", difficulty=5,
+    id="HS-01", name="Loop Mill", category="universal", difficulty=5,
     description="Луп уходящего делится пополам такт за тактом, но вместе с делением ходит питч, а эффект открывается толчками по НЕПОДРЯД идущим долям. Из повтора получается мотив, а не «кусок трека по кругу». Приём house и техно, где переход длинный и его нечем заполнить.",
     bpm_delta_max=None, key_rule="any", energy_direction="up",
     requires_stems=False, requires_decks=2,
@@ -2727,7 +2768,7 @@ _register(Technique(
 ), _build_loop_mill)
 
 _register(Technique(
-    id="ST-07", name="Вокальный рез на дроп", category="stems", difficulty=5,
+    id="ST-07", name="Vocal Cut To Drop", category="stems", difficulty=5,
     description="Уходящий на своём дропе теряет всё, кроме голоса, ровно на такт — и в этот же удар входящий входит СВОИМ дропом, барабанами и басом. Голос повисает над чужим дропом и уходит в эхо. Ухо слышит дабл-дроп, но складывать нечего: бочка одна и бас один по построению, поэтому можно резать, а не разводить. Быстрый и мощный подъём.",
     bpm_delta_max=3, key_rule="compatible", energy_direction="up",
     requires_stems=True, requires_decks=2, needs_vocals=True,
@@ -2745,7 +2786,7 @@ _register(Technique(
 ), _build_vocal_stab_swap)
 
 _register(Technique(
-    id="ST-08", name="Мелодический рез на дроп", category="stems", difficulty=4,
+    id="ST-08", name="Melodic Cut To Drop", category="stems", difficulty=4,
     description="То же, что вокальный рез, но шов закрывает мелодия, а не голос: у уходящего на его дропе остаётся один гармонический слой, входящий тем же ударом входит барабанами и басом. Для инструментальных треков, где вокального слоя просто нет, — а таких в драм-н-бейсе большинство.",
     bpm_delta_max=3, key_rule="compatible", energy_direction="up",
     requires_stems=True, requires_decks=2, needs_vocals=False,
@@ -2885,7 +2926,7 @@ def _build_crush_break(source: str, target: str, bpm: float, p: dict) -> list[di
 
 
 _register(Technique(
-    id="FX-01", name="Фленджер на увод", category="fx", difficulty=2,
+    id="FX-01", name="Flanger Out", category="fx", difficulty=2,
     description="Гребёнка фленджера съедает середину уходящего, и место для нового освобождается само — без эквалайзера. Скорость качания задаётся в долях, поэтому эффект всегда в темп.",
     bpm_delta_max=6, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -2899,7 +2940,7 @@ _register(Technique(
 ), _build_flanger_out)
 
 _register(Technique(
-    id="FX-02", name="Фейзер-подъём", category="fx", difficulty=3,
+    id="FX-02", name="Phaser Lift", category="fx", difficulty=3,
     description="Фейзер на ВХОДЯЩЕМ: новый трек поднимается из-под старого сквозь движущиеся вырезы. Слышно, что что-то приближается, задолго до того, как понятно, что именно.",
     bpm_delta_max=6, key_rule="any", energy_direction="up", requires_stems=False, requires_decks=2,
     params=[
@@ -2912,7 +2953,7 @@ _register(Technique(
 ), _build_phaser_rise)
 
 _register(Technique(
-    id="FX-03", name="Вобл-переход", category="fx", difficulty=3,
+    id="FX-03", name="Wobble Transition", category="fx", difficulty=3,
     description="Фильтр качается в темп, и под это качание меняются треки: обмен прячется в движении. То, на чём стоит половина бас-музыки.",
     bpm_delta_max=4, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -2925,7 +2966,7 @@ _register(Technique(
 ), _build_wobble_swap)
 
 _register(Technique(
-    id="FX-04", name="Реверб-хвост", category="fx", difficulty=1,
+    id="FX-04", name="Reverb Tail", category="fx", difficulty=1,
     description="Комната забирает последнюю фразу и звенит поверх пустоты, пока новый трек не встанет на ноги. Посыл открывается в КОНЦЕ фразы — ручка решает, что попадёт в комнату, а не что из неё выйдет.",
     bpm_delta_max=None, key_rule="any", energy_direction="down", requires_stems=False, requires_decks=2,
     params=[
@@ -2938,7 +2979,7 @@ _register(Technique(
 ), _build_reverb_out)
 
 _register(Technique(
-    id="FX-05", name="Дисторшн-слом", category="fx", difficulty=4,
+    id="FX-05", name="Distortion Break", category="fx", difficulty=4,
     description="Перегруз и биткрашер за пару тактов превращают трек в обломок, и на этом обломке происходит рез. Приём на один раз за сет — он ломает не переход, а сет.",
     bpm_delta_max=None, key_rule="any", energy_direction="any", requires_stems=False, requires_decks=2,
     params=[
@@ -3161,7 +3202,7 @@ def _build_custom(source: str, target: str, bpm: float, p: dict) -> list[dict]:
 
 
 _register(Technique(
-    id="CUSTOM", name="Своя техника", category="custom", difficulty=3,
+    id="CUSTOM", name="Custom", category="custom", difficulty=3,
     description=(
         "Пульт, а не приём: все ползунки EQ, фильтра, эффектов, слоёв и "
         "транспорта сразу. По умолчанию стоит «Классика» — ползунок на "
@@ -3376,3 +3417,454 @@ for _tid in list(TECHNIQUES):
     if _has_bass_swap(_tid):
         TECHNIQUES[_tid].params.append(TechniqueParam(
             "bass_swap_beats", "Обмен басами", BASS_SWAP_BEATS, 1, 32, "долей"))
+
+
+# ====================================================================
+#            ПРИЁМЫ ЧЕРЕЗ РАЗРЫВ: ТОНАЛЬНОСТЬ И ТЕМП
+# ====================================================================
+#
+# Каталог умел обходить разрыв (рез, обмен барабанами — то, что не
+# накладывает тональные части) и не умел ЗАКРЫВАТЬ его. Разница
+# принципиальная: обход отказывается от наложения, закрытие делает
+# наложение возможным.
+#
+# Рендер для этого уже всё умел — `key_shift` (питч-шифт окна),
+# транспорт, слои, — но ни один приём этим для сведения не пользовался.
+# `tempo.pitch_semitones` и `tempo.camelot_after_pitch` считают, на
+# сколько двигать; они здесь не вызываются, потому что построитель
+# тональностей не знает — сдвиг приезжает параметром, а считает его
+# подбор (`audition.catalog_fit`), у которого есть обе карточки.
+
+
+def _build_key_ramp(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Подтянуть ТОНАЛЬНОСТЬ входящего, а не обойти разрыв.
+
+    Питч-шифт меняет высоту, НЕ трогая темп — это разные ручки, и в
+    Mixxx тоже (`pitch_adjust` против `rate`). Поэтому сдвиг на
+    полутон-два переводит трек в соседний сектор Камелота, и длинное
+    наложение, которое на разрыве обнажало бы разъезд, становится
+    законным.
+
+    Два полутона — практический предел: дальше слышно, что трек
+    «подкрутили», особенно на вокале. Поэтому диапазон параметра узкий,
+    а не ±12: широкий диапазон здесь был бы обещанием, которого уши не
+    примут.
+
+    Сдвиг ставится ДО ввода и держится весь переход: менять высоту под
+    звучащей мелодией — отдельный эффект, а не подгонка."""
+    semis = _clamp(float(p.get("semitones", 0.0)), -2.0, 2.0)
+    lead = max(4.0, float(p.get("lead_bars", 4)) * 4)
+    blend = max(8.0, float(p.get("blend_bars", 16)) * 4)
+    value = _clamp(0.5 + semis / 12.0, 0.0, 1.0)
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        # Сдвиг на всё окно перехода — одним значением (рендер берёт
+        # конечное, см. demo_render, пункт 3).
+        _ramp(0, "key_shift", target, lead + blend, value, value),
+        _discrete(0, "eq_kill_low", target),
+        _ramp(lead, "crossfade", source, blend * 0.5, 0.0, 0.5),
+        _discrete(lead + blend * 0.5, "eq_kill_low", source),
+        _discrete(lead + blend * 0.5, "eq_kill_low", target),
+        _ramp(lead + blend * 0.5, "crossfade", source, blend * 0.5, 0.5, 1.0),
+        _discrete(lead + blend, "loop_exit", source),
+    ]
+
+
+def _build_drums_bridge(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Мост на одних барабанах: тональности нет — спорить нечему.
+
+    Оба трека раздеваются до барабанов, в этом виде меняются местами, и
+    только потом входящий одевается обратно. Пока звучат одни ударные,
+    тональность не участвует вовсе — поэтому приём работает на ЛЮБОМ
+    разрыве по Камелоту, включая полутон, который считается худшим.
+
+    Это не то же самое, что обмен барабанами (ST-02): там входящий
+    заходит барабанами ПОД гармонию уходящего, то есть гармония всё
+    время звучит. Здесь её нет ни у кого — ради этого приём и есть."""
+    strip = max(2.0, float(p.get("strip_bars", 2)) * 4)
+    bridge = max(4.0, float(p.get("bridge_bars", 8)) * 4)
+    dress = max(4.0, float(p.get("dress_bars", 4)) * 4)
+    swap = 2.0
+    mid = strip + bridge
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        # входящий заходит одними барабанами
+        *_stems_at(0, target, {"bass": 0.0, "other": 0.0, "vocals": 0.0}),
+        _stem(0, target, "drums", swap, 0.0, 1.0),
+        # уходящий раздевается: сначала голос и гармония, потом бас
+        _stem(0, source, "vocals", strip, 1.0, 0.0, "ease_out"),
+        _stem(0, source, "other", strip, 1.0, 0.0, "ease_out"),
+        _stem(strip * 0.5, source, "bass", strip * 0.5, 1.0, 0.0),
+        # мост: обе деки — одни барабаны, кроссфейд проходит здесь
+        _ramp(strip, "crossfade", source, bridge, 0.0, 1.0, "linear"),
+        _stem(mid - swap, source, "drums", swap, 1.0, 0.0, "ease_out"),
+        # входящий одевается обратно: бас, гармония, голос
+        _stem(mid, target, "bass", swap, 0.0, 1.0),
+        _stem(mid + dress * 0.5, target, "other", swap, 0.0, 1.0),
+        _stem(mid + dress, target, "vocals", swap, 0.0, 1.0),
+        _discrete(mid + dress + swap, "loop_exit", source),
+    ]
+
+
+def _build_wash_out(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Уходящий смывается в хвост, входящий заходит с чистого листа.
+
+    Ни одной доли, где тональные части обоих звучат вместе, — поэтому ни
+    Камелот, ни темп значения не имеют. Это самый честный способ
+    соединить две вещи, которые не соединяются: не делать вид, что они
+    сочетаются, а развести их во времени.
+
+    Хвост переживает увод фейдера — он идёт возвратом эффекта, ПОСЛЕ
+    фейдера (см. demo_render, `_queue_send`). Поэтому старый трек
+    исчезает, а его эхо ещё звенит поверх нового: шов слышен как
+    событие, а не как обрыв.
+
+    Стемы не нужны — приём работает у всех."""
+    wash = max(4.0, float(p.get("wash_bars", 4)) * 4)
+    gap = max(0.0, float(p.get("gap_beats", 0.0)))
+    tail = max(2.0, float(p.get("tail_bars", 2)) * 4)
+    return [
+        _discrete(0, "sync", target),
+        # смыв: посыл на эффект открывается, низ уходит, трек истончается
+        _ramp(0, "fx_meta", source, wash, 0.0, 0.85),
+        _ramp(0, "fx_mix", source, wash, 0.0, 0.85),
+        _ramp(wash * 0.25, "filter_sweep", source, wash * 0.75, 0.0, 1.0, "ease_in"),
+        _ramp(wash * 0.5, "eq_low", source, wash * 0.5, EQ_UNITY, 0.0, "ease_in"),
+        # уходящий уводится целиком, хвост остаётся звучать
+        _ramp(wash, "crossfade", source, tail, 0.0, 1.0, "ease_in"),
+        _discrete(wash + tail, "play_toggle", source),
+        # входящий заходит на следующую долю после ухода — чистым
+        _discrete(wash + tail + gap, "play_from_cue", target),
+        _ramp(wash + tail + gap, "fx_meta", source, tail, 0.85, 0.0),
+        _ramp(wash + tail + gap, "fx_mix", source, tail, 0.85, 0.0),
+        _discrete(wash + tail + gap, "loop_exit", source),
+    ]
+
+
+def _build_tempo_ramp(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Увести ТЕМП там, где его не слышно, — в брейкдауне.
+
+    Дрейф темпа выдают барабаны: ухо держится за сетку ударов. Там, где
+    барабанов нет, той сетки нет тоже, и питч-фейдер можно провести на
+    несколько процентов незаметно. Поэтому приём ставится на стык с
+    брейкдауном и сначала СНИМАЕТ барабаны, а уже потом ведёт темп.
+
+    Транс именно так и сводят — в брейкдаунах; отсюда и рекомендованные
+    стыки у этого приёма.
+
+    `rate_ramp` — ручка темпа, отдельная от `key_shift`: темп меняется,
+    высота остаётся. В офлайн-демо обе деки и так приведены к одной
+    сетке, поэтому слышимая часть приёма здесь — снятые барабаны и
+    порядок ввода; сама рампа уезжает в живое исполнение и в инструкцию
+    диджею."""
+    hold = max(4.0, float(p.get("hold_bars", 4)) * 4)
+    ramp = max(8.0, float(p.get("ramp_bars", 8)) * 4)
+    pct = _clamp(float(p.get("rate_pct", 0.0)), -8.0, 8.0)
+    end = _clamp(0.5 + pct / 16.0, 0.0, 1.0)
+    return [
+        _discrete(0, "sync", target),
+        # барабаны уходящего снимаются ПЕРВЫМИ — без них дрейф не слышен
+        _ramp(0, "eq_high", source, hold, EQ_UNITY, 0.0, "ease_out"),
+        _ramp(0, "eq_low", source, hold, EQ_UNITY, 0.0, "ease_out"),
+        # и только теперь ведём темп
+        _ramp(hold, "rate_ramp", source, ramp, 0.5, end, "ease_in"),
+        _discrete(hold, "play_from_cue", target),
+        _discrete(hold, "eq_kill_low", target),
+        _ramp(hold, "crossfade", source, ramp, 0.0, 0.8),
+        _discrete(hold + ramp, "eq_kill_low", source),
+        _discrete(hold + ramp, "eq_kill_low", target),
+        _ramp(hold + ramp, "crossfade", source, hold, 0.8, 1.0),
+        _discrete(hold + ramp + hold, "loop_exit", source),
+    ]
+
+
+def _build_half_time_bridge(source: str, target: str, bpm: float, p: dict) -> list[dict]:
+    """Половинный счёт как мост через разрыв темпа.
+
+    174 и 87 — это ОДИН темп, просто долю считают вдвое реже
+    (`tempo.relate`). Но одинаковый счёт ещё не значит одинаковое
+    ощущение: трек, у которого малый барабан бьёт каждый такт, и трек,
+    у которого он бьёт через такт, при одной сетке звучат вдвое разными
+    по плотности. Приём соединяет их через ту секцию, где плотность
+    совпадает, — half-time.
+
+    Что делает: снимает барабаны уходящего и отдаёт ритм барабанам
+    входящего. Пока играет одна ударная установка, плотность у неё одна,
+    и разрыв в ощущении темпа исчезает вместе со второй.
+
+    Это НЕ то же самое, что нормализация темпа при анализе
+    (`track_analysis.normalize_bpm`): та чинит ЧИСЛО, когда анализатор
+    посчитал долю вдвое реже. Здесь число верное, а разная — музыка."""
+    under = max(4.0, float(p.get("under_bars", 8)) * 4)
+    swap = 2.0
+    tail = max(4.0, float(p.get("tail_bars", 8)) * 4)
+    return [
+        _discrete(0, "sync", target),
+        _discrete(0, "play_from_cue", target),
+        # входящий заходит одними барабанами — они и задают плотность
+        *_stems_at(0, target, {"bass": 0.0, "other": 0.0, "vocals": 0.0}),
+        _stem(0, target, "drums", swap, 0.0, 1.0),
+        # барабаны уходящего уходят сразу: две плотности не складываются
+        _stem(0, source, "drums", swap, 1.0, 0.0, "ease_out"),
+        _ramp(0, "crossfade", source, under, 0.0, 0.45),
+        # бас переезжает вместе с ритмом
+        _stem(under, source, "bass", swap, 1.0, 0.0),
+        _stem(under, target, "bass", swap, 0.0, 1.0),
+        # гармония и голос — последними, уже на новой плотности
+        _stem(under + tail * 0.5, source, "other", swap, 1.0, 0.0, "ease_out"),
+        _stem(under + tail * 0.5, source, "vocals", swap, 1.0, 0.0, "ease_out"),
+        _stem(under + tail * 0.5, target, "other", swap, 0.0, 1.0),
+        _stem(under + tail, target, "vocals", swap, 0.0, 1.0),
+        _ramp(under, "crossfade", source, tail, 0.45, 1.0),
+        _discrete(under + tail + swap, "loop_exit", source),
+    ]
+
+
+_register(Technique(
+    id="KEY-01", name="Key Ramp", category="universal", difficulty=3,
+    description="Входящий сдвигается на полутон-два, чтобы сесть в совместимый сектор Камелота. Питч-шифт не трогает темп — это отдельная ручка. После сдвига длинное наложение становится законным там, где на разрыве оно обнажало бы разъезд. Два полутона — предел: дальше слышно, что трек подкрутили.",
+    bpm_delta_max=4, key_rule="any", energy_direction="any",
+    requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("semitones", "Сдвиг входящего", 1, -2, 2, "полутонов"),
+        TechniqueParam("lead_bars", "Сколько идти до наложения", 4, 2, 16, "тактов"),
+        TechniqueParam("blend_bars", "Длина наложения", 16, 8, 32, "тактов"),
+    ],
+    steps=["Посчитать, на сколько полутонов входящий сядет в соседний сектор Камелота.",
+           "Выставить pitch_adjust входящего ДО ввода — не под звучащей мелодией.",
+           "Синхронизировать темп; питч-фейдер не трогать, он про другое.",
+           "Дальше — обычное длинное наложение с обменом низом посередине."],
+), _build_key_ramp)
+
+_register(Technique(
+    id="KEY-02", name="Drums-Only Bridge", category="stems", difficulty=3,
+    description="Оба трека раздеваются до барабанов, меняются местами в этом виде и только потом входящий одевается обратно. Пока звучат одни ударные, тональности нет ни у кого — приём работает на любом разрыве по Камелоту, включая полутон. В отличие от обмена барабанами, где гармония уходящего звучит всё время, здесь её нет ни у кого: ради этого приём и есть.",
+    bpm_delta_max=6, key_rule="any", energy_direction="any",
+    requires_stems=True, requires_decks=2,
+    params=[
+        TechniqueParam("strip_bars", "За сколько раздеть уходящий", 2, 1, 8, "тактов"),
+        TechniqueParam("bridge_bars", "Мост на одних барабанах", 8, 4, 32, "тактов"),
+        TechniqueParam("dress_bars", "За сколько одеть входящий", 4, 2, 16, "тактов"),
+    ],
+    steps=["Снять у уходящего голос и гармонию, потом бас — остаются барабаны.",
+           "Завести входящий одними барабанами.",
+           "Провести кроссфейдер на мосту, где у обоих только ударные.",
+           "Вернуть входящему бас, затем гармонию, последним голос."],
+), _build_drums_bridge)
+
+_register(Technique(
+    id="KEY-03", name="Wash Out", category="universal", difficulty=2,
+    description="Уходящий смывается в хвост эффекта и исчезает, входящий заходит с чистого листа. Ни одной доли, где тональные части обоих звучат вместе, — поэтому ни Камелот, ни темп значения не имеют. Хвост переживает увод фейдера и звенит поверх нового трека: шов слышен как событие, а не как обрыв. Стемы не нужны.",
+    bpm_delta_max=None, key_rule="any", energy_direction="down",
+    requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("wash_bars", "Длина смыва", 4, 2, 16, "тактов"),
+        TechniqueParam("tail_bars", "Хвост после ухода", 2, 1, 8, "тактов"),
+        TechniqueParam("gap_beats", "Пауза перед входом", 0, 0, 8, "долей"),
+    ],
+    steps=["Открыть посыл на эффект у уходящего и вести фильтр вверх.",
+           "Убрать низ — трек истончается и освобождает место.",
+           "Увести фейдер; хвост эффекта остаётся звучать.",
+           "Завести входящий на следующем даунбите, чистым."],
+), _build_wash_out)
+
+_register(Technique(
+    id="BPM-01", name="Tempo Ramp", category="universal", difficulty=4,
+    description="Темп уводится там, где его не слышно, — в брейкдауне. Дрейф выдают барабаны: ухо держится за сетку ударов, а без барабанов той сетки нет, и питч-фейдер можно провести на несколько процентов незаметно. Поэтому приём сначала снимает барабаны и только потом ведёт темп. Транс именно так и сводят — в брейкдаунах.",
+    bpm_delta_max=8, key_rule="any", energy_direction="any",
+    requires_stems=False, requires_decks=2,
+    params=[
+        TechniqueParam("hold_bars", "Снять барабаны за", 4, 2, 16, "тактов"),
+        TechniqueParam("ramp_bars", "Вести темп", 8, 4, 32, "тактов"),
+        TechniqueParam("rate_pct", "Насколько увести темп", 0, -8, 8, "%"),
+    ],
+    steps=["Поставить стык в брейкдаун — там нет барабанов, и дрейф не слышен.",
+           "Снять у уходящего верх и низ: сетка ударов исчезает.",
+           "Провести питч-фейдер (rate) к темпу входящего — не pitch_adjust, он про высоту.",
+           "Завести входящий с закрытым низом и обменять низ в конце рампы."],
+), _build_tempo_ramp)
+
+_register(Technique(
+    id="BPM-02", name="Half-Time Bridge", category="stems", difficulty=3,
+    description="174 и 87 — один темп, просто доля считается вдвое реже. Но одинаковый счёт не значит одинаковое ощущение: трек со снейром каждый такт и трек со снейром через такт при одной сетке звучат вдвое разными по плотности. Приём отдаёт ритм барабанам входящего и снимает барабаны уходящего: пока играет одна установка, плотность одна, и разрыв в ощущении темпа исчезает вместе со второй.",
+    bpm_delta_max=None, key_rule="any", energy_direction="any",
+    requires_stems=True, requires_decks=2,
+    params=[
+        TechniqueParam("under_bars", "Входящий под уходящим", 8, 4, 32, "тактов"),
+        TechniqueParam("tail_bars", "Досбор входящего", 8, 4, 32, "тактов"),
+    ],
+    steps=["Найти у одного из треков half-time секцию — там плотность совпадёт.",
+           "Завести входящий одними барабанами, барабаны уходящего снять сразу.",
+           "Через фразу переставить бас на входящий.",
+           "Последними отдать гармонию и голос — уже на новой плотности."],
+), _build_half_time_bridge)
+
+
+
+# ---------------------------------------------------------------- оси
+#
+# Заполняется ТАБЛИЦЕЙ, а не правкой 63 вызовов _register: так видно
+# распределение целиком и сразу заметно, что половина каталога ничего не
+# решает. Применяется в конце файла, после регистрации всех приёмов.
+#
+# solves — какой ИЗМЕРИМЫЙ конфликт приём лечит. Перечень ограничен тем,
+# что программа умеет померить: stem_features.gap даёт bass/harm/vocal,
+# camelot_distance — тональность, tempo.relate — темп.
+
+SOLVES: dict[str, tuple[str, ...]] = {
+    # --- приёмы, СДЕЛАННЫЕ ради разрыва ---
+    "KEY-01": ("key_gap",),
+    "KEY-02": ("key_gap", "harm_clash", "bass_clash"),
+    "KEY-03": ("key_gap", "tempo_gap", "energy_down"),
+    "BPM-01": ("tempo_gap",),
+    "BPM-02": ("tempo_gap", "bass_clash"),
+
+    # --- ядро: конфликта не решают, на них держится сет ---
+    "DNB-25": (),               # Classic Blend
+    "DNB-00": (),               # Long Blend
+    "DNB-08": (),               # Phrase Match
+    "DNB-02": (),               # Quick Cut
+    "SE-01":  ("bass_clash",),  # Stem Bass + EQ Top
+    "ST-10":  (),               # Stem Crossfade
+
+    # --- решатели конфликтов ---
+    "DNB-03": ("bass_clash",),
+    "DNB-21": ("bass_clash",),
+    "ST-03":  ("bass_clash",),
+    "DNB-01": ("harm_clash",),
+    "ST-14":  ("harm_clash", "key_gap"),
+    "ST-09":  ("harm_clash",),
+    "ST-15":  ("vocal_clash",),
+    "ST-13":  ("vocal_clash",),
+    "ST-06":  ("vocal_clash",),
+    "SF-04":  ("vocal_clash",),
+    "ST-01":  ("vocal_clash",),
+    "DNB-09": ("vocal_clash",),
+    "ST-02":  ("key_gap",),
+    "ST-05":  ("key_gap", "harm_clash"),
+    "SF-02":  ("key_gap",),
+    "DNB-06": ("bass_clash",),
+    "DNB-12": ("key_gap",),
+
+    # --- энергия ---
+    "DNB-20": ("energy_up",),
+    "TT-05":  ("energy_up",),
+    "DNB-16": ("energy_up",),
+    "ST-04":  ("energy_up", "bass_clash"),
+    "ST-12":  ("energy_up", "bass_clash"),
+    "DNB-10": ("energy_up",),
+    "ST-07":  ("energy_up",),
+    "ST-08":  ("energy_up",),
+    "DNB-23": ("energy_up",),
+    "DNB-04": ("energy_down",),
+    "DNB-05": ("energy_down",),
+    "DNB-07": ("energy_down",),
+    "SF-03":  ("energy_down",),
+    "FX-04":  ("energy_down",),
+}
+
+# tier — ярус каталога. Диджей: «какие-то из них я не применял никогда,
+# а какие-то постоянно». Ярус говорит, что показывать первым, а что
+# держать в архиве; удалять ничего нельзя — на старых приёмах стоят
+# сохранённые швы и коды.
+TIERS: dict[str, str] = {
+    # решатели разрыва — новые, и это самый нужный ярус: подбор теперь
+    # умеет ОТКАЗАТЬ по темпу и тональности, а значит обязан предложить,
+    # чем разрыв закрыть.
+    "KEY-01": "solver", "KEY-02": "solver", "KEY-03": "solver",
+    "BPM-01": "solver", "BPM-02": "solver",
+
+    # ядро — то, чем сводят почти всё
+    "DNB-25": "core", "DNB-00": "core", "DNB-02": "core",
+    "SE-01": "core", "ST-10": "core", "ST-03": "core",
+
+    # решатели
+    "DNB-01": "solver", "DNB-03": "solver", "DNB-21": "solver",
+    "DNB-06": "solver", "DNB-12": "solver", "ST-02": "solver",
+    "ST-05": "solver", "ST-06": "solver", "ST-09": "solver",
+    "ST-13": "solver", "ST-14": "solver", "ST-15": "solver",
+    "SF-02": "solver", "SF-04": "solver", "SF-05": "solver",
+
+    # энергия
+    "DNB-04": "energy", "DNB-05": "energy", "DNB-07": "energy",
+    "DNB-10": "energy", "DNB-16": "energy", "DNB-20": "energy",
+    "DNB-23": "energy", "ST-04": "energy", "ST-07": "energy",
+    "ST-08": "energy", "ST-12": "energy", "SF-03": "energy",
+    "HS-01": "energy",
+
+    # трюки — эффектные, но не рабочая лошадь
+    "TT-01": "trick", "TT-02": "trick", "TT-03": "trick",
+    "TT-04": "trick", "TT-05": "trick", "TT-06": "trick",
+    "TT-07": "trick", "TT-08": "trick", "TT-09": "trick",
+    "FX-01": "trick", "FX-02": "trick", "FX-03": "trick",
+    "FX-04": "trick", "FX-05": "trick", "DNB-11": "trick",
+    "DNB-13": "trick", "DNB-17": "trick", "DNB-18": "trick",
+    "DNB-22": "trick", "SF-01": "trick",
+
+    # архив: переизобретения того, что уже есть под другим именем.
+    # Замер: 107 пар со схожестью действий ≥0.7 при 60 приёмах, и одна
+    # пара совпала СОБЫТИЕ В СОБЫТИЕ (DNB-09 и ST-01).
+    "DNB-09": "archived",   # = ST-01 Acappella On Top, один в один
+    "DNB-19": "archived",   # = DNB-02 Quick Cut плюс одно событие
+    "DNB-14": "archived",   # почти DNB-02
+    "DNB-15": "archived",   # мэшап — не приём сведения, а монтаж
+    "DNB-24": "archived",   # Bar Switch — частный случай DNB-22
+    "ST-11":  "archived",   # три деки: играть негде
+    "ST-01":  "solver",
+}
+
+ORGAN_BY_ACTION: dict[str, str] = {
+    "crossfade": "fader", "volume_ramp": "fader", "play_toggle": "fader",
+    "eq_low": "eq", "eq_mid": "eq", "eq_high": "eq",
+    "eq_kill_low": "eq", "eq_kill_mid": "eq", "stem_eq": "eq",
+    "filter_sweep": "filter",
+    "fx": "fx", "fx_meta": "fx", "fx_mix": "fx", "fx_enable": "fx",
+    "stem_fx": "fx",
+    "loop_activate": "transport", "loop_exit": "transport",
+    "loop_roll": "transport", "stem_loop": "transport",
+    "spinback": "transport", "brake": "transport", "reverse_play": "transport",
+    "soft_start": "transport", "key_shift": "transport",
+    "stem_pitch": "transport", "tempo_ramp": "transport",
+    "stem_gain": "stems", "stem_phase": "stems", "sidechain": "stems",
+}
+
+
+def organs_of(technique_id: str, bpm: float = 174.0) -> frozenset[str]:
+    """Каким органом пульта играется приём — ПО ЕГО СОБЫТИЯМ.
+
+    Выводится, а не проставляется руками: рукописный список разошёлся бы
+    с каталогом в первый же день. Нужно и диджею («покажи то, что я
+    повторю на своём пульте»), и для переноса в настоящие DJ-DAW."""
+    key = (technique_id, round(float(bpm), 1))
+    hit = _ORGAN_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        plan = build_plan(technique_id, "p", "source", "target", float(bpm), {})
+        events = plan["events"] if isinstance(plan, dict) else plan
+    except Exception:                                # noqa: BLE001
+        return frozenset()
+    out = {ORGAN_BY_ACTION[e["action"]] for e in events
+           if e.get("action") in ORGAN_BY_ACTION}
+    res = frozenset(out)
+    _ORGAN_CACHE[key] = res
+    return res
+
+
+_ORGAN_CACHE: dict[tuple, frozenset[str]] = {}
+
+
+def _apply_axes() -> None:
+    """Разложить таблицы по приёмам. Молча промахнуться нельзя: ID из
+    таблицы, которого нет в каталоге, — это опечатка, и её надо видеть."""
+    unknown = sorted((set(SOLVES) | set(TIERS)) - set(TECHNIQUES))
+    if unknown:
+        raise RuntimeError(f"в таблицах осей есть неизвестные приёмы: {unknown}")
+    for tid, t in TECHNIQUES.items():
+        t.solves = frozenset(SOLVES.get(tid, ()))
+        t.tier = TIERS.get(tid, "trick" if tid != "CUSTOM" else "core")
+
+
+_apply_axes()

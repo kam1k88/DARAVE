@@ -747,11 +747,19 @@ def dedupe_library_db(db_path: str, drop_missing: bool = False) -> dict:
             conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
             merged += 1
     if drop_missing:
+        # Предохранитель: строку убираем, только если ПАПКА файла на
+        # месте. Внешний диск, отключённый сетевой каталог, не
+        # примонтированный раздел — это «сейчас не видно», а не «файла
+        # нет», и вычистить по такому поводу полбиблиотеки нельзя.
         for path in list(keep):
-            if not os.path.exists(path):
-                conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
-                keep.discard(path)
-                missing += 1
+            if os.path.exists(path):
+                continue
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                continue                     # папки нет — судить не о чем
+            conn.execute("DELETE FROM tracks WHERE path = ?", (path,))
+            keep.discard(path)
+            missing += 1
     for path in list(keep):
         canon = canon_track_path(path)
         if canon != path:

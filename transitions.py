@@ -34,9 +34,17 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+import paths as _paths
 import persistence
 
-KEEP_DIR = Path(__file__).resolve().parent / "demos" / "keep"
+# Демо лежат в ПИСЧЕЙ папке (%LOCALAPPDATA%\\DARAVE\\demos), а не рядом с
+# исходниками. Здесь стояло `Path(__file__).parent / "demos"` — в сборке
+# это `C:\\Program Files\\DARAVE\\_internal\\demos`, где файла нет и
+# писать нельзя. `_keep_demo` молча не находил исходник и возвращал
+# None, поэтому у КАЖДОГО отложенного перехода стояло «демо не
+# сохранено». Ровно та же ошибка, что была у папки стемов.
+DEMOS_DIR = _paths.data_subdir("demos")
+KEEP_DIR = DEMOS_DIR / "keep"
 
 
 def _init(conn: sqlite3.Connection) -> None:
@@ -53,12 +61,18 @@ def _init(conn: sqlite3.Connection) -> None:
             note TEXT,
             demo_file TEXT,
             source TEXT,
+            code TEXT,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS transitions_room "
                  "ON transitions(session_id, rating)")
+    # Таблица старше поля `code` — добавляем на месте, чтобы уже
+    # отложенные переходы не пришлось терять.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(transitions)")}
+    if "code" not in cols:
+        conn.execute("ALTER TABLE transitions ADD COLUMN code TEXT")
     conn.commit()
 
 
@@ -73,7 +87,7 @@ def _keep_demo(demo_file: str | None) -> str | None:
     """Копирует демо в demos/keep — там его не тронет уборка."""
     if not demo_file:
         return None
-    src = Path(__file__).resolve().parent / "demos" / Path(demo_file).name
+    src = DEMOS_DIR / Path(demo_file).name
     if not src.is_file():
         return None
     KEEP_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,12 +102,25 @@ def _keep_demo(demo_file: str | None) -> str | None:
 
 def save(session_id: str, seam: dict, rating: int | None = None,
          note: str | None = None, demo_file: str | None = None,
-         source: str = "audition") -> dict:
+         source: str = "audition", code: str | None = None) -> dict:
     """Отложить переход. Повторное сохранение той же связки обновляет
     оценку и заметку, а не плодит дубли: диджей чаще уточняет мнение,
     чем сохраняет второй раз то же самое."""
     now = time.time()
     kept = _keep_demo(demo_file)
+    # Код шва. Если клиент его не прислал — считаем сами: отложенный
+    # переход без кода нельзя ни вернуть в Clipping, ни передать словами,
+    # а именно ради этого код и заводили.
+    if not code:
+        try:
+            import audition as _aud
+
+            state = {k: seam.get(k) for k in _aud.CODE_FIELDS}
+            state["a_path"] = seam.get("a_path")
+            state["b_path"] = seam.get("b_path")
+            code = str(_aud.seam_code(session_id, state))
+        except Exception:                            # noqa: BLE001
+            code = None
     params = dict(seam.get("params") or {})
     if seam.get("bars") and "bars" not in params:
         params["bars"] = float(seam["bars"])
@@ -107,31 +134,32 @@ def save(session_id: str, seam: dict, rating: int | None = None,
             conn.execute(
                 """UPDATE transitions SET rating=COALESCE(?, rating),
                           note=COALESCE(?, note), demo_file=COALESCE(?, demo_file),
-                          entry_seconds=?, bars=?, params_json=?, updated_at=?
+                          entry_seconds=?, bars=?, params_json=?,
+                          code=COALESCE(?, code), updated_at=?
                    WHERE id=?""",
                 (rating, note, kept, seam.get("entry_seconds"), seam.get("bars"),
-                 json.dumps(params, ensure_ascii=False), now, row[0]))
+                 json.dumps(params, ensure_ascii=False), code, now, row[0]))
             conn.commit()
             return {"ok": True, "id": row[0], "updated": True}
         cur = conn.execute(
             """INSERT INTO transitions (session_id, a_path, b_path, a_name, b_name,
                     technique_id, technique, pair_label, exit_seconds, entry_seconds,
-                    bars, params_json, rating, note, demo_file, source,
+                    bars, params_json, rating, note, demo_file, source, code,
                     created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (session_id, seam.get("a_path"), seam.get("b_path"),
              seam.get("a_name"), seam.get("b_name"),
              seam.get("technique_id"), seam.get("technique"), seam.get("pair_label"),
              seam.get("exit_seconds"), seam.get("entry_seconds"), seam.get("bars"),
              json.dumps(params, ensure_ascii=False), rating, note, kept, source,
-             now, now))
+             code, now, now))
         conn.commit()
         return {"ok": True, "id": cur.lastrowid, "updated": False}
 
 
 _COLUMNS = ("id", "a_path", "b_path", "a_name", "b_name", "technique_id",
             "technique", "pair_label", "exit_seconds", "entry_seconds", "bars",
-            "params_json", "rating", "note", "demo_file", "source",
+            "params_json", "rating", "note", "demo_file", "source", "code",
             "created_at", "updated_at")
 
 

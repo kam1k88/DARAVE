@@ -28,7 +28,14 @@ import shutil
 import time
 from pathlib import Path
 
-HERE = Path(__file__).parent
+# Та же история, что и у stems.STEM_DIR: подметать надо там, куда
+# программа пишет, а не там, где лежит её код. В сборке HERE — это
+# _internal, где нет ни demos, ни sets, ни recordings; уборка честно
+# сообщала «чистить нечего», пока настоящие демо копились в
+# %LOCALAPPDATA%\\DARAVE и не убирались никогда.
+import paths as _paths
+
+HERE = _paths.data_dir()
 
 # папка -> (сколько последних файлов оставить, сколько часов считать свежими)
 SWEEP_RULES = {

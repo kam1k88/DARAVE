@@ -40,6 +40,8 @@ cue_points.py — именованные точки трека: интро, би
 """
 from __future__ import annotations
 
+import beatgrid as _bg
+
 PHRASE_BARS = 8
 LOOP_BARS = (4, 8, 16)
 
@@ -427,6 +429,53 @@ SECTION_ROLE = {
 }
 
 
+# --------------------------------------------------------- half-time
+#
+# Диджей просил различать half-time — «секцию, где барабаны играют вдвое
+# реже при том же темпе». Это НЕ то же самое, что половинный счёт в
+# `tempo.py` и не нормализация темпа в `track_analysis.normalize_bpm`:
+# там чинится ЧИСЛО, когда анализатор посчитал долю вдвое реже, и
+# музыка при этом не меняется. Здесь число верное — меняется музыка.
+#
+# Различается по плотности АТАК на такт (`drum_map["hits"]`), а не по
+# уровню: в half-time партия такая же громкая, просто ударов меньше.
+# Поэтому ни `on`, ни `dense` этого не видят и увидеть не могут.
+#
+# Опорная величина — 75-й перцентиль плотности, а не медиана: если
+# half-time занимает половину трека, медиана уезжает в него самого, и
+# секция перестаёт отличаться от собственной опоры. Проверено на
+# синтетике: 8 тактов по 4 удара и 8 по 2 дают медиану 3, при которой
+# половинные такты не ловятся вовсе.
+
+
+def _half_time_bars(dmap: dict) -> set[int]:
+    """Номера тактов, идущих в половинной плотности. Пустое множество —
+    трек считан старой версией анализа, где плотности ещё не было."""
+    raw = str(dmap.get("hits") or "")
+    if not raw:
+        return set()
+    hits = [int(c) for c in raw if c.isdigit()]
+    live = sorted(h for h in hits if h > 0)
+    if len(live) < 8:
+        return set()
+    ref = live[int(len(live) * 0.75)] if len(live) > 3 else live[-1]
+    if ref <= 1:
+        return set()
+    thin = [i for i, h in enumerate(hits)
+            if 0 < h <= ref * _bg.HALF_TIME_RATIO]
+    # Сплошные куски: одиночный редкий такт — это сбивка, а не секция.
+    out: set[int] = set()
+    run: list[int] = []
+    for i in thin + [10 ** 9]:
+        if run and i == run[-1] + 1:
+            run.append(i)
+            continue
+        if len(run) >= _bg.HALF_TIME_MIN_BARS:
+            out.update(run)
+        run = [i]
+    return out
+
+
 def sections_for_track(track: dict, bpm: float | None = None) -> dict:
     """Непрерывное разбиение трека на секции: интро, билд, дроп,
     брейкдаун, грув, аутро.
@@ -457,6 +506,7 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
     # начиналось ровно там, где интро заканчивается.
     import math
 
+    half_bars = _half_time_bars(dmap)
     bar0 = int(math.floor((0.0 - grid.anchor) / grid.bar))
     bar1 = int(math.ceil((duration - grid.anchor) / grid.bar))
     n_bars = max(1, bar1 - bar0)
@@ -574,11 +624,26 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
             # столкнётся второй вокал на сведении.
             cover = vocal_cover(t0, min(duration, t1))
             is_vocal = cover >= VOCAL_SECTION_COVER
+            # Half-time — флаг секции, ровно как вокал: kind не меняется.
+            # «half-time дроп» это дроп, и метки стыков (drop→drop) по
+            # нему собираются те же. Порог тот же, что у вокала: треть
+            # секции, иначе одна редкая фраза красит все 32 такта.
+            share = 0.0
+            if half_bars and bars > 0:
+                mine = sum(1 for x in range(start, k) if (x + bar0) in half_bars)
+                share = mine / float(bars)
+            is_half = share >= VOCAL_SECTION_COVER
             out.append({
                 "kind": kind,
                 "name": SECTION_NAMES.get(kind, kind),
                 "vocal": is_vocal,
                 "vocal_cover": round(cover, 2),
+                "half_time": is_half,
+                "half_time_cover": round(share, 2),
+                # Считана ли плотность вообще: у треков со старым
+                # анализом её нет, и «не half-time» там означает
+                # «не мерили», а не «померили и нет».
+                "half_time_known": bool(dmap.get("hits")),
                 "start_seconds": round(t0, 2),
                 "end_seconds": round(min(duration, t1), 2),
                 "bars": bars,
@@ -588,10 +653,27 @@ def sections_for_track(track: dict, bpm: float | None = None) -> dict:
                 "can_enter": bool(role.get("enter")),
                 "can_exit": bool(role.get("exit")),
                 "label": (f"{SECTION_NAMES.get(kind, kind)}"
-                          f"{' + vocal' if is_vocal else ''} · "
+                          f"{' + vocal' if is_vocal else ''}"
+                          f"{' · half-time' if is_half else ''} · "
                           f"{bars} {_bars_word(bars)} · {_fmt(t0)}"),
             })
             start = k
+
+    # main room — трансовое название дропа, который идёт СРАЗУ после
+    # брейкдауна: часть, где играет всё. Это не новая роль, а свойство
+    # последовательности, поэтому считается здесь, когда список секций
+    # уже собран, а не в растеризаторе.
+    #
+    # Зачем отдельно от обычного дропа: main room — это место, куда
+    # заводят, а не откуда уводят. Диджей: «Uplifting trance, как я
+    # слышал, смешивается в брейкдаунах» — то есть уход из брейкдауна
+    # уходящего в main room входящего и есть канонический трансовый шов.
+    for i, sec in enumerate(out):
+        sec["main_room"] = bool(
+            sec.get("kind") == "drop" and i > 0
+            and out[i - 1].get("kind") in ("breakdown", "build"))
+        if sec["main_room"]:
+            sec["label"] = sec["label"].replace(" · ", " (main room) · ", 1)
 
     # Секция короче двух тактов — это не секция, а край растеризации:
     # такт, на котором две роли поделили границу. Отдаём его соседу,

@@ -115,6 +115,65 @@ def load_history(session_id: str) -> list[tuple[str, str]]:
         return cur.fetchall()
 
 
+def list_rooms(limit: int = 30) -> list[dict]:
+    """Комнаты, о которых мы что-то помним, свежие сверху.
+
+    Зачем это вообще нужно. Код комнаты — случайные 16 символов, он
+    нигде не записан и держится только в адресной строке. Но за ним
+    стоит ВСЯ просканированная библиотека: она лежит в rooms.library_json
+    по этому коду. Человек, закрывший вкладку и открывший программу
+    заново, получал новую пустую комнату — и единственным выходом было
+    сканировать библиотеку с нуля. Час работы из-за потерянной строки в
+    адресе.
+
+    Поэтому список. Показываем то, по чему комнату можно узнать, не
+    открывая: сколько в ней треков и когда её трогали в последний раз.
+    Кода достаточно, истории и планов здесь не читаем — на списке из
+    тридцати комнат это были бы тридцать разборов JSON ради двух чисел.
+    """
+    with _cursor() as cur:
+        cur.execute(
+            """SELECT session_id, updated_at,
+                      LENGTH(COALESCE(library_json, '')) AS lib_len,
+                      strategy_json IS NOT NULL AS has_strategy
+                 FROM rooms
+                ORDER BY updated_at DESC
+                LIMIT ?""",
+            (int(limit),),
+        )
+        rows = cur.fetchall()
+
+    out = []
+    for sid, updated, lib_len, has_strategy in rows:
+        tracks = 0
+        if lib_len:
+            # Число треков — по самой библиотеке, а не по длине строки.
+            # Разбор тут дешевле, чем кажется: комнат тридцать, а не
+            # тридцать тысяч, и пустые (lib_len = 0) даже не читаются.
+            try:
+                tracks = len(load_library(sid))
+            except (ValueError, TypeError):
+                tracks = 0
+        out.append({
+            "room_id": sid,
+            "tracks": tracks,
+            "updated_at": float(updated or 0.0),
+            "has_strategy": bool(has_strategy),
+        })
+    return out
+
+
+def forget_room(session_id: str) -> None:
+    """Убрать комнату из списка вместе с её историей.
+
+    Нужно ровно для того, чтобы список не превращался в свалку из
+    случайно открытых пустых комнат. Удаляем и историю: оставить её
+    значит хранить переписку от комнаты, которой в списке уже нет."""
+    with _cursor() as cur:
+        cur.execute("DELETE FROM rooms WHERE session_id = ?", (session_id,))
+        cur.execute("DELETE FROM history WHERE session_id = ?", (session_id,))
+
+
 def save_last_plan(session_id: str, plan: dict) -> None:
     import time
 

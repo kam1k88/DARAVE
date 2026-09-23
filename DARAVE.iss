@@ -44,6 +44,26 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Сборка на 200+ МБ жмётся минуты — но скачивать её потом будут тысячи раз.
 LZMANumBlockThreads=4
 
+; Закрытие работающей копии.
+;
+; По умолчанию Inno закрывает мешающие программы через Restart Manager:
+; посылает приложению просьбу завершиться и ЖДЁТ ответа. DARAVE — это
+; uvicorn без оконного цикла сообщений, отвечать на такую просьбу ему
+; нечем. Диджей соглашался закрыть — и установщик вис насмерть, пока
+; процесс не снимут руками.
+;
+; force означает: попросили вежливо, не ответил за отведённое время —
+; закрыли принудительно. Для нас это безопасно: своё состояние программа
+; держит в SQLite с WAL, а не в памяти до выхода.
+CloseApplications=force
+; Обратно её поднимать не надо: после обновления запуск предлагается
+; галочкой на последней странице, и поднятая Restart Manager'ом СТАРАЯ
+; копия дала бы второй процесс на том же порту.
+RestartApplications=no
+; Какие именно файлы считать «занятыми». Без фильтра Inno опрашивает всю
+; папку назначения, а там 200 МБ библиотек.
+CloseApplicationsFilter=*.exe
+
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -77,18 +97,33 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  if Exec(ExpandConstant('{cmd}'), '/C netstat -ano -p TCP | findstr ":8765 " > nul',
-          '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  if not Exec(ExpandConstant('{cmd}'), '/C netstat -ano -p TCP | findstr ":8765 " > nul',
+              '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Exit;
+  if ResultCode <> 0 then
+    Exit;                                  // порт свободен, спрашивать не о чем
+
+  // Раньше здесь был вопрос «закройте и нажмите Повторить», а закрывать
+  // предлагалось руками. Теперь закрываем сами — иначе человек жмёт
+  // «да», Restart Manager ждёт ответа от процесса без окна, и всё висит.
+  if MsgBox('DARAVE сейчас запущен (занят порт 8765).' + #13#10#13#10 +
+            'Закрыть её и продолжить установку?' + #13#10 +
+            'Несохранённого в ней ничего нет: библиотека, пул и наборы ' +
+            'лежат в базе и переживут закрытие.',
+            mbConfirmation, MB_YESNO) = IDNO then
   begin
-    if ResultCode = 0 then
-    begin
-      if MsgBox('Похоже, DARAVE сейчас запущен (занят порт 8765).' + #13#10 +
-                'Закройте окно программы и нажмите «Повторить».' + #13#10#13#10 +
-                'Продолжить установку всё равно?',
-                mbConfirmation, MB_YESNO) = IDNO then
-        Result := False;
-    end;
+    Result := False;
+    Exit;
   end;
+
+  // /T — вместе с дочерними процессами: скан, перемер темпа и разделение
+  // на слои запускаются тем же DARAVE.exe с ключом --child, и без /T они
+  // переживут родителя и продолжат держать файлы.
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /T /IM DARAVE.exe > nul 2>&1',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Порт освобождается не мгновенно: сокет успевает побыть в TIME_WAIT,
+  // а файлы — подержаться открытыми ещё мгновение после смерти процесса.
+  Sleep(1500);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

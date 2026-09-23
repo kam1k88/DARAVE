@@ -92,11 +92,16 @@ EDGE_FADE_SEC = 0.010
 # трек. Теперь при большом окне приём РАСТЯГИВАЕТСЯ — ровно этого и
 # просил диджей, когда сказал «максимально более долгие переходы».
 TIME_SCALES = (1.0, 0.5, 0.25, 0.125)
-# Растягивать приём (а не только ужимать) разрешено ТОЛЬКО когда длина
-# перехода задана явно — со шва или из плана. Без этого каждое демо
-# растягивалось до полного окна в 38 секунд, и все приёмы разъезжались
-# вчетверо: диджей услышал это сразу и назвал «сводит просто ужасно».
-TIME_SCALES_STRETCH = (4.0, 2.0) + TIME_SCALES
+# Пределы растяжения, когда длина перехода ЗАДАНА. Растягивать приём (а
+# не только ужимать) разрешено только в этом случае: без заданной длины
+# каждое демо растягивалось до полного окна в 38 секунд, и все приёмы
+# разъезжались вчетверо — диджей услышал это сразу и назвал «сводит
+# просто ужасно».
+#
+# Восьмикратный потолок — это четырёхтактовый приём на 32 такта. Дальше
+# растягивать нечего: жест перестаёт быть жестом.
+MIN_TIME_SCALE = 0.125
+MAX_TIME_SCALE = 8.0
 
 # Профиль ввода «наложение». Диджей описал его дословно: новый трек
 # заходит с урезанным низом, доходит до 85% громкости, только потом
@@ -478,7 +483,14 @@ def _reverb_return(x: np.ndarray, sr: int, send_env: np.ndarray,
     диджейском пульте: хвост, а не помещение."""
     from scipy.signal import fftconvolve
 
-    ir_n = int(min(decay_sec, 3.0) * sr)
+    # Потолок длины хвоста. Был 3 секунды — и это делало ручку «хвост»
+    # ложью: замерено, что при decay_sec 3, 6 и 10 хвост до -26 дБ
+    # держится 3.03, 3.23 и 3.24 секунды, то есть ручка выше трёх секунд
+    # не меняла НИЧЕГО. Двенадцать долей — а столько ручка и позволяет —
+    # это 4.1 секунды на 174 BPM и 5.6 на 128. Потолок поднят так, чтобы
+    # весь ход ручки был слышен; считается это офлайн, лишняя секунда
+    # импульса стоит миллисекунды.
+    ir_n = int(min(decay_sec, 8.0) * sr)
     t = np.arange(ir_n) / sr
     rng = np.random.default_rng(7)          # фиксируем: рендер должен быть воспроизводим
     ir = rng.standard_normal(ir_n) * np.exp(-t / max(0.1, decay_sec / 3.0))
@@ -793,6 +805,81 @@ def _smoothstep(x: np.ndarray) -> np.ndarray:
     return x * x * (3.0 - 2.0 * x)
 
 
+def _handover_position(vol_env, src_env, margin: float = 0.10,
+                       width: float = 0.05) -> "np.ndarray":
+    """ОДИН момент, когда низ и барабаны переезжают к входящему.
+
+    При кроссфейде такого вопроса нет: момент — середина хода
+    кроссфейдера. При РУЧНОМ ведении кроссфейдера не существует вовсе,
+    и это ломало сразу два места:
+
+      * низ считался от cf_env, переопределённого как «сколько
+        уходящего ушло». Уходящий по профилю стоит на полном до
+        последних out_len — значит почти весь переход эта величина
+        равна нулю, и низ входящего не открывался;
+      * ворота барабанов («одна ударная установка за раз») считались от
+        СЫРЫХ событий crossfade. А `mix_profile.apply` их выбрасывает —
+        именно в этом его смысл. Событий нет, огибающая падает на
+        умолчание 0.0, ворота входящего не открываются НИ РАЗУ.
+
+    Второе и есть то, что диджей описал:
+
+        остальные ломают входящий трек, где он звучит будто только в
+        слое others, без басса драмсов и вокала
+
+    Слой others — это ровно то, что остаётся, когда у входящего закрыты
+    барабаны и бас. Замер по всем 62 приёмам каталога: под профилем шли
+    20 приёмов, у которых не было ни crossfade, ни eq_low на обеих
+    деках, — у всех двадцати барабаны входящего молчали весь переход.
+    Уцелели те, где низом управляет сама техника (eq_low: DNB-01,
+    DNB-25), резы, которым профиль не навязывается (DNB-02), и приёмы,
+    которые ведут слои сами. Диджей назвал рабочими DNB-01, DNB-02 и
+    DNB-25 — те же три.
+
+    Где ставить обмен. Не «когда входящий дошёл до полного»: при
+    in_len до 0.95 это конец перехода, и низ приезжал бы позже, чем
+    уходящий начал уводиться, — провал ровно там, где его слышно.
+    Правило простое и одно на всё: **обмен за фразу до того, как
+    уходящий тронется**. Тогда старый до последнего идёт со своим
+    низом, новый входит уже со своим, и между ними нет дыры.
+
+    Возвращает положение 0..1: 0 — низ и барабаны у уходящего, 1 — у
+    входящего."""
+    v = np.asarray(vol_env, dtype=float)
+    s = np.asarray(src_env, dtype=float)
+    m = int(len(v))
+    if m == 0:
+        return np.zeros(0)
+
+    def _first(cond, default: int) -> int:
+        idx = np.flatnonzero(cond)
+        return int(idx[0]) if idx.size else default
+
+    leave = _first(s < 0.99, m - 1)          # уходящий тронулся
+    half = _first(v >= 0.5, 0)               # входящему есть что отдать
+    swap = min(max(half, leave - int(margin * m)), leave)
+    w = max(1, int(width * m))
+    return np.clip((np.arange(m) - (swap - w / 2.0)) / w, 0.0, 1.0)
+
+
+def _manual_handover(events, spb, timeline_start, n, sr):
+    """Положение обмена для ручного ведения, или None, если ведёт кроссфейд.
+
+    Считается ОДИН раз и отдаётся обоим потребителям — воротам барабанов
+    и передаче низа. Раньше они считались порознь и из разных источников,
+    хотя в комментарии рядом было написано верное: «барабаны и бас диджей
+    всегда переключает вместе»."""
+    if any(e["action"] == "crossfade" for e in events):
+        return None
+    tgt = [e for e in events if e["action"] == "volume_ramp" and e["deck"] == "target"]
+    src = [e for e in events if e["action"] == "volume_ramp" and e["deck"] == "source"]
+    if not tgt or not src:
+        return None
+    tv = _envelope_array(_piecewise_ramp(tgt, spb, default=1.0), timeline_start, n, sr)
+    sv = _envelope_array(_piecewise_ramp(src, spb, default=1.0), timeline_start, n, sr)
+    return _handover_position(tv, sv)
+
+
 def _bass_handover(cf_env: np.ndarray, lo: float = 0.46, hi: float = 0.54) -> tuple[np.ndarray, np.ndarray]:
     """«Одна бочка за раз» — правило, которое диджей выполняет руками на
     каждом сведении. Два полноспектральных драм-н-бейса, сложенные без
@@ -949,6 +1036,35 @@ def _stretch(y: np.ndarray, sr: int, rate: float) -> np.ndarray:
         return librosa.effects.time_stretch(y, rate=float(rate))
     except Exception:
         return y
+
+
+def technique_scale(raw_end: float, budget: float, bars_given: bool) -> float:
+    """Во сколько раз растянуть или ужать приём под окно перехода.
+
+    Вынесено из `render_demo` не ради красоты: пока расчёт жил внутри,
+    проверка вынужденно повторяла ту же арифметику у себя — и молча
+    соглашалась с любой правкой рендера. Теперь и рендер, и кнопка
+    «такты», и проверка спрашивают ОДНУ функцию.
+
+    `bars_given` — длина задана явно (со шва, с карточки). Тогда масштаб
+    считается ТОЧНО: обещали 32 такта — звучит 32. Раньше и этот случай
+    шёл по лесенке степеней двойки, где бралась первая ступень, которая
+    «влезает» в бюджет; влезает — не значит совпадает. Замер на 138 BPM:
+    из 180 сочетаний «приём × 16/32/64 такта» в заказанную длину
+    попадали 10, медианный промах 44%. На карточке 32 такта — звучало
+    18, и переход начинался посреди фразы. Диджей: «не сходятся такты и
+    доли теперь, ни в одной технике».
+
+    Без заданной длины остаётся лесенка: выбрать круглую ступень
+    разумнее, чем тянуть приём под случайное окно."""
+    raw_end = max(float(raw_end), 1e-6)
+    if bars_given:
+        return _clamp(float(budget) / raw_end, MIN_TIME_SCALE, MAX_TIME_SCALE)
+    scale = TIME_SCALES[-1]
+    for s in TIME_SCALES:
+        if raw_end * s <= budget:
+            return s
+    return scale
 
 
 def _scale_events(events: list[dict], scale: float) -> list[dict]:
@@ -1188,6 +1304,61 @@ def pick_render_source() -> None:  # pragma: no cover — заглушка дл�
     return None
 
 
+# Ручки, которые юниты действительно читают (см. пункты 5b и очередь
+# посылов ниже). Список один на всю программу: fx_presets описывает те же
+# ключи как ручки интерфейса, а здесь их накладывают на события.
+FX_PARAM_KEYS = ("delay_beats", "feedback", "decay_beats", "rate_beats",
+                 "depth_ms", "stages", "drive", "bits", "downsample")
+
+
+def _tune_own_fx(events: list[dict], tune: dict | None) -> list[dict]:
+    """Ручки диджея поверх эффекта, который ведёт САМ приём.
+
+    Двадцать два приёма трогают FX самостоятельно, и до сих пор это
+    означало «как задумано, и никак иначе». Пятнадцать из них к тому же
+    юнит не называют (fx_meta/fx_mix), а рендер подставлял им эхо — то
+    есть «уход в реверб» на DNB-25 был невозможен физически.
+
+    Здесь диджей получает над ними те же три вещи, что и над своим
+    эффектом: чем играть (только там, где приём юнит не назвал — иначе
+    это был бы уже не тот приём), насколько глубоко и с какими
+    параметрами юнита.
+
+    Накладывается ПОСЛЕ профиля и ДО расчёта: события приёма к этому
+    моменту уже в долях готового окна."""
+    if not tune:
+        return events
+    out = []
+    for e in events:
+        act = e.get("action")
+        opts = tune.get(e.get("deck")) or {}
+        if act not in ("fx", "stem_fx", "fx_meta", "fx_mix") or not opts:
+            out.append(e)
+            continue
+        ev = {**e, "params": dict(e.get("params") or {})}
+        unit = opts.get("unit")
+        # Юнит подменяем только у «безымянной ручки». У FX-01 фленджер —
+        # это и есть приём, и заменить его вобблом значит играть другой.
+        if unit and act in ("fx_meta", "fx_mix"):
+            ev["params"]["unit"] = str(unit)
+        try:
+            k = max(0.0, min(1.0, float(opts.get("strength", 100.0)) / 100.0))
+        except (TypeError, ValueError):
+            k = 1.0
+        for field in ("value_from", "value_to"):
+            if ev.get(field) is not None:
+                ev[field] = float(ev[field]) * k
+        for key, val in opts.items():
+            if key not in FX_PARAM_KEYS:
+                continue
+            try:
+                ev["params"][key] = float(val)
+            except (TypeError, ValueError):
+                continue
+        out.append(ev)
+    return out
+
+
 def render_demo(
     technique_id: str,
     track_a_path: str,
@@ -1206,6 +1377,7 @@ def render_demo(
     mix_profile: dict | None = None,
     vocal_loop: float | None = None,
     extra_events: list[dict] | None = None,
+    fx_tune: dict | None = None,
     _debug: dict | None = None,
 ) -> dict:
     """Рендерит демо и пишет WAV (PCM16) в out_path.
@@ -1299,15 +1471,26 @@ def render_demo(
     if bars and float(bars) > 0:
         max_seconds = lead + tail + float(bars) * bar_sec
 
-    # --- подбираем масштаб техники так, чтобы её ФОРМА влезла целиком ---
+    # --- масштаб техники ---
+    #
+    # Когда длина ЗАДАНА («32 такта» на карточке), масштаб считается
+    # точно: приём обязан занять ровно столько, сколько обещано.
+    #
+    # Раньше и этот случай шёл по лесенке степеней двойки
+    # (4, 2, 1, 1/2, 1/4, 1/8): бралась первая ступень, которая «влезает»
+    # в бюджет. Влезает — не значит совпадает. Замер по каталогу на
+    # 138 BPM: из 180 сочетаний «приём × 16/32/64 такта» в заказанную
+    # длину попадали 10, медианный промах 44%. То есть на карточке
+    # написано 32 такта, а звучало 18 — и переход начинался и кончался
+    # посреди фразы. Диджей услышал это сразу:
+    #
+    #     не сходятся такты и доли теперь, ни в одной технике
+    #
+    # Лесенка остаётся там, где длину НИКТО не задал: выбирать круглую
+    # ступень разумнее, чем тянуть приём под случайное окно.
     raw_end = max([4.0 * spb] + [_event_window(e, spb)[1] for e in plan["events"]])
     budget = max(2.0 * bar_sec, float(max_seconds) - lead - tail)
-    ladder = TIME_SCALES_STRETCH if (bars and float(bars) > 0) else TIME_SCALES
-    scale = ladder[-1]
-    for s in ladder:
-        if raw_end * s <= budget:
-            scale = s
-            break
+    scale = technique_scale(raw_end, budget, bool(bars and float(bars) > 0))
     events = _scale_events(plan["events"], scale)
     # Профиль ввода применяется ПОСЛЕ масштабирования: он размечает доли
     # уже готового окна перехода, а не «родной» длины приёма.
@@ -1319,6 +1502,9 @@ def render_demo(
     if extra_events:
         events = sorted(list(events) + [dict(e) for e in extra_events],
                         key=lambda e: float(e.get("beat_offset") or 0.0))
+    # Ручки поверх СОБСТВЕННОГО эффекта приёма — после того, как события
+    # собраны целиком: добавки диджея тоже могут нести fx.
+    events = _tune_own_fx(events, fx_tune)
 
     windows = [_event_window(e, spb) for e in events]
     t_max = max([2.0 * bar_sec] + [e for _, e in windows])
@@ -1579,6 +1765,11 @@ def render_demo(
             tgt_stems = {k: _transport.read(v, tgt_tr["pos"], tgt_tr["gain"], sr)
                          for k, v in tgt_stems.items()}
 
+    # Момент обмена низом и барабанами. Считается здесь, потому что
+    # первым его спрашивает сборка из слоёв (ниже), а вторым — передача
+    # низа в финальном миксе. Величина одна на обоих.
+    manual_hand = _manual_handover(events, spb, timeline_start, n, sr)
+
     # --- 1c. дека собирается ИЗ СЛОЁВ, и делается это здесь ---
     #
     # Порядок не случайный. Раньше сборка по стемам стояла в самом конце,
@@ -1612,6 +1803,13 @@ def render_demo(
                 gb = _envelope_array(_piecewise_ramp(eq_tgt, spb, default=0.0),
                                      timeline_start, n, sr,
                                      step_sec=_events_step_sec(eq_tgt, spb)) / neutral
+            elif manual_hand is not None:
+                # Ручное ведение: кроссфейда нет, и брать его события
+                # бессмысленно — профиль их выбросил. Момент тот же, что
+                # у низа (см. _handover_position): барабаны и бас
+                # переключаются вместе, одним движением.
+                gb = _smoothstep(manual_hand)
+                ga = 1.0 - gb
             else:
                 cf_raw_ev = [e for e in events if e["action"] == "crossfade"]
                 cf_raw = _envelope_array(_piecewise_ramp(cf_raw_ev, spb, default=0.0),
@@ -1780,7 +1978,9 @@ def render_demo(
                     # хвост должен родиться из того, что звучало ДО увода.
                     if e_unit == "echo":
                         _queue_send(deck_name, "echo", layer, env,
-                                    delay_sec=_pp("delay_beats", 0.75) * spb)
+                                    delay_sec=_pp("delay_beats", 0.75) * spb,
+                                    feedback=min(0.9, max(0.05,
+                                                          _pp("feedback", 45.0) / 100.0)))
                     else:
                         _queue_send(deck_name, "reverb", layer, env,
                                     decay_sec=_pp("decay_beats", 4.0) * spb)
@@ -1925,23 +2125,40 @@ def render_demo(
     # сочетать луп с торможением. Теперь и то и другое — одно движение
     # иглы, и считается в одном месте.
 
-    # --- 5. fx_meta — посыл на дилей ---
-    # Возврат придёт в микс после фейдера, но и кормится посыл пост-фейдерным
-    # сигналом, поэтому здесь только ставим в очередь.
+    # --- 5. fx_meta/fx_mix — «ручка FX» приёма ---
+    #
+    # Эти события юнит НЕ называют. На живом пульте так и правильно:
+    # диджей заранее выбрал юнит рукой, а приём говорит только «открой
+    # ручку вот на столько». А здесь на это место жёстко подставлялось
+    # эхо — пятнадцать приёмов (DNB-05, DNB-07, DNB-25, HS-01, ST-01,
+    # ST-08, TT-07 и прочие) не могли уйти ни во что другое, и нигде об
+    # этом не говорилось.
+    #
+    # Теперь юнит приезжает в params (его ставит панель эффектов), а эхо
+    # осталось умолчанием — тем самым, что звучало раньше. Само событие
+    # превращается в обычное "fx" и дальше идёт общим путём (пункт 5b):
+    # и вставки, и посылы, и ручки юнита работают для него так же, как
+    # для эффекта, выбранного руками. Двух разных дорог для одного и
+    # того же больше нет.
+    fx_from_knob: list[dict] = []
     for deck in ("source", "target"):
         # fx_mix (dry/wet юнита) и fx_meta (параметр эффекта) в реальном
-        # Mixxx крутятся вместе — для демо берём максимум как «глубину эха».
+        # Mixxx крутятся вместе — берём их одной огибающей, как и раньше.
         fx_events = [
             e for e in events
             if e["action"] in ("fx_meta", "fx_mix") and e["deck"] == deck
         ]
         if not fx_events:
             continue
-        fn = _piecewise_ramp(fx_events, spb, default=0.0)
-        send_env = _envelope_array(fn, timeline_start, n, sr,
-                                   step_sec=_events_step_sec(fx_events, spb))
-        if np.max(send_env) > 0.02:
-            _queue_send(deck, "echo", None, send_env)
+        unit = "echo"
+        for e in fx_events:
+            u = (e.get("params") or {}).get("unit")
+            if u:
+                unit = str(u)
+                break
+        for e in fx_events:
+            fx_from_knob.append({**e, "action": "fx",
+                                 "params": {**(e.get("params") or {}), "unit": unit}})
 
     # --- 5b. остальные эффекты: action "fx" с именем в params ---
     # Порядок вставок фиксирован и не случаен: сначала то, что меняет
@@ -1952,7 +2169,7 @@ def render_demo(
     _INSERT_ORDER = ("wobble", "filter", "flanger", "phaser", "distortion", "bitcrush")
     for deck in ("source", "target"):
         by_unit: dict[str, list[dict]] = {}
-        for e in events:
+        for e in list(events) + fx_from_knob:
             if e["action"] != "fx" or e["deck"] != deck:
                 continue
             unit = str((e.get("params") or {}).get("unit") or "echo")
@@ -2012,8 +2229,11 @@ def render_demo(
             if np.max(env) <= 0.02:
                 continue
             if unit == "echo":
+                # feedback приходит ручкой в процентах — здесь он доля.
                 _queue_send(deck, "echo", None, env,
-                            delay_sec=_p(evs, "delay_beats", 0.75) * spb)
+                            delay_sec=_p(evs, "delay_beats", 0.75) * spb,
+                            feedback=min(0.9, max(0.05,
+                                                  _p(evs, "feedback", 45.0) / 100.0)))
             else:
                 _queue_send(deck, "reverb", None, env,
                             decay_sec=_p(evs, "decay_beats", 4.0) * spb)
@@ -2095,7 +2315,13 @@ def render_demo(
     # «Одна бочка за раз». Применяем только тем декам, у которых техника
     # НЕ управляет низом сама — иначе мы бы спорили с eq_low из техники.
     decks_with_eq_low = {e["deck"] for e in events if e["action"] in ("eq_low", "eq_kill_low")}
-    bass_out, bass_in = _bass_handover(cf_env)
+
+    # Передача низа — из ТОЙ ЖЕ величины, что и ворота барабанов выше.
+    # У кроссфейда это узкое окно вокруг середины его хода; у ручного
+    # ведения положение уже нормировано в 0..1 самой функцией, и второй
+    # раз его сужать нечем и незачем.
+    bass_out, bass_in = (_bass_handover(manual_hand, lo=0.0, hi=1.0)
+                         if manual_hand is not None else _bass_handover(cf_env))
     bass_in = np.maximum(bass_in, bass_relief)
     if "source" not in decks_with_eq_low:
         low, rest = _split_low(decks["source"], sr)
@@ -2135,14 +2361,19 @@ def render_demo(
             _sig = decks[_req["deck"]]
         _fed = _sig * _env(_fader[_req["deck"]], _sig)
         _prm = _req["params"]
+        # Ручки юнита передаём ТОЛЬКО те, что пришли: у _echo_return и
+        # _reverb_return свои умолчания, и затирать их «умолчанием
+        # вызывающего» означало бы держать одно и то же число в двух
+        # местах.
+        _pass = {k: v for k, v in _prm.items() if v is not None}
         if _req["unit"] == "echo":
             _wet = _echo_return(_fed, sr, _req["env"],
-                                **({"delay_sec": _prm["delay_sec"]}
-                                   if "delay_sec" in _prm else {}))
+                                **{k: _pass[k] for k in ("delay_sec", "feedback")
+                                   if k in _pass})
         else:
             _wet = _reverb_return(_fed, sr, _req["env"],
-                                  **({"decay_sec": _prm["decay_sec"]}
-                                     if "decay_sec" in _prm else {}))
+                                  **{k: _pass[k] for k in ("decay_sec",)
+                                     if k in _pass})
         mix = mix + _wet * FX_RETURN_LEVEL
     # В полном сете кусок — часть большого файла, и подтягивать его уровень
     # отдельно НЕЛЬЗЯ: тела треков вокруг него нормируются по своему треку,
@@ -2226,7 +2457,12 @@ def render_demo(
         "crossfade_complete": bool(len(cf_env) and cf_env[-1] >= 0.99),
         "entry_profile": (str((mix_profile or {}).get("entry") or "technique")),
         "vocal_loop_bars": round(vocal_loop_bars, 2) or None,
-        "bars": (round(float(bars), 1) if bars else None),
+        # Длина, которая РЕАЛЬНО прозвучала, а не заказанная. Приём
+        # короче окна упирается в потолок растяжения (MAX_TIME_SCALE), и
+        # тогда «64 такта» на карточке были бы неправдой: играет восемь.
+        # Карточка обязана показывать то, что слышно.
+        "bars": (round(raw_end * scale / bar_sec, 1) if bars else None),
+        "bars_asked": (round(float(bars), 1) if bars else None),
         "stems_used": bool(stems_ready),
         "drum_swap_seconds": None if stem_swap is None else round(stem_swap, 2),
     }

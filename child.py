@@ -48,10 +48,45 @@ def child_cmd(module: str, *args: str) -> list[str]:
     return [sys.executable, str(script), *args]
 
 
+def force_utf8_output() -> None:
+    """Заставить stdout/stderr этого процесса говорить в UTF-8.
+
+    Зачем, хотя родитель уже выставляет PYTHONUTF8 и PYTHONIOENCODING.
+    Потому что переменные окружения читает ИНТЕРПРЕТАТОР при старте, а
+    дочерний процесс здесь — это сам DARAVE.exe, собранный PyInstaller'ом.
+    Его загрузчик поднимает CPython со своей конфигурацией, и полагаться
+    на то, что он передаст туда переменные, нельзя.
+
+    Что было без этого (журнал диджея, 1.1.3):
+
+        File "stems.py", line 1885, in emit_progress
+        File "encodings\cp1251.py", line 19, in encode
+        UnicodeEncodeError: 'charmap' codec can't encode character
+        '\xdc' in position 85: character maps to <undefined>
+
+    В имени трека стояла «Ü», stdout был cp1251, кодировать её там нечем —
+    и разделение на слои умирало НА ПЕРВОЙ ЖЕ строке прогресса, до
+    единого обращения к видеокарте. Снаружи это выглядело как «шаг идёт,
+    но карта не грузится».
+
+    errors="replace" — второй пояс. UTF-8 кодирует что угодно, так что
+    он не нужен; но фоновая задача на несколько часов не имеет права
+    падать из-за символа в имени файла ни при каких обстоятельствах.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:                            # noqa: BLE001
+            pass                                     # питон старый или поток подменён
+
+
 def run_child(argv: list[str]) -> int:
     """Отработать за вспомогательный скрипт. argv = ["track_analysis", ...].
 
     Вызывается из точки входа собранного приложения."""
+    # ДО всего остального: дочерние модули печатают прогресс с именами
+    # файлов, а имена бывают какими угодно.
+    force_utf8_output()
     if not argv:
         print("--child: не указан модуль", file=sys.stderr)
         return 2

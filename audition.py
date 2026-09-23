@@ -69,6 +69,16 @@ def _init(conn: sqlite3.Connection) -> None:
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS seams_room ON seams(session_id, verdict)")
+    # Коды швов: состояние целиком по короткому числу (см. seam_code).
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS seam_codes (
+            code INTEGER NOT NULL,
+            session_id TEXT NOT NULL,
+            state_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY (code, session_id)
+        )"""
+    )
     # Имя последнего отрендеренного демо этого шва. Молча, как и прочие
     # миграции в проекте: база живёт у диджея с первого дня, и ронять её
     # ради одной колонки незачем.
@@ -87,6 +97,95 @@ def _db():
 
 
 # --------------------------------------------------------------- вердикты
+
+
+# ------------------------------------------------------- код шва
+#
+# Диджей: «seed не показывает значение всех параметров — треки, стыки,
+# техники, FX и прочее; он всегда должен показывать при генерации Roll».
+#
+# Прежний seed был номером РАСКЛАДА: он задавал порядок перебора и
+# больше ничего. По нему нельзя было вернуться к конкретному переходу —
+# только к той же последовательности предложений. А вернуться хочется
+# именно к переходу: «вот эта пара, этим приёмом, с этих точек, на 32
+# такта, с эхо-хвостом на уходе».
+#
+# Поэтому здесь не seed, а КОД ШВА: короткое число, посчитанное от всего
+# состояния сразу. Одинаковое состояние — одинаковый код, всегда.
+#
+# Почему число, а не самодостаточная строка. Самодостаточный код должен
+# нести в себе пути двух файлов — это сотни символов, такое не
+# показывают в поле и не диктуют голосом. Число же надо где-то
+# расшифровать, поэтому состояние кладётся в ту же базу комнаты. Цена —
+# одна запись на показанный шов; выгода — код из девяти цифр, который
+# можно продиктовать.
+
+# Что входит в код. Порядок фиксирован: от него считается хэш, и
+# переставить поля значит обнулить все выданные раньше коды.
+CODE_FIELDS = ("a_path", "b_path", "technique_id", "pair_label",
+               "exit_seconds", "entry_seconds", "bars",
+               "fx_out", "fx_in", "fx_out_opts", "fx_in_opts",
+               # Эффект самого приёма: юнит и его ручки. Без них код
+               # описывал бы «тот же приём», а звучал бы он иначе —
+               # DNB-25 в реверб и DNB-25 в эхо это разные швы.
+               "fx_own_out", "fx_own_in",
+               "mix_profile", "params")
+
+
+def _code_payload(state: dict) -> str:
+    """Каноническая запись состояния — то, от чего считается хэш.
+
+    Секунды округляем до десятой: точка стыка 1:49.03 и 1:49.04 — это
+    одна и та же точка, а разные коды у них означали бы, что код меняется
+    сам по себе."""
+    out = {}
+    for k in CODE_FIELDS:
+        v = state.get(k)
+        if k in ("exit_seconds", "entry_seconds"):
+            v = round(float(v or 0.0), 1)
+        elif k == "bars":
+            v = int(round(float(v or 0)))
+        out[k] = v
+    return json.dumps(out, ensure_ascii=False, sort_keys=True)
+
+
+def seam_code(session_id: str, state: dict) -> int:
+    """Код состояния. Считает, запоминает и возвращает число."""
+    import hashlib
+
+    payload = _code_payload(state)
+    # 30 бит: девять цифр в десятичной записи — предел того, что человек
+    # перепишет с экрана без ошибки. Совпадение двух РАЗНЫХ состояний в
+    # одной комнате при таком размере — событие на миллиарды швов, а
+    # цена его мала: вернётся соседний переход, а не поломка.
+    code = int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:4],
+                          "big") % 1_000_000_000
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO seam_codes (code, session_id, state_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (code, session_id, payload, time.time()))
+        conn.commit()
+    return code
+
+
+def seam_by_code(session_id: str, code) -> dict | None:
+    """Состояние по коду. None — такого кода в этой комнате не видели."""
+    try:
+        code = int(str(code).strip())
+    except (TypeError, ValueError):
+        return None
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT state_json FROM seam_codes WHERE code = ? AND session_id = ?",
+            (code, session_id)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+
 
 def _seam_params(seam: dict) -> dict:
     """Что из шва нужно сохранить, кроме треков, приёма и точек.
@@ -341,6 +440,7 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
     комбинация в dead_combos: обычным перебором он не вернётся никогда.
     Отсюда и была ошибка «не смог собрать шов для этой пары»."""
     import style
+    import mix_profile as _mp
     from techniques import TECHNIQUES
 
     def genre_of(t: dict) -> str:
@@ -454,6 +554,11 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 # растяжением — значит вместе с темпом уедет и высота.
                 # Считается один раз на пару, не на каждый приём.
                 detune = _pair_detune(a, b)
+                # Раскладка слоёв: кто с кем спорит в низу и в верху.
+                # Считается тоже один раз на пару — признаки лежат в
+                # meta.json рядом со слоями и от приёма не зависят.
+                lay = pair_layers(a, b)
+                lay_pair, lay_note = layer_weight(lay)
                 # Тональность влияет не только на выбор ПАРЫ (key_weight),
                 # но и на выбор ПРИЁМА: при разрыве длинное наложение
                 # тональных частей обнажает его, а рез или обмен низом —
@@ -469,6 +574,11 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 # видят, а уши слышат (см. style.detune_technique_bias).
                 det_mult, det_why = style.detune_technique_bias(
                     tid, detune["cents"], stems_ok)
+                # Конфликты ПО СЛОЯМ: два непрерывных баса в одной
+                # полосе, две плотные гармонии одной яркости. Тональность
+                # их не видит — она про ноты, а это про плотность.
+                lay_mult, lay_why = style.layer_technique_bias(
+                    tid, lay, stems_ok)
                 # Где стоят точки по хронометражу: уход ближе к концу
                 # уходящего, вход ближе к началу входящего.
                 point_mult, point_why = style.point_bias(
@@ -481,6 +591,8 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                      * key_mult
                      * voc_mult
                      * det_mult
+                     * lay_mult
+                     * lay_pair
                      * point_mult
                      * (1.0 - 0.08 * k) + jitter)
                 out.append({
@@ -506,6 +618,20 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                     # не только «что», но и «на каком основании».
                     "key_note": key_why, "point_note": point_why,
                     "vocal_note": voc_why,
+                    # Почему слои спорят или дополняют друг друга. Пусто,
+                    # если слоёв нет у обоих: молчание честнее нуля.
+                    "layer_note": lay_why or lay_note,
+                    "layers": lay,
+                    # Форма ведения фейдеров едет ВМЕСТЕ со швом, а не
+                    # живёт настройкой экрана: иначе подобранное на одной
+                    # паре молча уезжает на следующую (см. mix_profile.auto).
+                    "mix_profile": _mp.auto(opt["bars"], opt["label"], lay, tid),
+                    "bars_options": bars_options(a, b, opt["bars"], tid),
+                    # Рекомендованные стыки СТИЛЯ — всегда, а не только когда
+                    # угадали. Диджей: «нужно всегда писать рекомендуемые стыки,
+                    # как например Uplifting trance смешивается в брейкдаунах».
+                    "genre_junctions": style.preferred_junctions(b),
+                    "genre_junction_note": style.genre_junction_bias(b, opt["label"])[1],
                     "detune_cents": detune["cents"],
                     "detune_note": det_why or detune["note"],
                     "a_vocal_section": bool(opt["exit"].get("vocal")),
@@ -514,6 +640,63 @@ def candidates(session_id: str, tracks: list[dict], a_path: str | None = None,
                 })
     out.sort(key=lambda x: -x["score"])
     return out[:limit]
+
+
+# ------------------------------------------------ совместимость по слоям
+
+_LAYER_CACHE: dict[tuple, dict | None] = {}
+
+
+def pair_layers(a: dict, b: dict) -> dict | None:
+    """Чем пара спорит по слоям. None — слои посчитаны не у обоих.
+
+    Кэш по путям, а не по содержимому: подбор перебирает сотни пар и
+    спрашивает про каждую по нескольку раз (на каждый приём и на каждый
+    стык), а чтение признаков — это обращение к meta.json. Кэш живёт до
+    конца процесса сознательно: признаки меняются только при пересчёте
+    слоёв, а он всегда идёт отдельным шагом и заканчивается перезагрузкой
+    библиотеки."""
+    import stem_features as _sf
+
+    key = (a.get("path"), b.get("path"))
+    if key in _LAYER_CACHE:
+        return _LAYER_CACHE[key]
+    out = _sf.gap(_sf.have(a), _sf.have(b))
+    _LAYER_CACHE[key] = out
+    return out
+
+
+def invalidate_layers() -> None:
+    """Забыть разметку по слоям — после их пересчёта."""
+    _LAYER_CACHE.clear()
+
+
+def layer_weight(gap: dict | None) -> tuple[float, str]:
+    """Множитель ПАРЕ (не приёму) за раскладку слоёв.
+
+    Отличие от layer_technique_bias в том, что здесь решается, стоит ли
+    вообще предлагать эту пару, а там — каким приёмом её брать. Обе
+    поправки нужны: пара с двумя непрерывными басами играбельна — обменом
+    низа, — но при прочих равных пара, где бас одного сидит под басом
+    другого, играбельна ЛЮБЫМ приёмом, и её честнее показать выше.
+
+    Множитель нарочно узкий (0,85..1,15). Раскладка слоёв — это условие,
+    а не приговор: пара с редким и точным стыком должна обгонять пару с
+    удобными слоями и скучным стыком, а не наоборот."""
+    import stem_features as _sf
+
+    if not gap:
+        return 1.0, ""
+    mult = 1.0
+    if gap["bass"] >= _sf.BASS_CLASH:
+        mult *= 0.90
+    elif gap["bass"] <= 0.30:
+        mult *= 1.08
+    if gap["harm"] >= _sf.HARM_CLASH:
+        mult *= 0.93
+    if gap["drum_fit"] >= _sf.DRUM_APART:
+        mult *= 1.06
+    return max(0.85, min(1.15, mult)), _sf.note(gap)
 
 
 # ------------------------------------------------- ручной выбор приёма
@@ -559,6 +742,153 @@ def _best_for(technique_id: str) -> list[str]:
             if technique_id in ids]
 
 
+# ------------------------------------------ пригодность по полям каталога
+#
+# У каждого приёма в `techniques.py` записаны три требования: порог по
+# темпу (`bpm_delta_max`, В ПРОЦЕНТАХ), требование к тональности
+# (`key_rule`) и направление энергии (`energy_direction`). До сих пор их
+# читал ТОЛЬКО живой стратег (`mix_strategist.score_pair_for_technique`),
+# а подбор приёма в Clipping про них не знал вовсе: он взвешивал место в
+# таблице стыка, вкус диджея, тональность и слои — но не темп и не
+# энергию. Получалось два разных мнения об одной паре, и одно из них
+# молча игнорировало то, что записано в самом каталоге.
+#
+# Тональность здесь НЕ считаем намеренно: её уже считает
+# `style.key_technique_bias`, и второй множитель по тому же основанию
+# просто возвёл бы её в квадрат.
+
+# Во сколько раз можно превысить порог темпа, прежде чем приём считается
+# неиграбельным. Замер по библиотеке диджея (140 треков, 6000 случайных
+# пар): жёсткий порог отсекает 73% сочетаний и оставляет 19 приёмов из
+# 62 на средней паре — слишком строго для СПИСКА, который человек листает
+# руками. Двойной порог отсекает 54% и оставляет 38. Настоящие пары идут
+# через `nearest_b`, то есть по темпу гораздо ближе случайных, — на них
+# отсекается заметно меньше.
+BPM_HARD_STOP = 2.0
+
+# Тональность: с какого расстояния по Камелоту приём, которому нужна
+# совместимая тональность, считается неиграбельным. style.camelot: 0 —
+# та же, 1 — соседняя или параллельный лад, 2 — уже конфликт. Отказ
+# ставим на 3: две ступени можно вытянуть эквалайзером, три — нет.
+# Со стемами дальше: конфликтующий слой можно просто не накладывать.
+KEY_HARD_STOP = 3
+KEY_HARD_STOP_STEMS = 5
+
+_ENERGY_BY_LABEL = {
+    "breakdown→drop": "up", "breakdown→groove": "up", "groove→drop": "up",
+    "build→drop": "up", "intro→groove": "up",
+    "drop→breakdown": "down", "groove→breakdown": "down",
+    "drop→outro": "down", "outro→intro": "down",
+}
+
+
+def catalog_fit(tid: str, a: dict, b: dict,
+                label: str | None = None) -> tuple[float, str, str]:
+    """Множитель, пояснение и стоп-причина по полям каталога.
+
+    Стоп-причина непустая — приём на эту пару не ставится вовсе, и её
+    показывают человеку словами, а не прячут. Диджей просил именно так:
+
+        если тональности сильно различаются, нужно, чтобы на выбор
+        давались только те техники, что не требуют одной тональности,
+        так же можно сказать и про BPM и про энергию
+
+    То есть по всем трём осям — отказ, а не тихое понижение веса."""
+    import style
+    from techniques import TECHNIQUES
+
+    t = TECHNIQUES.get(tid)
+    if t is None:
+        return 1.0, "", ""
+    mult, why = 1.0, []
+
+    # --- темп ---
+    try:
+        bpm_a = float(a.get("bpm") or 0.0)
+        bpm_b = float(b.get("bpm") or 0.0)
+    except (TypeError, ValueError):
+        bpm_a = bpm_b = 0.0
+    # Приём, СДЕЛАННЫЙ ради разрыва, этим же разрывом не отсекается.
+    # Без этой оговорки Tempo Ramp выбывал по порогу темпа, то есть
+    # ровно по той причине, ради которой существует, — а диджей
+    # оставался с отказом и без выхода.
+    solves = set(getattr(t, "solves", ()) or ())
+    if t.bpm_delta_max is not None and bpm_a > 20 and bpm_b > 20 \
+            and "tempo_gap" not in solves:
+        pct = abs(bpm_a - bpm_b) / max(bpm_a, bpm_b) * 100.0
+        thr = float(t.bpm_delta_max)
+        if pct > thr * BPM_HARD_STOP:
+            return 0.0, "", (f"разница темпа {pct:.0f}% — вдвое больше "
+                             f"порога приёма ({thr:.0f}%)")
+        if pct > thr:
+            # Между порогом и двойным порогом — не отказ, а штраф: приём
+            # поедет, но растяжка будет слышна.
+            over = (pct - thr) / max(thr * (BPM_HARD_STOP - 1.0), 1e-6)
+            mult *= 1.0 - 0.5 * min(1.0, over)
+            why.append(f"темп расходится на {pct:.0f}% при пороге {thr:.0f}%")
+        else:
+            mult *= 1.1
+            why.append(f"темп сходится ({pct:.0f}% при пороге {thr:.0f}%)")
+
+    # --- тональность ---
+    #
+    # `key_rule == "compatible"` — приём ДЕРЖИТ два тональных слоя
+    # вместе. На далёких тональностях это не «похуже», а разъезд, и
+    # предлагать такой приём незачем. Стемы смягчают: конфликтующий слой
+    # можно просто не накладывать, поэтому порог отказа с ними дальше.
+    #
+    # `key_rule == "clash"` — приём сделан РАДИ столкновения. На
+    # сошедшихся тональностях он теряет смысл, но не ломается, поэтому
+    # здесь штраф, а не отказ.
+    dist = camelot_distance(a.get("camelot"), b.get("camelot"))
+    if dist is not None and "key_gap" not in solves:
+        stems_ok = style.has_stems(a) and style.has_stems(b)
+        stop_at = KEY_HARD_STOP_STEMS if stems_ok else KEY_HARD_STOP
+        if t.key_rule == "compatible":
+            if dist >= stop_at:
+                return 0.0, "", (f"тональности далеко по Камелоту "
+                                 f"(расстояние {dist}) — приём держит их вместе"
+                                 + ("" if stems_ok else "; со стемами было бы можно"))
+            if dist >= style.KEY_CONFLICT_DISTANCE:
+                mult *= 0.8
+                why.append(f"тональности расходятся (расстояние {dist} по Камелоту)")
+        elif t.key_rule == "clash" and dist < style.KEY_CONFLICT_DISTANCE:
+            mult *= 0.7
+            why.append("приём сделан ради столкновения тональностей, а они сошлись")
+
+    # --- энергия ---
+    #
+    # Отказ только на ПРЯМОМ противоречии: приём тянет вверх, а стык
+    # ведёт вниз. «Всё равно» с обеих сторон — не возражение.
+    want = t.energy_direction
+    if want in ("up", "down"):
+        got = _ENERGY_BY_LABEL.get(label or "")
+        if got == want:
+            mult *= 1.15
+            why.append("стык ведёт энергию туда же, куда приём")
+        elif got and got != want:
+            return 0.0, "", ("приём ведёт энергию "
+                             + ("вверх" if want == "up" else "вниз")
+                             + ", а стык — "
+                             + ("вверх" if got == "up" else "вниз"))
+
+    # И наоборот: там, где разрыв ЕСТЬ, решатель поднимается. Иначе он
+    # лежал бы в каталоге мёртвым грузом — формально применимый, но
+    # никогда не первый.
+    if "key_gap" in solves and dist is not None and dist >= KEY_HARD_STOP:
+        mult *= 1.6
+        why.append("приём сделан ради разрыва тональности")
+    if "tempo_gap" in solves and bpm_a > 20 and bpm_b > 20:
+        import tempo as _tempo
+
+        rel = _tempo.relate(bpm_a, bpm_b)
+        if not rel.get("compatible"):
+            mult *= 1.6
+            why.append("приём сделан ради разрыва темпа")
+
+    return mult, "; ".join(why), ""
+
+
 def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
     """Все приёмы, которые можно поставить на этот шов, — для ручного
     выбора.
@@ -567,9 +897,14 @@ def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
     выбирать его руками. Значит нужен полный список, а не «следующий по
     внутреннему рейтингу»: с пометкой, что рекомендовано именно на этом
     стыке, что применимо вообще, а что не поедет — и почему."""
+    import mix_profile as _mp
     import style
     from techniques import TECHNIQUES
 
+    # Рез или сведение — та самая ось, по которой делятся «входит сразу
+    # на полном» и «входит под профилем фейдеров». Берём из mix_profile,
+    # где она и живёт, а не заводим второй список.
+    _CUT_IDS = _mp.CUT_TECHNIQUES
     recommended = list(style.PAIR_TECHNIQUES.get(label or "", ()))
     stems_ok = style.has_stems(a) and style.has_stems(b)
     vocals_ok = style.has_vocals(a) and style.has_vocals(b)
@@ -582,6 +917,11 @@ def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
             problem = "нужны стемы у обоих треков"
         elif t.needs_vocals and not vocals_ok:
             problem = "нужен вокальный слой у обоих треков"
+        # Поля каталога: темп и энергия. Раньше их читал только живой
+        # стратег, а здесь приём предлагался так, будто требований нет.
+        fit_mult, fit_why, fit_stop = catalog_fit(tid, a, b, label)
+        if not problem and fit_stop:
+            problem = fit_stop
         rank = recommended.index(tid) if tid in recommended else 99
         out.append({
             "id": tid, "name": t.name, "category": t.category,
@@ -591,6 +931,16 @@ def techniques_for(a: dict, b: dict, label: str | None = None) -> list[dict]:
             "best_for": _best_for(tid),
             "requires_stems": t.requires_stems,
             "needs_vocals": t.needs_vocals,
+            # Оси, по которым диджей просил различать приёмы. Отдаём их
+            # наружу, а не держим в голове у подбора: по ним фильтруют в
+            # интерфейсе и по ним же объясняют выбор.
+            "cut": tid in _CUT_IDS,
+            "energy": t.energy_direction,
+            "key_rule": t.key_rule,
+            "bpm_delta_max": t.bpm_delta_max,
+            "decks": t.requires_decks,
+            "fit": round(fit_mult, 3),
+            "fit_why": fit_why,
             "ok": not problem, "problem": problem,
         })
     # Порядок — ПО ТИПУ приёма, а не по названию: диджей ищет «тот, что
@@ -626,8 +976,45 @@ def combo_key(seam: dict) -> str:
     ))
 
 
+def seed_shuffle(items: list[dict], seed: int | None) -> list[dict]:
+    """Перетасовать варианты воспроизводимо.
+
+    Без seed перебор детерминированный: лучшая комбинация одна, и
+    «повезёт» со второго нажатия возвращало то же самое — оттого и
+    список показанного, которым это обходили.
+
+    Seed — не «немного случайности», а НОМЕР РАСКЛАДА. Одно и то же
+    число всегда даёт один и тот же порядок, поэтому находку можно
+    передать словами: «seed 4127, вторая пара» — и человек услышит ровно
+    то же. Порядок при этом не ломается в кашу: сортировка по весу
+    остаётся, seed лишь тасует варианты ВНУТРИ близкого веса, иначе
+    кнопка начала бы предлагать заведомо плохое.
+    """
+    if seed is None or not items:
+        return items
+    import random
+
+    rnd = random.Random(int(seed))
+    out: list[dict] = []
+    bucket: list[dict] = []
+    cur: float | None = None
+    for x in items:
+        w = round(float(x.get("score") or 0.0), 2)
+        if cur is None or abs(w - cur) < 1e-9:
+            cur = w
+            bucket.append(x)
+        else:
+            rnd.shuffle(bucket)
+            out.extend(bucket)
+            bucket, cur = [x], w
+    rnd.shuffle(bucket)
+    out.extend(bucket)
+    return out
+
+
 def lucky(session_id: str, tracks: list[dict], a_path: str, b_path: str,
-          limit: int = 1, exclude: list[str] | None = None) -> list[dict]:
+          limit: int = 1, exclude: list[str] | None = None,
+          seed: int | None = None) -> list[dict]:
     """Перебрать ВСЁ для этой пары и отдать лучшее.
 
     Обычный подбор бережёт вкус диджея: он не предлагает то, что уже
@@ -672,6 +1059,9 @@ def lucky(session_id: str, tracks: list[dict], a_path: str, b_path: str,
     # больше: иначе «повезёт» выдавало уход на 26-й секунде трека.
     out.sort(key=lambda x: (-x["score"], -float(x["bars"] or 0),
                             -float(x["exit_seconds"] or 0)))
+    out = seed_shuffle(out, seed)
+    for x in out:
+        x["seed"] = seed
     # Уже показанное уходит в конец, а не выбрасывается: когда перебор
     # исчерпан, кнопка должна начать круг заново, а не ответить «нет
     # содержательных стыковок» на паре, где их полсотни. А когда круг
@@ -690,6 +1080,74 @@ def lucky(session_id: str, tracks: list[dict], a_path: str, b_path: str,
                 i = keys.index(last) + 1
                 out = out[i:] + out[:i]
     return out[:max(1, limit)]
+
+
+def other_junction(session_id: str, tracks: list[dict], seam: dict,
+                   exclude: list[str] | None = None) -> list[dict]:
+    """Те же треки и ТОТ ЖЕ приём — другие точки стыка.
+
+    Отдельно от lucky, и разница принципиальная. lucky перебирает ещё и
+    приёмы, то есть карточка после него другая целиком. А диджею часто
+    нужно обратное: приём он уже выбрал и слышит, что тот годится, —
+    не нравится, ГДЕ он случается. Раньше эта кнопка записывала отказ и
+    приносила нового кандидата, у которого мог смениться и приём, и
+    пара; спрашивали одно, получали другое.
+
+    Порядок: сначала стыковки, на которых приём рекомендован таблицей
+    PAIR_TECHNIQUES, потом все остальные. Вторые честно помечаются
+    экспериментальными: приём на них сыграет, но задуман он не для них.
+    """
+    import style
+    from techniques import TECHNIQUES
+
+    by_path = {t.get("path"): t for t in tracks if t.get("path")}
+    a = by_path.get(seam.get("a_path"))
+    b = by_path.get(seam.get("b_path"))
+    tid = str(seam.get("technique_id") or "")
+    t = TECHNIQUES.get(tid)
+    if a is None or b is None or t is None:
+        return []
+
+    best = set(_best_for(tid))
+    tm = taste(session_id)
+    out: list[dict] = []
+    for opt in style.pair_options(a, b):
+        recommended = opt["label"] in best
+        long_bonus = 1.0 + min(float(opt["bars"]), 64.0) / 128.0
+        # Жанр ВХОДЯЩЕГО говорит, какой стык для него характерен: транс
+        # сводят в брейкдаунах, техно — тело в тело. Одна таблица на все
+        # стили одинаково охотно предлагала трансу groove→groove.
+        gj, _gwhy = style.genre_junction_bias(b, opt["label"])
+        w = (style.PAIR_INTEREST.get(opt["label"], 1.0)
+             * taste_weight(tm, tid, opt["label"])
+             * key_weight(a, b) * long_bonus * gj)
+        item = _seam_dict(a, b, t, tid, opt, round(w, 3))
+        item["junction_kind"] = "recommended" if recommended else "experimental"
+        item["why"] = (f"стыкуются {opt['label']}, {opt['bars']} тактов; {t.name}"
+                       + ("" if recommended else " — приём задуман не для этого стыка"))
+        out.append(item)
+
+    # Рекомендованные первыми, внутри группы — по весу, потом длиннее и
+    # позже по уходящему (та же развязка, что и в lucky).
+    out.sort(key=lambda x: (0 if x["junction_kind"] == "recommended" else 1,
+                            -x["score"], -float(x["bars"] or 0),
+                            -float(x["exit_seconds"] or 0)))
+
+    # Показанное уходит в конец, а не выбрасывается: кнопка обязана
+    # крутиться по кругу, а не упираться в «больше нечего».
+    order = list(exclude or ())
+    seen = set(order)
+    if seen:
+        fresh = [x for x in out if combo_key(x) not in seen]
+        if fresh:
+            out = fresh + [x for x in out if combo_key(x) in seen]
+        elif order:
+            keys = [combo_key(x) for x in out]
+            last = next((k for k in reversed(order) if k in keys), None)
+            if last is not None:
+                i = keys.index(last) + 1
+                out = out[i:] + out[:i]
+    return out
 
 
 def nearest_b(tracks: list[dict], a_path: str, b_path: str,
@@ -728,14 +1186,56 @@ def nearest_b(tracks: list[dict], a_path: str, b_path: str,
         gb, sb = style.track_genre(t)
         d_gen = 0.0 if (sb or gb) == (sa or ga) else (0.3 if gb == ga else 0.6)
         d_stem = 0.0 if style.has_stems(t) == style.has_stems(a) else 0.15
+        # Раскладка слоёв — четвёртая ось. Вес маленький (0..0.25 против
+        # темповых 8.0) сознательно: «бас сидит под басом» это удобство,
+        # а темп мимо семейства — невозможность. Но при равных темпе,
+        # тональности и жанре выбирать по ней честнее, чем по алфавиту.
+        lay = pair_layers(a, t)
+        if lay:
+            import stem_features as _sf
+            d_lay = 0.25 * max(0.0, lay["bass"] - _sf.BASS_CLASH) / max(1e-6, 1.0 - _sf.BASS_CLASH)
+            d_lay += 0.10 * (1.0 - lay["drum_fit"])
+        else:
+            d_lay = 0.0
         # Темп весит больше всего, и это не вкус: 175 в 186 не сводится
         # никаким приёмом, а «другой поджанр» — вопрос настроения. При
         # весе 3.0 трек на 186 BPM обгонял трек на 173 только потому, что
         # у него совпала тональность.
         d_bpm = d_bpm * 8.0 + (1.0 if d_bpm > 0.06 else 0.0)
-        scored.append((d_bpm + d_key + d_gen + d_stem, t))
+        scored.append((d_bpm + d_key + d_gen + d_stem + d_lay, t))
     scored.sort(key=lambda x: x[0])
     return [t for _d, t in scored[:max(1, limit)]]
+
+
+# Порог, с которого конфликт слоёв считается настоящим. Те же числа,
+# по которым stem_features их и объявляет, — держать вторую копию порога
+# нельзя, она разойдётся при первой же перекалибровке.
+def _solve_bias(tid: str, gap: dict | None) -> float:
+    """Множитель приёму за то, что он лечит ИЗМЕРЕННЫЙ конфликт пары.
+
+    `gap` — то, что посчитал `stem_features.gap()`: насколько спорят
+    басы, гармонии и вокал у этих двух треков. Раньше эти числа влияли
+    только на `style.layer_technique_bias` с его рукописными списками;
+    теперь они встречаются с осью `solves`, объявленной у самого приёма,
+    и список приёмов «для этого случая» больше не надо вести отдельно."""
+    if not gap:
+        return 1.0
+    from techniques import TECHNIQUES
+    import stem_features as _sf
+
+    t = TECHNIQUES.get(tid)
+    if t is None or not t.solves:
+        return 1.0
+    hot = set()
+    if float(gap.get("bass") or 0.0) >= _sf.BASS_CLASH:
+        hot.add("bass_clash")
+    if float(gap.get("harm") or 0.0) >= _sf.HARM_CLASH:
+        hot.add("harm_clash")
+    if float(gap.get("vocal") or 0.0) >= 0.5:
+        hot.add("vocal_clash")
+    if not hot:
+        return 1.0
+    return 1.0 + 0.35 * len(hot & set(t.solves))
 
 
 def techniques_ranked(a: dict, b: dict, seam: dict,
@@ -757,6 +1257,12 @@ def techniques_ranked(a: dict, b: dict, seam: dict,
         kd = camelot_distance(a.get("camelot"), b.get("camelot"))
     stems_ok = style.has_stems(a) and style.has_stems(b)
     tm = taste(session_id) if session_id else {}
+    # Профиль стиля ВХОДЯЩЕГО: это он должен начаться с начала фразы, и
+    # это его жанр решает, как в нём принято заходить.
+    prof = style.profile_for(b) if (b.get("genre") or b.get("subgenre")) \
+        else style.profile_for(a)
+    prof_main = prof.get("main")
+    prof_accent = prof.get("accent")
 
     scored: list[tuple[float, str]] = []
     for x in techniques_for(a, b, label):
@@ -765,9 +1271,44 @@ def techniques_ranked(a: dict, b: dict, seam: dict,
         tid = x["id"]
         # Рекомендованные для стыка идут первыми и в своём порядке; для
         # остальных база ниже, но вкус и тональность могут их поднять.
-        base = 1.0 - 0.06 * recommended.index(tid) if tid in recommended else 0.55
+        #
+        # Основной ход СТИЛЯ получает такую же базу, как рекомендованный
+        # стыком. Он и есть рекомендация — только не от таблицы стыков, а
+        # от жанра, и до сих пор она в Clipping не участвовала вовсе.
+        # Замер на трансовой паре со стемами: на drop→drop подбор выдавал
+        # ST-12, ST-07, ST-04, ST-08 — четыре реза и дабл-дропа подряд, а
+        # DNB-25 (основной ход транса, длинный бленд) стоял шестым или не
+        # доходил. Диджей: «всегда рекомендуется ST-08 вне зависимости от
+        # жанра» и «входящий трек слишком резко входит».
+        if tid in recommended:
+            base = 1.0 - 0.06 * recommended.index(tid)
+        elif tid == prof_main:
+            base = 0.94
+        elif tid == prof_accent:
+            base = 0.80
+        else:
+            base = 0.55
         key_mult, _ = style.key_technique_bias(tid, kd, stems_ok)
-        scored.append((base * taste_weight(tm, tid, label) * key_mult, tid))
+        # Тот же множитель по слоям, что и в общем подборе. Без него
+        # кнопка «↻ Другой приём» советовала бы длинное наложение паре,
+        # которой подбор только что назначил обмен низом, — и диджей
+        # видел бы два разных мнения об одной и той же паре.
+        lay_mult, _ = style.layer_technique_bias(tid, pair_layers(a, b), stems_ok)
+        # Ось «какую задачу решает приём» против ИЗМЕРЕННОГО конфликта.
+        # До сих пор подбор знал, что у пары спорят басы (stem_features
+        # это меряет), и никак не связывал это с тем, что половина
+        # каталога существует ровно для таких случаев.
+        solve_mult = _solve_bias(tid, pair_layers(a, b))
+        # Темп и энергия — из полей каталога. Без них «↻ другой приём»
+        # предлагал растяжку вдвое больше той, что приём допускает, и
+        # тянул энергию против стыка, не считая это возражением.
+        # И множитель стиля поверх базы — тот же, которым пользуется
+        # сборка сета (style.bias). Держать два разных мнения о том, что
+        # принято в жанре, нельзя: диджей видел бы в Clipping одно, а в
+        # ControlC другое.
+        style_mult, _ = style.bias(tid, a, b)
+        scored.append((base * taste_weight(tm, tid, label) * key_mult * lay_mult
+                       * solve_mult * style_mult * float(x.get("fit") or 1.0), tid))
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [tid for _w, tid in scored]
 
@@ -844,12 +1385,70 @@ def swap_technique(seam: dict, a: dict, b: dict,
     return out
 
 
+def bars_options(a: dict, b: dict, bars: float | None,
+                 technique_id: str | None = None) -> list[int]:
+    """Какие длины перехода предлагать кнопкой «такты».
+
+    Не 4/8/16/32/64 на всё подряд: лесенка берётся из жанра ВХОДЯЩЕГО
+    (style.phrase_ladder), потому что квадрат считает он — это он должен
+    начаться с начала фразы. У фонка и трапа это 8/16/32, у транса и
+    техно 16/32/64, и предлагать трансу 4 такта значит предлагать то,
+    что в нём не звучит.
+
+    К лесенке добавляем половину нижней и текущее значение шва: первая
+    даёт короткий рез там, где лесенка начинается с 16, второе — чтобы
+    кнопка не выкидывала диджея из длины, которую он уже слушает."""
+    import style
+
+    lad = list(style.phrase_ladder(b) or ()) or [8, 16, 32]
+    out = set(int(x) for x in lad if x > 0)
+    out.add(max(2, int(min(lad) // 2)))
+    if bars:
+        out.add(int(round(float(bars))))
+    # И не длиннее, чем приём в состоянии заполнить. Рез живёт один такт;
+    # растянуть его на 64 нельзя, и рендер упрётся в потолок — а кнопка
+    # при этом обещала бы 64 и молчала о том, что прозвучит восемь.
+    cap = _technique_max_bars(technique_id, b)
+    if cap:
+        fits = sorted(x for x in out if x <= cap)
+        out = set(fits) or {min(out)}
+    return sorted(out)
+
+
+def _technique_max_bars(technique_id: str | None, b: dict) -> float:
+    """Самая длинная фраза, которую приём способен заполнить целиком.
+
+    Считается из САМОГО приёма: его родная длина, умноженная на потолок
+    растяжения рендера. Держать это числом в двух местах нельзя — оно
+    разойдётся при первом же новом приёме."""
+    if not technique_id:
+        return 0.0
+    try:
+        import demo_render as _dr
+        import techniques as _tq
+
+        bpm = float(b.get("bpm") or 0.0) or 174.0
+        spb = 60.0 / bpm
+        plan = _tq.build_plan(technique_id, "p", "source", "target", bpm, {})
+        ev = plan["events"] if isinstance(plan, dict) else plan
+        raw = max([4.0 * spb] + [_dr._event_window(e, spb)[1] for e in ev])
+        # Потолок спрашиваем у самого рендера: растянуть окно он может
+        # ровно настолько, насколько скажет technique_scale.
+        bar = spb * 4.0
+        top = _dr.technique_scale(raw, 1e9, True)
+        return raw * top / bar
+    except Exception:                                # noqa: BLE001
+        return 0.0
+
+
 def _seam_dict(a: dict, b: dict, t, tid: str, opt: dict, score: float) -> dict:
     """Карточка шва в том же виде, в каком её отдаёт candidates."""
+    import mix_profile as _mp
     import style
 
     ga, sa = style.track_genre(a)
     gb, sb = style.track_genre(b)
+    _lay = pair_layers(a, b)
     return {
         "score": score,
         "a_path": a["path"], "a_name": a.get("name"),
@@ -866,6 +1465,20 @@ def _seam_dict(a: dict, b: dict, t, tid: str, opt: dict, score: float) -> dict:
         "a_stems": style.has_stems(a), "b_stems": style.has_stems(b),
         "a_vocal_section": bool(opt["exit"].get("vocal")),
         "b_vocal_section": bool(opt["entry"].get("vocal")),
+        # Карточка из lucky/«другой стык» обязана нести то же, что и из
+        # обычного подбора: иначе объяснение про слои появлялось бы и
+        # пропадало в зависимости от того, какой кнопкой пришёл шов.
+        "layers": _lay,
+        "mix_profile": _mp.auto(opt["bars"], opt["label"], _lay, tid),
+        "bars_options": bars_options(a, b, opt["bars"], tid),
+        # Рекомендованные стыки СТИЛЯ — всегда, а не только когда
+        # угадали. Диджей: «нужно всегда писать рекомендуемые стыки,
+        # как например Uplifting trance смешивается в брейкдаунах».
+        "genre_junctions": style.preferred_junctions(b),
+        "genre_junction_note": style.genre_junction_bias(b, opt["label"])[1],
+        "layer_note": (style.layer_technique_bias(tid, _lay,
+                                                  style.has_stems(a) and style.has_stems(b))[1]
+                       or layer_weight(_lay)[1]),
         "why": f"стыкуются {opt['label']}, {opt['bars']} тактов; {t.name}",
     }
 

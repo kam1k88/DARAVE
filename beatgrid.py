@@ -392,6 +392,46 @@ def _drum_levels(drums: np.ndarray, sr: int, bar: float, offset: float
     return lv / max(full, 1e-9), pk / max(full_pk, 1e-9), env, frame_sec, full
 
 
+# Плотность ударов по тактам — то, из чего различается half-time.
+#
+# `on` и `dense` говорят про УРОВЕНЬ: играют барабаны или нет, плотно
+# или редко. Half-time — не про уровень: партия там такая же громкая,
+# просто ударов вдвое меньше при той же сетке. По уровню это не видно
+# вовсе, поэтому нужна отдельная величина — сколько АТАК в такте.
+#
+# Цифра на такт (0..9), чтобы карта оставалась строкой и не раздувала
+# БД: точность до одного удара здесь и не нужна, решение принимается по
+# отношению к медиане трека.
+HALF_TIME_RATIO = 0.6      # «вдвое реже» с запасом на неровную партию
+HALF_TIME_MIN_BARS = 8     # короче фразы это сбивка, а не секция
+
+
+def _hits_per_bar(env, frame_sec: float, bar: float, offset: float,
+                  n_bars: int) -> list[int]:
+    """Сколько атак в каждом такте. Атака — локальный максимум подъёма
+    огибающей выше доли от её же разброса, а не превышение абсолютного
+    порога: громкость партии по треку гуляет, а количество ударов — нет."""
+    if env is None or len(env) < 4 or frame_sec <= 0:
+        return []
+    d = np.diff(np.asarray(env, dtype=float), prepend=float(env[0]))
+    d = np.maximum(d, 0.0)
+    # Половина от 75-го перцентиля, а не сам перцентиль: на ровной
+    # партии почти все подъёмы одинаковы, и строгое «больше перцентиля»
+    # не выполняется НИ РАЗУ — первая версия этой функции возвращала
+    # нули на идеальном тестовом сигнале.
+    ref = 0.5 * float(np.percentile(d[d > 0], 75)) if np.any(d > 0) else 0.0
+    if ref <= 1e-9:
+        return []
+    peak = (d >= ref) & (d >= np.roll(d, 1)) & (d > np.roll(d, -1))
+    idx = np.flatnonzero(peak)
+    out = [0] * max(0, int(n_bars))
+    for i in idx:
+        b = int((i * frame_sec - offset) / bar)
+        if 0 <= b < len(out):
+            out[b] = min(9, out[b] + 1)
+    return out
+
+
 def drum_map(y: np.ndarray, sr: int, bpm: float, threshold: float = 0.5,
              offset: float = 0.0, drums: "np.ndarray | None" = None) -> dict:
     """Где в треке РЕАЛЬНО играют барабаны — по такту.
@@ -475,6 +515,9 @@ def drum_map(y: np.ndarray, sr: int, bpm: float, threshold: float = 0.5,
             # компактно для хранения в БД
             "on": "".join("1" if v else "0" for v in flags),
             "dense": "".join("1" if v else "0" for v in dense),
+            # плотность атак по тактам — из неё различается half-time
+            "hits": "".join(str(v) for v in
+                            _hits_per_bar(env, frame_sec, bar, offset, n_bars)),
             "drums_start": round(drums_start, 2),
             "first_hit": round(first_hit, 2),
             "drums_end": round(drums_end, 2),
@@ -632,6 +675,48 @@ def _bass_events(level: np.ndarray) -> tuple[list[int], list[tuple[int, int]], l
     return _cluster(cand), breakdowns, pits
 
 
+# Яркость по тактам — то, из чего различается RISER.
+#
+# Riser — нарастающий шум или тон в конце билда. Уровень НИЗА при этом
+# может и падать (барабаны уже сняли), поэтому ни `level`, ни `hits`
+# его не видят: он живёт наверху спектра и опознаётся не громкостью, а
+# РОСТОМ доли высоких частот такт за тактом.
+#
+# Считаем здесь, вместе с остальными картами, чтобы не гонять анализ
+# второй раз. Разметка событий (riser/fill/turnaround) появится отдельно
+# и будет читать эту величину; треки, посчитанные старой версией, её не
+# имеют — и это видно по отсутствию ключа, а не по нулям.
+
+
+def _bright_per_bar(y: "np.ndarray", sr: int, bar: float, offset: float,
+                    n_bars: int) -> list[float]:
+    """Доля энергии выше 4 кГц в каждом такте, 0..1.
+
+    Доля, а не абсолютный уровень: библиотека разная по мастерингу, и
+    порог по громкости пришлось бы подбирать под каждый трек."""
+    if y is None or len(y) < sr or n_bars <= 0:
+        return []
+    from scipy.signal import butter, sosfiltfilt
+
+    try:
+        sos = butter(2, min(4000.0 / (sr / 2), 0.99), btype="highpass", output="sos")
+        hi = sosfiltfilt(sos, y)
+    except Exception:                                # noqa: BLE001
+        return []
+    step = max(1, int(bar * sr))
+    out: list[float] = []
+    for i in range(int(n_bars)):
+        s = int(offset * sr) + i * step
+        e = min(len(y), s + step)
+        if s >= len(y) or e <= s:
+            out.append(0.0)
+            continue
+        all_e = float(np.mean(y[s:e] ** 2)) + 1e-12
+        hi_e = float(np.mean(hi[s:e] ** 2))
+        out.append(round(min(1.0, hi_e / all_e), 3))
+    return out
+
+
 def energy_map(y: np.ndarray, sr: int, bpm: float, offset: float = 0.0,
                drums: "np.ndarray | None" = None) -> dict:
     """Уровень низа ПО ТАКТАМ и события структуры: брейкдауны, ямы, дропы.
@@ -688,6 +773,10 @@ def energy_map(y: np.ndarray, sr: int, bpm: float, offset: float = 0.0,
     return {"bar_seconds": round(bar, 4),
             "bar_offset": round(offset, 4),
             "level": [round(float(v), 3) for v in level],
+            # Яркость по тактам — для будущей разметки riser'ов. Ключа
+            # нет у треков, посчитанных прежней версией: «не мерили» и
+            # «померили и ноль» — разные вещи.
+            "bright": _bright_per_bar(y, sr, bar, offset, len(level)),
             "drops": drops,
             "breakdowns": [(round(sec(a), 2), round(sec(b), 2)) for a, b in breaks],
             "pits": [round(sec(a), 2) for a in pits],

@@ -72,12 +72,29 @@ TAG_MAP = (
     ("drumandbass", "dnb"), ("drum n bass", "dnb"), ("dnb", "dnb"),
     ("d&b", "dnb"), ("jungle", "dnb"), ("neurofunk", "dnb"), ("liquid", "dnb"),
     ("dubstep", "dubstep"), ("дабстеп", "dubstep"), ("brostep", "dubstep"),
+    ("hard techno", "techno"), ("minimal techno", "techno"),
+    ("melodic techno", "techno"), ("dub techno", "techno"),
     ("techno", "techno"), ("техно", "techno"),
+    ("uplifting", "trance"), ("psy-trance", "trance"), ("goa", "trance"),
     ("trance", "trance"), ("транс", "trance"), ("psytrance", "trance"),
+    ("deep house", "house"), ("tech house", "house"), ("future house", "house"),
+    ("bass house", "house"), ("electro house", "house"), ("progressive house", "house"),
+    ("tropical house", "house"), ("eurodance", "house"),
     ("house", "house"), ("хаус", "house"),
     ("breakbeat", "breaks"), ("big beat", "breaks"), ("bigbeat", "breaks"),
     ("брейкбит", "breaks"), ("breaks", "breaks"),
     ("hardcore", "hardcore"), ("gabber", "hardcore"), ("хардкор", "hardcore"),
+    ("габбер", "hardcore"), ("speedcore", "hardcore"), ("uptempo", "hardcore"),
+    # Фонка и трэпа в этой таблице не было вовсе. То есть трек с тегом
+    # «Phonk» подписывался не фонком, а тем, что подсказывал темп, —
+    # дабстепом на 140 или драм-н-бейсом на 165. Диджей это и увидел.
+    ("phonk", "phonk"), ("фонк", "phonk"), ("drift phonk", "phonk"),
+    ("memphis", "phonk"), ("brazilian phonk", "phonk"),
+    ("trap", "trap"), ("трэп", "trap"), ("трап", "trap"), ("hard trap", "trap"),
+    ("hardstyle", "hardstyle"), ("хардстайл", "hardstyle"),
+    ("rawstyle", "hardstyle"), ("hard dance", "hardstyle"),
+    ("industrial", "industrial"), ("индастриал", "industrial"),
+    ("ebm", "industrial"), ("metal", "metal"), ("метал", "metal"),
     ("garage", "garage"), ("2-step", "garage"), ("ukg", "garage"),
     ("hip hop", "hiphop"), ("hip-hop", "hiphop"), ("rap", "hiphop"),
     ("хип-хоп", "hiphop"), ("рэп", "hiphop"),
@@ -175,11 +192,38 @@ GENERIC_GENRES = {"other", "electronic"}
 #
 # Полосы кончаются там, где темп перестаёт что-либо значить: 120-128 это
 # и хаус, и техно, и поп — гадать не о чем.
-BPM_FAMILIES: tuple[tuple[float, float, str, tuple[str, ...]], ...] = (
-    (160.0, 185.0, "dnb",      ("dnb", "liquid", "neurofunk", "jungle")),
-    (140.0, 152.0, "dubstep",  ("dubstep", "halftime", "techno")),
-    (128.0, 140.0, "garage",   ("garage", "bassline", "speed garage", "breaks")),
-    (85.0, 100.0,  "hiphop",   ("hiphop", "halftime dnb")),
+# Семейство по темпу — последний довод, когда нет ни тега, ни папки.
+#
+# В прежней таблице было четыре полосы и три дыры, и дыры стоили дорого:
+#
+#   118-128 — хаус. Полосы не было вовсе, трек проваливался в умолчание
+#             (8, 16, 32, 64), а оно драм-н-бейсовое: в хаусе искались
+#             восьмитактовые фразы там, где они шестнадцати- и
+#             тридцатидвухтактовые.
+#   128-140 — числилось «гэриджем» с лесенкой 8/16/32. Но в этой полосе
+#             живут техно (125-140) и транс (130-145), а UK-гэридж там
+#             встречается несравнимо реже. То есть на самых массовых
+#             стилях сетка фраз была вдвое частивнее нужной — ровно то,
+#             что снаружи выглядит как «границы фраз находятся хуже».
+#   152-160 и выше 185 — хардстайл, хардкор и габбер не опознавались.
+#   ниже 85 — халфтайм, лоу-фай и трэп-в-половину тоже.
+#
+# Пятый элемент — честность подписи. Раньше «уверенность» выводилась из
+# длины списка кандидатов, и 160-185 считалось точным, хотя там же живёт
+# фонк. Теперь это отдельное поле, и там, где темп правда не различает
+# стили (140-152: дабстеп, транс и хардстайл вперемешку), стоит False —
+# чтобы тег и папка перебивали догадку, а не спорили с ней.
+BPM_FAMILIES: tuple[tuple[float, float, str, tuple[str, ...], bool], ...] = (
+    (185.0, 260.0, "hardcore",  ("hardcore", "gabber", "speedcore", "uptempo"), False),
+    (170.0, 185.0, "dnb",       ("dnb", "neurofunk", "jungle", "techstep"), True),
+    (160.0, 170.0, "dnb",       ("dnb", "liquid", "phonk", "jungle"), False),
+    (152.0, 160.0, "hardstyle", ("hardstyle", "hard dance", "hardcore"), False),
+    (140.0, 152.0, "dubstep",   ("dubstep", "halftime", "trance", "hardstyle", "phonk"), False),
+    (128.0, 140.0, "fourfloor", ("techno", "trance", "house", "garage"), False),
+    (118.0, 128.0, "house",     ("house", "deep house", "tech house", "progressive"), False),
+    (100.0, 118.0, "breaks",    ("breaks", "uk funky", "trip hop", "downtempo"), False),
+    (85.0, 100.0,  "hiphop",    ("hiphop", "boombap", "halftime dnb"), False),
+    (60.0, 85.0,   "hiphop",    ("hiphop", "lofi", "trap halftime", "downtempo"), False),
 )
 
 
@@ -188,11 +232,11 @@ def genre_from_bpm(bpm: float | None) -> dict:
     if not bpm:
         return {"genre": None, "genre_source": None, "candidates": ()}
     v = float(bpm)
-    for lo, hi, fam, cands in BPM_FAMILIES:
+    for lo, hi, fam, cands, certain in BPM_FAMILIES:
         if lo <= v <= hi:
             return {"genre": fam, "genre_source": "bpm",
                     "raw": f"{v:.0f} BPM", "candidates": cands,
-                    "certain": len(cands) == 1 or fam == "dnb"}
+                    "certain": bool(certain)}
     return {"genre": None, "genre_source": None, "candidates": ()}
 
 
@@ -225,6 +269,18 @@ FOLDER_HINTS: tuple[tuple[str, str], ...] = (
     ("hiphop", "hiphop"),
     ("hip-hop", "hiphop"),
     ("trap", "trap"),
+    ("hardstyle", "hardstyle"),
+    ("rawstyle", "hardstyle"),
+    ("hardcore", "hardcore"),
+    ("gabber", "hardcore"),
+    ("industrial", "industrial"),
+    ("metal", "metal"),
+    ("deep house", "house"),
+    ("tech house", "house"),
+    ("minimal", "techno"),
+    ("psytrance", "trance"),
+    ("ambient", "ambient"),
+    ("chillout", "ambient"),
 )
 
 # Папки, которые ничего не говорят о жанре: по ним подписывать нельзя.

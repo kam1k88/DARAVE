@@ -416,10 +416,116 @@
     color: var(--muted); overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; max-width: 34ch; direction: rtl; text-align: left;
   }
+  /* Пометка у кнопки «Другие секции»: экспериментальная стыковка —
+     это не ошибка, а честное предупреждение, и кричать ей незачем. */
+  /* Строка перебора: подписи кнопок «выход» и «вход» со стрелками
+     наружу и внутрь — чтобы не читать, а узнавать. */
+  #audition-view .fx-deck {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    white-space: nowrap; cursor: pointer;
+  }
+  #audition-view .fx-pick { max-width: 210px; font-size: 12px; }
+  #audition-view .fit-why { opacity: .75; font-size: 11px; }
+  #audition-view .fx-own-lbl {
+    font-size: 12px; opacity: .85; min-width: 104px;
+  }
+  #audition-view .fx-knob {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; opacity: .85; margin-left: 8px; white-space: nowrap;
+  }
+  #audition-view .fx-knob input[type=range] { width: 74px; }
+  #audition-view .fx-knob select { font-size: 11px; }
+  #audition-view .fx-knob-v {
+    min-width: 34px; text-align: right;
+    font-variant-numeric: tabular-nums; opacity: .8;
+  }
+  #audition-view .fx-pick[disabled] { opacity: .5; }
+  #audition-view .side-row { margin-top: 2px; }
+
+  /* Roll и «подобрать пару» — главные кнопки экрана, и выглядеть они
+     должны крупнее соседей по строке. .lucky-cell убран вместе с блоком
+     «Не то? Три пути…»: перебор переехал наверх, к тому, что он меняет. */
+  #audition-view .tune-line button.big-act {
+    font-weight: 600; padding: 7px 14px;
+  }
+  #audition-view .newpair-cell { display: flex; }
+  #audition-view .newpair-cell > button {
+    flex: 1; font-size: 12px; padding: 9px 12px; font-weight: 600;
+  }
+  /* Поле расклада узкое намеренно: это подпись к кнопке, а не ещё один
+     параметр сведения. */
+  /* Код шва — девять цифр, их переписывают с экрана и диктуют. Моно и
+     с запасом по ширине: цифры не должны прыгать при наборе. */
+  #audition-view .seed-input {
+    width: 108px; text-align: center; font-family: var(--font-mono, monospace);
+    font-size: 12.5px; letter-spacing: .02em; background: var(--panel-2);
+    color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--r-sm, 6px); padding: 5px 6px;
+  }
+  /* Разделитель в строке действий: «послушать и решить» слева, «дай
+     другое» справа. Не линия, а воздух — линия читалась бы как граница
+     блока, а это одна строка. */
+  #audition-view .act-sep { flex: 0 0 18px; }
+  /* Обе строки FX выровнены по одной сетке: подпись, выключатель,
+     список. У второй строки подпись пустая — место под неё остаётся. */
+  #audition-view .side-row .fx-deck { min-width: 104px; }
+  #audition-view .side-row + .side-row { margin-top: -4px; }
+
+  /* Уведомление отбора: заметное, но не загораживающее работу. */
+  .aud-notice {
+    display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px;
+    padding: 10px 12px; font-size: 13px; line-height: 1.5;
+    background: var(--panel-2); border: 1px solid var(--warn, #f0a83c);
+    border-left-width: 3px; border-radius: var(--r-md, 8px); color: var(--text);
+  }
+  .aud-notice button {
+    margin-left: auto; background: transparent; border: 0; cursor: pointer;
+    color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px;
+  }
+  .aud-notice button:hover { color: var(--text); }
+
+  .tune-note { font-size: 11.5px; color: var(--warn, #f0a83c); white-space: nowrap; }
+
   .analyze-steps { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 0; font-size: 12px; }
   .analyze-steps label { display: flex; align-items: baseline; gap: 5px; cursor: pointer; }
   .analyze-steps .cnt { color: var(--muted); }
   .analyze-steps .cnt.need { color: var(--warn, #d08700); }
+  .lib-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .lib-table th.sortable:hover { color: var(--text); }
+  .lib-table th.sortable::after { content: ""; opacity: .45; margin-left: 4px; }
+  .lib-table th.sort-asc::after { content: "▲"; font-size: 9px; }
+  .lib-table th.sort-desc::after { content: "▼"; font-size: 9px; }
+
+  .analyze-steps .heavy-block {
+    flex-basis: 100%; margin-top: 8px; padding: 9px 11px;
+    border: 1px solid var(--line, #333); border-left: 3px solid var(--warn, #d08700);
+    border-radius: var(--r-md, 8px); background: var(--panel-2, transparent);
+    display: flex; flex-wrap: wrap; gap: 4px 14px;
+  }
+  .analyze-steps .heavy-head { flex-basis: 100%; font-weight: 600; font-size: 12px; }
+  .analyze-steps .heavy-note { flex-basis: 100%; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .analyze-steps .heavy-note.warn { color: var(--warn, #d08700); }
+  .analyze-steps .heavy-hint {
+    flex-basis: 100%; font-size: 11px; color: var(--muted); line-height: 1.5;
+    white-space: pre-wrap; opacity: .85;
+  }
+  .analyze-steps .heavy-install {
+    flex-basis: 100%; display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; margin-top: 2px;
+  }
+  .analyze-steps .heavy-install button {
+    background: var(--warn, #d08700); color: #1a1205; border: none;
+    border-radius: var(--r-sm, 6px); padding: 6px 12px; font-size: 12px;
+    font-weight: 600; cursor: pointer;
+  }
+  .analyze-steps .heavy-install button[disabled] { opacity: .55; cursor: default; }
+  .analyze-steps .heavy-install .state { font-size: 11.5px; color: var(--muted); }
+  .analyze-steps .install-log {
+    flex-basis: 100%; max-height: 150px; overflow: auto; margin-top: 4px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px;
+    line-height: 1.45; color: var(--muted); white-space: pre-wrap;
+    border-top: 1px solid var(--line, #333); padding-top: 5px;
+  }
   .fetch-panel { padding: 8px 0; font-size: 12px; display: flex; flex-direction: column; gap: 7px; }
   .fetch-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
   .fetch-row label { display: flex; align-items: center; gap: 5px; }
@@ -428,6 +534,43 @@
   #lib-q { flex: 1; min-width: 220px; }
   #lib-q-info { color: var(--muted); font-size: 12px; }
   #lib-sel-info { color: var(--muted); font-size: 12px; }
+  .fav-code { font-variant-numeric: tabular-nums; }
+  .fav-open {
+    background: none; border: 1px solid var(--panel-3); color: var(--muted);
+    border-radius: 6px; font-size: 11px; padding: 0 6px; cursor: pointer;
+  }
+  .fav-open:hover { color: var(--fg); border-color: var(--accent); }
+  /* Сворачиваемые панели: поиск по каталогам и пополнение закрывали
+     собой таблицу треков, ради которой вкладка и открыта. Диджей:
+     «либо чтобы можно было сворачивать их и видеть снизу треки». */
+  .lib-fold { margin: 2px 0; }
+  .lib-fold > summary {
+    cursor: pointer; font-size: 12px; padding: 4px 6px;
+    color: var(--muted); border-radius: 6px; user-select: none;
+  }
+  .lib-fold > summary:hover { background: var(--panel-2); }
+  .lib-fold > summary .hint { margin-left: 8px; opacity: .7; }
+  .lib-fold[open] > summary { color: var(--fg); }
+  .pool-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; margin: 4px 0;
+    background: var(--panel-2); border-radius: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .pool-list {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    padding: 0 8px 6px; max-height: 96px; overflow: auto;
+  }
+  .pool-chip {
+    font-size: 11px; padding: 2px 6px; border-radius: 10px;
+    background: var(--panel-3); color: var(--muted);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pool-chip button {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 2px; font-size: 12px;
+  }
+  .pool-chip button:hover { color: var(--fg); }
   .lib-table td.pick { width: 24px; text-align: center; }
   /* ===== Документация ===== */
   #doc-overlay {
@@ -783,7 +926,21 @@
   /* ===== ControlC ===== */
   #strategy-view .list-body { padding: 18px; }
   .arc-chart { display: flex; gap: 3px; align-items: flex-end; height: 90px; margin: 8px 0 20px; }
-  .arc-chart .arc-bar { flex: 1; border-radius: 3px 3px 0 0; min-width: 4px; }
+  .arc-chart .arc-bar { flex: 0 1 auto; border-radius: 3px 3px 0 0; min-width: 3px; }
+  .track-row .track-up, .track-row .track-dn {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 3px; font-size: 12px; line-height: 1;
+  }
+  .track-row .track-up:hover, .track-row .track-dn:hover { color: var(--fg); }
+  .track-row .track-hear {
+    background: none; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 6px; padding: 0 7px; height: 22px; cursor: pointer; font-size: 12px;
+  }
+  .track-row .track-hear:hover { background: var(--accent); color: #fff; }
+  .track-row .track-hear[disabled] { opacity: .5; cursor: default; }
+  .track-hear-gap { display: inline-block; width: 28px; }
+  .track-player:not(:empty) { padding: 4px 0 8px; font-size: 12px; color: var(--muted); }
+  .track-row .track-up[disabled], .track-row .track-dn[disabled] { opacity: .25; cursor: default; }
   .strategy-section h3 { font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; margin: 22px 0 10px; }
   .transition-card {
     background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
@@ -928,13 +1085,42 @@
     width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 10px;
     padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
   }
+  #join-screen .card { max-width: 420px; }
+  #join-rooms { text-align: left; margin: 0 0 16px; }
+  #join-rooms h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600;
+  }
+  .join-room {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 9px 10px; margin-bottom: 6px;
+    font-size: 13px; cursor: pointer; text-align: left; font-weight: 400;
+  }
+  .join-room:hover { border-color: var(--accent); }
+  .join-room .code {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
+  }
+  .join-room .n { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .join-room .when { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .join-room .x {
+    width: auto; background: none; border: none; color: var(--muted);
+    font-size: 14px; line-height: 1; padding: 2px 4px; cursor: pointer;
+  }
+  .join-room .x:hover { color: var(--text); }
+  #join-rooms .hint { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+  #join-sep {
+    border: none; border-top: 1px solid var(--border); margin: 16px 0 14px;
+  }
 </style>
 </head>
 <body>
 <div id="join-screen">
   <div class="card">
     <h1>DARAVE</h1>
-    <p>Введите код комнаты — тот же, что задан у companion (<code>--companion-id</code>)</p>
+    <div id="join-rooms" hidden></div>
+    <p id="join-hint">Введите код комнаты — тот же, что задан у companion (<code>--companion-id</code>)</p>
     <input id="room-input" placeholder="например, my-club-fri" autocomplete="off">
     <button id="join-btn">Войти</button>
   </div>
@@ -1051,12 +1237,15 @@
                нет, а не фильтрует то, что есть. Файлов каталоги не
                отдают — и в ответе это написано прямым текстом, чтобы
                строка не выглядела обещанием скачать. -->
-          <div class="scan-bar">
-            <input id="catalog-q" placeholder="Поиск в MusicBrainz и Discogs: исполнитель, трек, лейбл…" autocomplete="off">
-            <button id="catalog-btn" class="ghost">🔎 В каталогах</button>
-            <span id="catalog-status"></span>
-          </div>
-          <div id="catalog-out" class="catalog-out" style="display:none"></div>
+          <details class="lib-fold" id="fold-catalog">
+            <summary>🔎 Поиск в каталогах <span class="hint">MusicBrainz и Discogs — сведения о треках, которых у вас нет</span></summary>
+            <div class="scan-bar">
+              <input id="catalog-q" placeholder="Исполнитель, трек, лейбл…" autocomplete="off">
+              <button id="catalog-btn" class="ghost">🔎 В каталогах</button>
+              <span id="catalog-status"></span>
+            </div>
+            <div id="catalog-out" class="catalog-out" style="display:none"></div>
+          </details>
           <!-- Отбор в библиотеке. Разбор строки («100-135», «174», «Am»)
                считает СЕРВЕР: те же правила нужны загрузке и удалению
                пачкой, и вторая их версия на JavaScript разошлась бы с
@@ -1067,6 +1256,7 @@
             <span id="lib-q-info"></span>
             <span class="spacer"></span>
             <span id="lib-sel-info"></span>
+            <button id="lib-pool-btn" class="ghost" disabled title="Отложить выбранные в пул треков. Это НЕ пул переходов: здесь просто список, с которым дальше работают Clipping и ControlC.">★ В пул треков</button>
             <button id="lib-del-btn" class="ghost" disabled title="Убрать выбранные из библиотеки. Файлы на диске не трогаются.">🗑 Убрать</button>
             <button id="lib-fetch-btn" class="ghost" title="Пополнить библиотеку">⬇ Пополнить</button>
           </div>
@@ -1074,7 +1264,7 @@
                каталог Creative Commons, откуда качать РАЗРЕШЕНО (право
                проверяется у каждого трека), и папка-приёмник, которая
                принимает любую музыку, но не добывает её. -->
-          <div id="fetch-panel" class="fetch-panel" style="display:none">
+          <div id="fetch-panel" class="fetch-panel lib-fold-body" style="display:none">
             <div class="fetch-row">
               <b>Каталог Jamendo</b>
               <span class="hint">музыка под лицензиями Creative Commons — качать разрешено автором</span>
@@ -1123,9 +1313,21 @@
           </div>
           <div id="analyze-bars" class="analyze-bars" style="display:none"></div>
           <div id="scan-progress" style="display:none"></div>
+          <!-- Пул ТРЕКОВ. Не путать с пулом переходов: там одобренные
+               швы, здесь просто отложенные треки, с которыми дальше
+               работают Clipping и ControlC. -->
+          <div id="pool-bar" class="pool-bar" style="display:none">
+            <b>★ Пул треков</b>
+            <span id="pool-count" class="hint"></span>
+            <span class="spacer"></span>
+            <button id="pool-clip-btn" class="ghost" title="Искать швы только между треками пула">✂ В Clipping</button>
+            <button id="pool-ctrl-btn" class="ghost" title="Собрать сет из пула по сходимости">🎛 В ControlC</button>
+            <button id="pool-clear-btn" class="ghost" title="Очистить пул треков. Библиотеку не трогает.">✕ Очистить</button>
+          </div>
+          <div id="pool-list" class="pool-list" style="display:none"></div>
           <div class="list-body">
             <table class="lib-table">
-              <thead><tr><th class="pick"><input type="checkbox" id="lib-pick-all" title="Выбрать всё показанное"></th><th>Name</th><th title="Готовы ли слои: без них половина приёмов звучит как обычный кроссфейд">STEMS</th><th>Жанр</th><th>BPM</th><th>Key</th><th>Energy</th><th>Dur.</th></tr></thead>
+              <thead><tr><th class="pick"><input type="checkbox" id="lib-pick-all" title="Выбрать всё показанное"></th><th class="sortable" data-sort="name">Name</th><th title="Готовы ли слои: без них половина приёмов звучит как обычный кроссфейд" class="sortable" data-sort="stems">STEMS</th><th class="sortable" data-sort="genre">Жанр</th><th class="sortable" data-sort="bpm">BPM</th><th class="sortable" data-sort="key">Key</th><th class="sortable" data-sort="energy">Energy</th><th class="sortable" data-sort="dur">Dur.</th></tr></thead>
               <tbody id="lib-tbody"></tbody>
             </table>
             <div id="lib-empty" class="detail-col empty" style="display:none;border:none;width:auto">
@@ -1147,15 +1349,31 @@
           <div class="list-header">
             <h1 data-i18n="nav.strategy">ControlC</h1>
             <span class="head-sub" data-i18n="nav.strategy.sub">планировщик · энергетическая дуга · предпрослушка · трансляция в DSP и в файл</span>
-            <button id="suggest-length-btn" data-paid="1" title="Перебрать длительности и выбрать те, где переходы ложатся на музыку">🎯 Подобрать длину</button>
+            <!-- Шапка ControlC: три действия и «⚙».
+                 Было девять кнопок, и первой по смыслу — «построить
+                 план» — стояла восьмой. Диджей: «сперва должна идти
+                 кнопка построить план, которая и подгрузит из пула
+                 треков треки, и построит план по сходимости, и выставит
+                 рекомендуемую длину». Порядок кнопок теперь совпадает с
+                 порядком работы: построить → послушать → забрать файлом.
+
+                 Убраны отсюда «▶ В Mixxx», «↧ Очередь для Mixxx» и
+                 «🔧 Настройки Mixxx»: живое исполнение — отдельная
+                 история, и в сборке сета оно только мешало искать
+                 нужное. -->
+            <button id="build-strategy-btn" data-paid="1" class="primary"
+                    title="Собрать план: взять треки из пула (если он не пуст), разложить их по сходимости и выставить длину, при которой переходы ложатся на музыку">🗺 Построить план</button>
             <span id="length-picks" style="display:flex;gap:4px;align-items:center"></span>
             <div class="spacer"></div>
-            <button id="mixxx-play-btn" data-paid="1" title="Играть весь сет в самом Mixxx. Всё готовит сам: если очередь Auto DJ разошлась с планом, закроет Mixxx, перепишет очередь и поднимет его обратно. Видно волны, фейдер и ручки.">▶ В Mixxx</button>
+            <button id="render-set-btn" title="Все переходы плана подряд, одним файлом и на одной бит-сетке. Тел треков между ними нет: слышно только сами сведения, двадцать минут вместо полутора часов.">🎬 Превью: все швы</button>
+            <button id="render-full-btn" data-paid="1" title="Весь сет целиком одним треком, в едином темпе, без потерь">💿 Полный сет</button>
+            <select id="set-format" title="Формат готового файла. FLAC — без потерь, вдвое меньше WAV, читается везде.">
+              <option value="flac">FLAC</option>
+              <option value="wav">WAV</option>
+              <option value="mp3">mp3 320</option>
+            </select>
             <button id="mixxx-stop-btn" style="display:none" title="Остановить автопилот">⏹ Стоп</button>
-            <button id="render-set-btn" title="Все переходы плана подряд, одним файлом и на одной бит-сетке. Тел треков между ними нет: слышно только сами сведения, двадцать минут вместо полутора часов.">🎬 Все швы подряд</button>
-            <button id="render-full-btn" data-paid="1" title="Весь сет целиком одним треком, в едином темпе, без потерь">💿 Собрать сет</button>
-            <button id="build-strategy-btn" data-paid="1">🗺 Построить план</button>
-            <button id="strategy-more-btn" title="Дуга, вариант, длительность, жанр, формат файла">⚙</button>
+            <button id="strategy-more-btn" title="Раскладка, вариант, длительность, жанр">⚙</button>
           </div>
           <!-- Редко трогаемое — за кнопкой «⚙».
                В строке остаются пять действий, которыми пользуются каждый
@@ -1163,7 +1381,8 @@
                найти нужную кнопку среди двенадцати. -->
           <div id="strategy-more" style="display:none;gap:10px;align-items:center;flex-wrap:wrap;
                padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel-2)">
-            <select id="arc-shape-select">
+            <select id="arc-shape-select" title="«По сходимости» максимизирует число стыков, которые реально сойдутся по темпу и тональности. Дуги ведут энергию, но платят за это резами.">
+              <option value="fit">По сходимости (максимум сошедшихся)</option>
               <option value="rising">Дуга: нарастающая</option>
               <option value="wave">Дуга: волна</option>
               <option value="peak_middle">Дуга: пик в середине</option>
@@ -1178,19 +1397,12 @@
             <select id="genre-filter" title="Оставить в плане только выбранный жанр или поджанр. Треки без подписи остаются всегда — у поджанра источник есть не у всех.">
               <option value="">жанр: все</option>
             </select>
-            <select id="set-format" title="Формат готового сета. FLAC — без потерь, вдвое меньше WAV, читается везде.">
-              <option value="flac">FLAC (без потерь)</option>
-              <option value="wav">WAV</option>
-              <option value="mp3">mp3 320</option>
-            </select>
             <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)" title="Убрать треки, которые не свести ни с чем в этой библиотеке (чужой темп)">
               <input id="only-mixable" type="checkbox" checked> только сводимые</label>
             <select id="add-track-select" title="Добавить трек в конец плана — дальше перетащите на место"
                     style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
               <option value="">+ добавить трек…</option>
             </select>
-            <button id="autodj-queue-btn" data-paid="1" title="Положить порядок сета в очередь Auto DJ. Ею автопилот и наполняет деки: контрола «загрузи файл по пути» в Mixxx нет. Mixxx должен быть ЗАКРЫТ.">↧ Очередь для Mixxx</button>
-            <button id="mixxx-settings-btn" title="Проверить настройки самого Mixxx: от кривой кроссфейдера зависит, звучит ли живое сведение так же, как демо">🔧 Настройки Mixxx</button>
           </div>
           <!-- Ход автопилота. Пока сет играет в Mixxx, диджей смотрит В
                MIXXX, а не сюда — поэтому здесь только то, чего на деках
@@ -1205,6 +1417,8 @@
             <div class="spacer"></div>
             <button id="ap-stop-btn">⏹ Стоп</button>
           </div>
+          <!-- Пул треков и отсюда: снять ограничение или очистить. -->
+          <div id="ctrl-pool-strip" class="pool-bar" style="display:none"></div>
           <div class="list-body" id="strategy-body">
             <div class="empty" style="padding:18px">Сначала загрузите библиотеку (вкладка Library), затем нажмите «Построить план».</div>
           </div>
@@ -1243,6 +1457,9 @@
     <!-- ===== Отбор ===== -->
     <div id="audition-view" class="view">
       <div class="aud-wrap">
+        <!-- Пул ТРЕКОВ (не переходов): виден и отсюда, чтобы снять
+             ограничение или очистить, не возвращаясь в библиотеку. -->
+        <div id="aud-pool-strip" class="pool-bar" style="display:none"></div>
         <!-- Шапка отбора: заголовок и прогресс. Объяснение приёма убрано
              под «?» — оно нужно один раз при знакомстве, а место на
              экране занимало всегда, из-за чего карточка шва не влезала и
@@ -1603,6 +1820,21 @@
     }).observe(document.documentElement, { childList: true, subtree: true });
   })();
 
+  // Адреса файлов, которые грузит САМ БРАУЗЕР.
+  //
+  // <audio src>, <img src> и ссылка «скачать» не проходят через наш
+  // fetch и заголовок Authorization не ставят. Без токена в адресе
+  // backend отвечает 401, звука нет, а интерфейс об этом не знает.
+  function mediaUrl(u) {
+    if (!u) return u;
+    const t = token();
+    if (!t) return u;
+    // Абсолютные чужие адреса не трогаем: туда наш токен отправлять
+    // незачем и нельзя.
+    if (/^https?:\/\//i.test(u) && u.indexOf(location.origin) !== 0) return u;
+    return u + (u.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(t);
+  }
+
   // WebSocket заголовков не принимает — токен уходит параметром.
   function wsToken() {
     const t = token();
@@ -1801,7 +2033,7 @@
           if (btn.dataset.view === "strategy" && currentStrategy) renderStrategy();
         });
       }
-      // Выпадающие списки треков («Своя пара» в Технике, «+ добавить трек»
+      // Выпадающие списки треков («Пара для разбора» в Technician, «+ добавить трек»
       // в ControlC) строятся из libraryCache. Он заполняется только во
       // вкладке Library — поэтому, если зайти в Technician напрямую,
       // в списке треков было пусто и выбрать было нечего. Это и есть та
@@ -1832,12 +2064,9 @@
       "aud.listen": "▶ Listen", "aud.yes": "✓ Like it — to pool",
       "aud.fav": "★ To transition library",
       "aud.tech": "technique", "aud.other": "↻ other",
-      "aud.entryB": "entry B", "aud.stages": "sections of B",
-      "aud.mode": "fade mode", "aud.byTechnique": "by technique", "aud.manual": "manual",
-      "aud.inLen": "incoming: how long to rise",
-      "aud.inSmooth": "incoming: shape",
-      "aud.outLen": "outgoing: how long to leave",
-      "aud.outSmooth": "outgoing: shape",
+      "aud.stages": "sections of B",
+      "aud.bars": "bars",
+      "aud.fxRow": "effects", "aud.shapeRow": "fade",
       "aud.lucky": "🎲 Get lucky", "aud.swapB": "⇄ Swap deck B",
       "aud.otherJunction": "↔ Other sections", "aud.otherPair": "✕ Other pair",
       "aud.search": "find a track: 175, 8A, liquid, name…",
@@ -1855,12 +2084,9 @@
       "aud.listen": "▶ 试听", "aud.yes": "✓ 喜欢 — 加入池",
       "aud.fav": "★ 加入过渡库",
       "aud.tech": "技法", "aud.other": "↻ 换一个",
-      "aud.entryB": "B 入点", "aud.stages": "B 的段落",
-      "aud.mode": "推子方式", "aud.byTechnique": "按技法", "aud.manual": "手动",
-      "aud.inLen": "进入曲：上升时长",
-      "aud.inSmooth": "进入曲：曲线",
-      "aud.outLen": "退出曲：退出时长",
-      "aud.outSmooth": "退出曲：曲线",
+      "aud.stages": "B 的段落",
+      "aud.bars": "小节",
+      "aud.fxRow": "效果", "aud.shapeRow": "推子",
       "aud.lucky": "🎲 手气不错", "aud.swapB": "⇄ 更换 B 曲",
       "aud.otherJunction": "↔ 换段落", "aud.otherPair": "✕ 换一对",
       "aud.search": "查找曲目：175、8A、liquid、曲名…",
@@ -2025,12 +2251,16 @@
   // входящий доходит до полного, `out_len` — сколько длится увод
   // уходящего. Если сумма меньше единицы, между ними площадка, где оба
   // трека звучат полноценно; больше — обычный кроссфейд.
-  // По умолчанию — РУЧНОЕ ведение, а не «по приёму». Диджей проверил обе
-  // ветки: «по приёму сводит некрасиво», а на этих числах «получается
-  // чистый фейдер при любой технике сведения». Значит по умолчанию
-  // должно стоять то, что работает.
-  let audProfile = {entry: "manual", in_len: 0.85, out_len: 0.20,
-                    in_smooth: 0.3, out_smooth: 0.5};
+  // Переменной audProfile здесь больше нет — и это главное в правке.
+  //
+  // Форма ведения фейдеров живёт в САМОМ ШВЕ (seam.mix_profile), куда её
+  // кладёт сервер (mix_profile.auto). Пока она была переменной экрана,
+  // подобранное на одной паре уезжало на следующую и ломало её: экран
+  // переживал карточку, к которой настройка относилась.
+  //
+  // Ведём мы, а не приём («по приёму сводит некрасиво» — проверено
+  // диджеем), но числа считаются под конкретный переход: длина в
+  // тактах, тип стыка, конфликт басов.
 
   // Громкость плеера живёт между карточками: диджей выставляет её один
   // раз, а карточка перерисовывается после каждого вердикта.
@@ -2078,6 +2308,31 @@
       (p.ready ? '<span style="color:var(--accent)">сет готов — можно собирать</span>' : "");
   }
 
+  // Уведомление НАД карточкой. Не alert и не подмена экрана: сообщение
+  // должно быть видно и при этом не отнимать у человека то, с чем он
+  // работает.
+  function audNotice(text) {
+    const host = document.getElementById("aud-card");
+    if (!host) return;
+    let box = document.getElementById("aud-notice");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "aud-notice";
+      box.className = "aud-notice";
+      host.parentNode.insertBefore(box, host);
+    }
+    box.textContent = "";
+    const msg = document.createElement("span");
+    msg.textContent = text;
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = "×";
+    x.title = "Закрыть";
+    x.onclick = function () { box.remove(); };
+    box.appendChild(msg);
+    box.appendChild(x);
+  }
+
   function renderSeam(seam) {
     // Список приёмов относится к КОНКРЕТНОЙ паре: сменился шов — старый
     // список врёт (там могут быть приёмы, для которых у новой пары нет
@@ -2086,18 +2341,45 @@
                             seam.b_path !== audSeam.b_path ||
                             seam.pair_label !== audSeam.pair_label)) {
       audTechniques = [];
+      // Эффекты тоже относятся к КОНКРЕТНОЙ паре: список сужен по её
+      // жанрам, и на новой паре он врёт.
+      audFx = {out: [], in: []};
+      audFxIdx.out = 0; audFxIdx.in = 0;
+      // И ВЫКЛЮЧАТЕЛИ тоже. Включённый на прошлой паре эффект,
+      // доехавший до следующей, — это ровно та же поломка, из-за
+      // которой убраны ползунки, только про FX.
+      audFxOn.out = false; audFxOn.in = false;
+      audFxFor = "";
+      audCodeFor = "";
       // Сменилась пара — значит это уже не тот шов, который принесли из
       // пула или из плана, и ни заменять, ни возвращать в план нечего.
       audEditingPoolId = null;
       audFromPlan = null;
     }
-    audSeam = seam;
     const el = document.getElementById("aud-card");
     if (!seam) {
+      // Кандидаты кончились.
+      //
+      // Раньше здесь карточка СТИРАЛАСЬ и на её место вставал экран
+      // «швов больше нет». Он и был главной бедой отбора: человек
+      // терял и текущий шов, и все настройки под ним, а «Get lucky» и
+      // «другая пара» — то есть ровно те кнопки, которыми из этого
+      // положения и выходят, — исчезали вместе с карточкой. Выглядело
+      // как сброс страницы на ровном месте.
+      //
+      // Теперь карточка остаётся, а кончившиеся кандидаты — это
+      // уведомление сверху, которое закрывается. Общий подбор
+      // действительно исчерпан, но перебор этой пары — нет.
+      if (audSeam) { audNotice(
+        "Общий подбор кандидатов исчерпан — всё, что он мог предложить, уже отсужено. " +
+        "Карточка осталась: «🎲 Get lucky» перебирает эту пару заново, " +
+        "«✕ Другая пара» берёт из библиотеки новые треки, а «Собрать сет» — внизу."); return; }
       el.innerHTML = '<div class="empty">Швов больше нет — всё, что можно было предложить, уже отсужено. ' +
         'Соберите сет из пула кнопкой ниже.</div>' + audBuildButton();
+      audSeam = null;
       return;
     }
+    audSeam = seam;
     el.innerHTML =
       '<div class="seam-card">' +
         '<div class="seam-tracks">' + audTrackLine(seam, "a") +
@@ -2111,12 +2393,28 @@
           "<span>вход " + audFmt(seam.entry_seconds) + "</span>" +
           (audKeyNote(seam) ? "<span>" + audKeyNote(seam) + "</span>" : "") +
         "</div>" +
+        // Одна строка на всё, что делают с карточкой: сначала «послушать
+        // и решить», потом — через разделитель — «дай другое». Раньше
+        // перебор жил отдельным рядом ниже, и рука шла к нему через
+        // половину экрана.
         '<div class="seam-actions">' +
           '<button id="aud-play">' + t("aud.listen", "▶ Послушать") + '</button>' +
           '<button id="aud-yes" class="btn-yes">' + t("aud.yes", "✓ Нравится — в пул") + '</button>' +
           '<button id="aud-fav" title="Отложить переход в библиотеку понравившихся: ' +
             'с оценкой и заметкой, для разбора и автотехник">' +
             t("aud.fav", "★ В библиотеку переходов") + '</button>' +
+          '<button id="aud-to-tech" title="Открыть этот стык в Technician: ' +
+            'там у приёма свои ползунки, и та же пара с теми же точками">' +
+            t("aud.toTech", "🧪 В Technician") + '</button>' +
+          '<span class="act-sep"></span>' +
+          '<button id="aud-roll" class="big-act" title="Следующий вариант по ' +
+            'лестнице: сначала все стыковки этого приёма, кончились — ' +
+            'следующий приём, кончились и они — другой трек B">' +
+            t("aud.roll", "🎲 Roll") + "</button>" +
+          '<button id="aud-swapb-top" title="Заменить входящий трек на близкий ' +
+            'по темпу, тональности и жанру">' +
+            t("aud.swapB", "⇄ Сменить трек B") + '</button>' +
+          '<span id="aud-roll-note" class="tune-note"></span>' +
         "</div>" +
         // Полноценный плеер, а не new Audio(): демо надо переслушивать
         // с середины и сравнивать на одной громкости, а невидимый
@@ -2124,22 +2422,19 @@
         '<audio id="aud-audio" controls preload="none" ' +
           'style="width:100%;margin-top:10px;display:none"></audio>' +
         audTuneHtml(seam) +
+        // Низ карточки — про ДРУГУЮ пару, а не про эту.
+        //
+        // Перебор переехал наверх, поэтому здесь осталось ровно две
+        // вещи: найти конкретный трек руками и попросить подобрать пару
+        // заново с нуля.
         '<div class="reject-row">' +
-          '<div class="hint">Не то? Четыре пути — от «подбери сам» до «другая пара»:</div>' +
           '<div class="aud-bottom">' +
-            '<div class="reject-grid">' +
-              '<button id="aud-lucky" class="big-act" title="Перебрать ВСЕ стыковки этой пары ' +
-                'на все подходящие приёмы — обычно 50-100 комбинаций — и взять лучшую">' +
-                t("aud.lucky", "🎲 Get lucky") + "</button>" +
-              '<button id="aud-swapb" class="big-act" title="Заменить входящий на близкий ' +
-                'по темпу, тональности и жанру трека A">' +
-                t("aud.swapB", "⇄ Сменить трек B") + "</button>" +
-              '<button class="aud-no" data-reason="junction" title="Оставить треки и приём, ' +
-                'взять другие секции">' + t("aud.otherJunction", "↔ Другие секции") + "</button>" +
-              '<button id="aud-other-pair" class="aud-no" ' +
-                'title="Взять из библиотеки два других трека — случайный первый ' +
-                'и ближайший к нему по темпу, тональности и жанру второй">' +
-                t("aud.otherPair", "✕ Другая пара") + "</button>" +
+            '<div class="newpair-cell">' +
+              '<button id="aud-newpair" class="big-act" title="Забыть оба трека ' +
+                'и подобрать новую пару по всей библиотеке: совместимость по ' +
+                'темпу, тональности, жанру и слоям, а приём, точки стыка и ' +
+                'длину подберёт сам">' +
+                "🔀 Подобрать пару заново" + "</button>" +
             "</div>" +
             '<div class="aud-find">' +
               '<input id="aud-search" placeholder="' + t("aud.search",
@@ -2156,8 +2451,8 @@
     document.getElementById("aud-yes").addEventListener("click", function () {
       auditionVerdict("approved", null);
     });
-    // Только те, у кого есть data-reason: «другая пара» тоже .aud-no ради
-    // вида, но у неё своё поведение (см. aud-other-pair ниже).
+    // Только те, у кого есть data-reason: у остальных кнопок ряда своё
+    // поведение и отказ они не записывают.
     document.querySelectorAll(".aud-no[data-reason]").forEach(function (b) {
       b.addEventListener("click", function () { auditionVerdict("rejected", b.dataset.reason); });
     });
@@ -2172,21 +2467,6 @@
     document.querySelectorAll(".aud-shift").forEach(function (b) {
       b.addEventListener("click", function () { audShiftEntry(parseInt(b.dataset.bars, 10)); });
     });
-    ["aud-profile", "aud-profile-m"].forEach(function (id) {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener("click", function () {
-        audProfile.entry = el.dataset.mode;
-        renderSeam(audSeam);
-        auditionPlay();
-      });
-    });
-    document.querySelectorAll(".aud-fader").forEach(function (el) {
-      el.addEventListener("change", function () {
-        audProfile[el.dataset.k] = parseFloat(el.value);
-        renderSeam(audSeam);
-        auditionPlay();
-      });
-    });
     document.querySelectorAll(".aud-stage").forEach(function (b) {
       b.addEventListener("click", function () {
         const at = Math.round(parseFloat(b.dataset.at) * 100) / 100;
@@ -2196,18 +2476,84 @@
         auditionPlay();
       });
     });
-    const lucky = document.getElementById("aud-lucky");
-    if (lucky) lucky.addEventListener("click", function () { audLucky("lucky"); });
-    const swapb = document.getElementById("aud-swapb");
-    if (swapb) swapb.addEventListener("click", function () { audLucky("swap-b"); });
-    const opair = document.getElementById("aud-other-pair");
-    if (opair) opair.addEventListener("click", function () {
-      // Отказ всё равно записываем — вкус на нём и учится, — но новую
-      // пару берём сами, а не ждём следующего кандидата общего подбора:
-      // тот ранжирует библиотеку одинаково и отдаёт почти то же самое.
-      auditionVerdict("rejected", "pair", {silent: true});
-      audTriedB = [];
+    const roll = document.getElementById("aud-roll");
+    if (roll) roll.addEventListener("click", audRollLadder);
+    const totech = document.getElementById("aud-to-tech");
+    if (totech) totech.addEventListener("click", openSeamInTechnician);
+    const capply = document.getElementById("aud-code-apply");
+    if (capply) capply.addEventListener("click", audApplyCode);
+    const cinp = document.getElementById("aud-seed");
+    if (cinp) cinp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") audApplyCode();
+    });
+    // Код считается ПОСЛЕ отрисовки: он зависит и от шва, и от того,
+    // какие эффекты сейчас включены.
+    if (seam) audRefreshCode(seam);
+    const np = document.getElementById("aud-newpair");
+    if (np) np.addEventListener("click", function () {
+      audResetLadder(audSeam, 0);
       audLucky("other-pair");
+    });
+    const swapb = document.getElementById("aud-swapb-top");
+    if (swapb) swapb.addEventListener("click", function () { audLucky("swap-b"); });
+    const barsBtn = document.getElementById("aud-bars");
+    if (barsBtn) barsBtn.addEventListener("click", audRollBars);
+    document.querySelectorAll("[data-fx-on]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        audSetFx(el.dataset.fxOn, el.checked, null);
+      });
+    });
+    document.querySelectorAll("[data-fx-sel]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        // Выбрали эффект — значит он и нужен: включаем заодно, чтобы не
+        // заставлять ставить галочку вторым движением.
+        audSetFx(el.dataset.fxSel, true, parseInt(el.value, 10) || 0);
+      });
+    });
+    document.querySelectorAll("[data-fx-own]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        const side = el.dataset.fxOwn;
+        // Сменили юнит — ручки прежнего к нему не относятся.
+        audFxOwnOpts[side] = {unit: el.value};
+        audSetFx(side, null, null);
+      });
+    });
+    document.querySelectorAll("[data-fx-ownknob]").forEach(function (el) {
+      const p = String(el.dataset.fxOwnknob || "").split("|");
+      const side = p[0], kid = p[1];
+      el.addEventListener("input", function () {
+        const k = audFxUnitKnobs(audFxOwnUnit(side)).find(function (q) { return q.id === kid; });
+        const box = document.querySelector('[data-fx-val="' + side + "|" + kid + '"]');
+        if (box) box.textContent = el.value + ((k && k.suffix) || (kid === "strength" ? "%" : ""));
+      });
+      el.addEventListener("change", function () {
+        audFxOwnOpts[side][kid] = Number(el.value);
+        audSetFx(side, null, null);
+      });
+    });
+    document.querySelectorAll("[data-fx-knob]").forEach(function (el) {
+      const parts = String(el.dataset.fxKnob || "").split("|");
+      const side = parts[0], kid = parts[1];
+      // Пока тянут — только цифра рядом. Перерисовывать карточку и
+      // пересобирать демо на каждый пиксель ползунка нельзя: карточка
+      // перерисуется под пальцем и ползунок выскользнет.
+      el.addEventListener("input", function () {
+        const k = audFxKnobLabel(side, kid);
+        const box = document.querySelector('[data-fx-val="' + side + "|" + kid + '"]');
+        if (box) box.textContent = el.value + ((k && k.suffix) || "");
+      });
+      el.addEventListener("change", function () {
+        audFxOpts[side][kid] = Number(el.value);
+        audSetFx(side, null, null);
+      });
+    });
+    audPaintSideNote();
+    const ojunc = document.getElementById("aud-other-junction");
+    if (ojunc) ojunc.addEventListener("click", function () {
+      // Отказ НЕ записываем: человек не отверг переход, он ищет ему
+      // место. Записать это как «не нравится» — испортить вкусовую
+      // модель ровно там, где сказали обратное.
+      audLucky("other-sections");
     });
     const search = document.getElementById("aud-search");
     if (search) {
@@ -2222,6 +2568,318 @@
     if (bb) bb.addEventListener("click", auditionBuild);
     if (seam && !audTechniques.length) audLoadTechniques(seam);
     if (seam && (!audSections[seam.a_path] || !audSections[seam.b_path])) audLoadSections(seam);
+    if (seam) audLoadFx(seam);
+  }
+
+  // Эффекты по декам. Ровно один на деку — как в пульте, где на деку
+  // один FX-юнит и одна рука.
+  //
+  // Раньше тут был «перебор формы стороны»: кнопки «◀ выход» и «вход ▶»
+  // крутили по кругу набор форм громкости И эффект заодно. Форму теперь
+  // считает сервер из самого шва, так что кнопкам осталось одно дело —
+  // эффект. А перебор вслепую для одного дела хуже выключателя со
+  // списком: по кругу не видно ни что включено сейчас, ни что есть ещё.
+  //
+  // deck 1 — уходящий (сторона "out"), deck 2 — входящий ("in"). Пары
+  // именно такие, и менять их местами нельзя: пресеты в fx_presets
+  // разные, уход и вход обрабатываются не одинаково.
+  let audFx = {out: [], in: []};
+  const audFxIdx = {out: 0, in: 0};
+  const audFxOn = {out: false, in: false};
+  // Для какой пары список уже запрашивали.
+  //
+  // Не «список пуст — значит не грузили»: audLoadFx теперь перерисовывает
+  // карточку (иначе выпадающие списки остаются пустыми до следующего
+  // клика), а перерисовка снова доходит до проверки. Пустой ответ
+  // сервера при такой проверке дал бы бесконечный круг запросов.
+  let audFxFor = "";
+
+  async function audLoadFx(seam) {
+    if (!seam) return;
+    // Приём — часть ключа: от него зависит, держит ли он FX сам.
+    const key = (seam.a_genre || "") + "|" + (seam.b_genre || "") + "|" +
+                (seam.bars || 16) + "|" + (seam.technique_id || "");
+    if (audFxFor === key) return;
+    audFxFor = key;            // ставим ДО запроса: сбой тоже не повод звать снова
+    try {
+      const q = "?a_genre=" + encodeURIComponent(seam.a_genre || "") +
+                "&b_genre=" + encodeURIComponent(seam.b_genre || "") +
+                "&bars=" + encodeURIComponent(seam.bars || 16) +
+                "&technique_id=" + encodeURIComponent(seam.technique_id || "");
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                                   "/audition/fx" + q)).json();
+      audFx = {out: r.out || [], in: r["in"] || []};
+      audFxUnits = r.units || [];
+      audFxOwn = {out: (r.own && r.own.out) || null, in: (r.own && r.own["in"]) || null};
+      // Сменился приём — прежние ручки относились к прежнему эффекту.
+      audFxOwnOpts.out = {}; audFxOwnOpts["in"] = {};
+      audFxIdx.out = 0; audFxIdx.in = 0;
+      // Список приехал после отрисовки карточки — перерисовываем, иначе
+      // выпадающие списки останутся пустыми до следующего клика.
+      if (audSeam) renderSeam(audSeam);
+    } catch (e) { /* не отдались — просто останется «без эффекта» */ }
+  }
+
+  // «Чисто» в списке не показываем: его роль играет сам выключатель.
+  // Два способа сказать «эффекта нет» — это один лишний.
+  function audFxList(side) {
+    return (audFx[side] || []).filter(function (x) { return x && x.id !== "clean"; });
+  }
+
+  function audFxId(side) {
+    if (!audFxOn[side]) return "clean";
+    const list = audFxList(side);
+    const x = list[audFxIdx[side]];
+    return x ? x.id : "clean";
+  }
+
+  // Значения ручек эффекта. Хранится ТОЛЬКО то, что диджей двигал:
+  // остальное подставляет сам пресет своими умолчаниями. Иначе при
+  // смене пресета пришлось бы гадать, что из сохранённого ещё уместно.
+  const audFxOpts = {out: {}, in: {}};
+
+  function audFxCur(side) {
+    if (!audFxOn[side]) return null;
+    return audFxList(side)[audFxIdx[side]] || null;
+  }
+
+  // Полный набор значений ручек текущего пресета — умолчания плюс правки.
+  // Именно он уходит на сервер и в код шва: «что не трогали» и «что
+  // выставили в то же значение» обязаны давать один и тот же звук.
+  function audFxOptsFor(side) {
+    const x = audFxCur(side);
+    if (!x) return {};
+    const out = {};
+    (x.knobs || []).forEach(function (k) {
+      const v = audFxOpts[side][k.id];
+      out[k.id] = (v === undefined || v === null) ? k.default : Number(v);
+    });
+    return out;
+  }
+
+  function audFxKnobsHtml(side) {
+    const x = audFxCur(side);
+    if (!x || !(x.knobs || []).length) return "";
+    const cur = audFxOptsFor(side);
+    return (x.knobs || []).map(function (k) {
+      const v = cur[k.id];
+      const key = side + "|" + k.id;
+      const tip = escapeHtml((k.name || "") + (k.hint ? " — " + k.hint : ""));
+      // Доли такта — списком, а не ползунком: 3/4 и 0.75 это одно и то
+      // же число, но на пульте его выбирают именно как долю.
+      if (k.choices && k.choices.length) {
+        const opts = k.choices.map(function (c) {
+          return '<option value="' + c[0] + '"' +
+            (Math.abs(Number(c[0]) - Number(v)) < 1e-6 ? " selected" : "") + ">" +
+            escapeHtml(String(c[1])) + "</option>";
+        }).join("");
+        return '<label class="fx-knob" title="' + tip + '">' + escapeHtml(k.name) +
+          ' <select data-fx-knob="' + key + '">' + opts + "</select></label>";
+      }
+      return '<label class="fx-knob" title="' + tip + '">' + escapeHtml(k.name) +
+        ' <input type="range" data-fx-knob="' + key + '" min="' + k.min +
+        '" max="' + k.max + '" step="' + k.step + '" value="' + v + '">' +
+        '<span class="fx-knob-v" data-fx-val="' + key + '">' +
+        escapeHtml(String(v) + (k.suffix || "")) + "</span></label>";
+    }).join("");
+  }
+
+  function audFxKnobLabel(side, kid) {
+    const x = audFxCur(side);
+    const k = ((x && x.knobs) || []).find(function (q) { return q.id === kid; });
+    return k || null;
+  }
+
+  // Эффект, которым играет САМ приём. Приходит вместе со списком
+  // пресетов: {units: [...], free: bool} на сторону, либо null.
+  //
+  // Зачем различать. На деке FX-юнит ОДИН — это устройство пульта, а не
+  // наше ограничение. Если приём уже держит этот юнит, предлагать рядом
+  // второй эффект бессмысленно: они не сложатся, а подерутся. Поэтому
+  // панель меняет смысл, а не прячется:
+  //   приём ничего не трогает   → галочка + свой пресет (как было);
+  //   приём открыл ручку FX     → выбор ЮНИТА, которым он играет;
+  //   приём назвал юнит         → только ручки, менять нечего.
+  let audFxOwn = {out: null, in: null};
+  let audFxUnits = [];
+  const audFxOwnOpts = {out: {}, in: {}};
+
+  function audFxOwnUnit(side) {
+    const own = audFxOwn[side];
+    if (!own) return null;
+    if ((own.units || []).length) return own.units[0];
+    // «Безымянная ручка»: юнит выбирает диджей. Эхо — умолчание, ровно
+    // то, что звучало, когда выбора не было вовсе.
+    return audFxOwnOpts[side].unit || "echo";
+  }
+
+  function audFxUnitKnobs(unit) {
+    const u = (audFxUnits || []).find(function (x) { return x.id === unit; });
+    return (u && u.knobs) || [];
+  }
+
+  function audFxOwnOptsFor(side) {
+    const own = audFxOwn[side];
+    if (!own) return null;
+    const unit = audFxOwnUnit(side);
+    const out = {};
+    // Юнит шлём только там, где его вправду можно выбрать.
+    if (!(own.units || []).length) out.unit = unit;
+    // У приёма с двумя юнитами (такой один — FX-05) ручки юнитов
+    // применились бы сразу к обоим и подрались бы. Оставляем силу: она
+    // осмысленна для любого набора.
+    const many = (own.units || []).length > 1;
+    const knobs = many ? [{id: "strength", default: 100}] : audFxUnitKnobs(unit);
+    knobs.forEach(function (k) {
+      const v = audFxOwnOpts[side][k.id];
+      out[k.id] = (v === undefined || v === null) ? k.default : Number(v);
+    });
+    return out;
+  }
+
+  function audFxOwnHtml(side, label) {
+    const own = audFxOwn[side];
+    const unit = audFxOwnUnit(side);
+    const named = (own.units || []);
+    const cur = audFxOwnOptsFor(side) || {};
+    const many = named.length > 1;
+    let head;
+    if (!named.length) {
+      // Выбор юнита: чем приём играет.
+      const opts = (audFxUnits || []).map(function (u) {
+        return '<option value="' + escapeHtml(u.id) + '"' +
+          (u.id === unit ? " selected" : "") + ">" + escapeHtml(u.name) + "</option>";
+      }).join("");
+      head = '<span class="fx-own-lbl" title="эффект самого приёма — второй сюда не поставить, на деке юнит один">' +
+        escapeHtml(label) + " приёма</span>" +
+        '<select class="fx-pick" data-fx-own="' + side + '">' + opts + "</select>";
+    } else {
+      const names = named.map(function (u) {
+        const q = (audFxUnits || []).find(function (x) { return x.id === u; });
+        return q ? q.name : u;
+      }).join(" + ");
+      head = '<span class="fx-own-lbl" title="юнит задан самим приёмом — менять его значило бы играть другой приём">' +
+        escapeHtml(label) + " приёма: <b>" + escapeHtml(names) + "</b></span>";
+    }
+    const knobs = many ? [] : audFxUnitKnobs(unit);
+    const strengthOnly = many
+      ? [{id: "strength", name: "сила", min: 0, max: 100, step: 5,
+          default: 100, suffix: "%", hint: "глубина эффекта приёма"}]
+      : knobs;
+    const body = strengthOnly.map(function (k) {
+      const v = (cur[k.id] === undefined) ? k.default : cur[k.id];
+      const key = side + "|" + k.id;
+      const tip = escapeHtml((k.name || "") + (k.hint ? " — " + k.hint : ""));
+      if (k.choices && k.choices.length) {
+        const o = k.choices.map(function (c) {
+          return '<option value="' + c[0] + '"' +
+            (Math.abs(Number(c[0]) - Number(v)) < 1e-6 ? " selected" : "") + ">" +
+            escapeHtml(String(c[1])) + "</option>";
+        }).join("");
+        return '<label class="fx-knob" title="' + tip + '">' + escapeHtml(k.name) +
+          ' <select data-fx-ownknob="' + key + '">' + o + "</select></label>";
+      }
+      return '<label class="fx-knob" title="' + tip + '">' + escapeHtml(k.name) +
+        ' <input type="range" data-fx-ownknob="' + key + '" min="' + k.min +
+        '" max="' + k.max + '" step="' + k.step + '" value="' + v + '">' +
+        '<span class="fx-knob-v" data-fx-val="' + key + '">' +
+        escapeHtml(String(v) + (k.suffix || "")) + "</span></label>";
+    }).join("");
+    return head + body;
+  }
+
+  function audFxDeckHtml(side, label, who) {
+    // Приём уже держит юнит этой деки — значит выбирать нечего, можно
+    // только настраивать. См. audFxOwnHtml.
+    if (audFxOwn[side]) return audFxOwnHtml(side, label);
+    const list = audFxList(side);
+    const on = !!audFxOn[side] && list.length > 0;
+    const opts = list.map(function (x, i) {
+      return '<option value="' + i + '"' + (i === audFxIdx[side] ? " selected" : "") + ">" +
+        escapeHtml(x.name) + (x.native ? "" : " · не для этого стиля") + "</option>";
+    }).join("");
+    return '<label class="fx-deck" title="' + escapeHtml(label + " — " + who + " трек") + '">' +
+      '<input type="checkbox" data-fx-on="' + side + '"' + (on ? " checked" : "") +
+      (list.length ? "" : " disabled") + "> " + escapeHtml(label) + "</label>" +
+      '<select class="fx-pick" data-fx-sel="' + side + '"' + (on ? "" : " disabled") + ">" +
+      (opts || '<option value="0">список эффектов не приехал</option>') + "</select>" +
+      // Ручки той же деки — в ТОЙ ЖЕ строке. Симметрия здесь не
+      // украшение: «включатель + какой + насколько» читается как одна
+      // вещь, и перенос ручек вниз снова развёл бы их по чужим строкам.
+      (on ? audFxKnobsHtml(side) : "");
+  }
+
+  function audPaintSideNote() {
+    const note = document.getElementById("aud-side-note");
+    if (!note) return;
+    const part = function (side, label) {
+      if (audFxOwn[side]) {
+        const u = (audFxUnits || []).find(function (x) { return x.id === audFxOwnUnit(side); });
+        return label + ": " + ((u && u.name) || "эффект приёма") + " (от приёма)";
+      }
+      if (!audFxOn[side]) return label + ": чисто";
+      const x = audFxList(side)[audFxIdx[side]];
+      return label + ": " + (x ? x.name : "чисто");
+    };
+    note.textContent = part("out", "deck 1") + " · " + part("in", "deck 2");
+  }
+
+  function audSetFx(side, on, idx) {
+    if (on !== null) audFxOn[side] = !!on;
+    if (idx !== null && idx !== undefined) {
+      // Сменили эффект — ручки прежнего к нему отношения не имеют.
+      // Оставить их значило бы применить «хвост 6 долей» к дисторшну.
+      if (idx !== audFxIdx[side]) audFxOpts[side] = {};
+      audFxIdx[side] = idx;
+    }
+    renderSeam(audSeam);
+    const st = document.getElementById("aud-status");
+    if (st) {
+      const x = audFxList(side)[audFxIdx[side]];
+      const deck = side === "out" ? "deck 1" : "deck 2";
+      st.textContent = audFxOn[side] && x
+        ? deck + ": " + x.name + (x.why ? " — " + x.why : "")
+        : deck + ": без эффекта";
+    }
+    auditionPlay();
+  }
+
+  // ----------------------------------------- длина сведения («такты»)
+  //
+  // Диджей просил кнопку, «меняющую длину сведения, либо как-то
+  // меняющую пропорции тактов входящего и исходящего треков». Пропорции
+  // теперь считает сервер и пересчитывает под новую длину сам, поэтому
+  // кнопке осталась длина — та величина, из которой пропорции и
+  // выводятся.
+  //
+  // Значения не 4/8/16/32/64 на всё подряд: список приходит со швом
+  // (audition.bars_options) и берётся из квадрата жанра ВХОДЯЩЕГО.
+  function audBarsList(seam) {
+    const l = (seam && seam.bars_options) || [];
+    return l.length ? l : [4, 8, 16, 32, 64];
+  }
+
+  function audRollBars() {
+    if (!audSeam) return;
+    const list = audBarsList(audSeam);
+    const cur = Math.round(audSeam.bars || 16);
+    let i = list.indexOf(cur);
+    audSetBars(list[i < 0 ? 0 : (i + 1) % list.length]);
+  }
+
+  // Поставить длину сведения. Отдельно от кнопки, потому что ту же
+  // длину ставит и лесенка Roll — и делать это она должна ровно так же,
+  // включая обнуление формы.
+  function audSetBars(bars) {
+    if (!audSeam || !bars) return;
+    // Форму обнуляем СОЗНАТЕЛЬНО: она считалась под прежнюю длину, и
+    // оставить её значит получить «поднимать входящий 85%» на переходе
+    // вдвое короче. Сервер пересчитает и вернёт новую вместе с демо.
+    audSeam = Object.assign({}, audSeam, {bars: bars, mix_profile: null});
+    renderSeam(audSeam);
+    const st = document.getElementById("aud-status");
+    if (st) st.textContent = "длина сведения: " + bars + " тактов";
+    return auditionPlay();
   }
 
   // Тонкая настройка ШВА — то, что раньше требовало отказа и пересборки.
@@ -2235,10 +2893,26 @@
     }).join("");
     // Подпись «ST-15 · Название ★»: сначала тип и номер, потом имя.
     // Ищут глазом именно тип — «тот, что по слоям», — а не букву.
+    // Оси, по которым диджей просил различать приёмы, — прямо в
+    // строке списка, а не в отдельной справке: выбирают-то здесь.
+    // Рез против сведения, слои, направление энергии.
+    // Словами, а не стрелками: диджей увидел ↑↓ и спросил, что они
+    // значат. Метка, о которой нужно спрашивать, — плохая метка.
+    const axes = function (x) {
+      const m = [];
+      if (x.cut) m.push("рез");
+      if (x.requires_stems) m.push("слои");
+      if (x.energy === "up") m.push("энергия вверх");
+      else if (x.energy === "down") m.push("энергия вниз");
+      if (x.key_rule === "compatible") m.push("нужна тональность");
+      else if (x.key_rule === "clash") m.push("на клэше");
+      if (x.decks > 2) m.push(x.decks + " деки");
+      return m.length ? " · " + m.join(", ") : "";
+    };
     const optOf = function (x) {
       return '<option value="' + x.id + '"' + (x.id === seam.technique_id ? " selected" : "") +
         (x.ok ? "" : " disabled") + ">" + x.id + " · " + escapeHtml(x.name) +
-        (x.recommended ? " ★" : "") +
+        (x.recommended ? " ★" : "") + escapeHtml(axes(x)) +
         (x.ok ? "" : " — " + escapeHtml(x.problem)) + "</option>";
     };
     const rec = audTechniques.filter(function (x) { return x.recommended && x.ok; });
@@ -2250,13 +2924,66 @@
     const cur = audTechniques.filter(function (t) { return t.id === seam.technique_id; })[0];
     return '' +
       '<div class="tune-row">' +
+        // Код шва. Не «номер расклада», как было, а отпечаток ВСЕГО:
+        // пары треков, приёма, стыка, длины, эффектов и формы ведения.
+        // Подробности — у audSeamCode.
+        '<div class="tune-line">' +
+          '<span class="lbl">код шва</span>' +
+          '<input id="aud-seed" class="seed-input" ' +
+            'title="Код этого перехода целиком: треки, приём, точки стыка, ' +
+            'длина, эффекты, форма. Скопируйте, чтобы вернуться к нему ' +
+            'позже или показать другому; вставьте чужой — соберётся он." ' +
+            'value="' + escapeHtml(seam.code || "") + '">' +
+          '<button id="aud-code-apply" title="Собрать переход по коду ' +
+            'из поля слева">↩ применить</button>' +
+          '<span id="aud-code-note" class="tune-note"></span>' +
+        "</div>" +
+        // Ряд настройки: приём, точки, длина — одной строкой, как просил
+        // диджей. Всё это про ОДИН найденный переход.
         '<div class="tune-line">' +
           '<span class="lbl" data-i18n="aud.tech">приём</span>' +
           '<select id="aud-tech">' + (opts || "<option>загружаю…</option>") + "</select>" +
           '<button id="aud-tech-next" title="Следующий подходящий приём на этом же шве">' +
-            t("aud.other", "↻ другой") + '</button>' +
+            t("aud.other", "↻ приём") + '</button>' +
+          '<button id="aud-other-junction" title="Оставить треки и приём, ' +
+            'переставить точки стыка: сначала рекомендованные для этого приёма, потом остальные">' +
+            t("aud.otherJunction", "↔ Фразы") + '</button>' +
+          '<button id="aud-bars" title="Длина сведения. Значения берутся ' +
+            'из квадрата жанра входящего, а не из общего списка: у фонка ' +
+            'это 8/16/32, у транса 16/32/64. Форма ведения пересчитается ' +
+            'под новую длину сама.">' +
+            "⏱ " + (seam.bars || 16) + " " + t("aud.bars", "тактов") + '</button>' +
+          '<span id="aud-junction-note" class="tune-note">' +
+            (seam.junction_kind === "experimental"
+              ? "⚠ экспериментальная стыковка"
+              : "") + "</span>" +
         "</div>" +
-        (cur ? '<div class="tech-note">' + escapeHtml(cur.description || "") +
+        // Нижний ряд — эффекты, по одному на деку. Как в пульте: на деку
+        // один FX-юнит и одна рука.
+        //
+        // Раньше здесь стояли «◀ выход» и «вход ▶», которые крутили
+        // форму громкости И эффект сразу, по кругу. Форму теперь считает
+        // сервер (mix_profile.auto), так что кнопкам осталось ровно одно
+        // дело — эффект, и делать его вслепую перебором незачем:
+        // выключатель говорит, включён ли, а список — какой именно.
+        // По деке на строку. Раньше обе галочки стояли в одной строке, а
+        // списки переносились на следующую — и «FX deck 2» оказывался
+        // над чужим списком. Симметрия тут не украшение: пара
+        // «выключатель + что именно» должна читаться как одна вещь.
+        '<div class="tune-line side-row">' +
+          '<span class="lbl">' + t("aud.fxRow", "эффекты") + "</span>" +
+          audFxDeckHtml("out", "FX deck A", "уходящий") +
+        "</div>" +
+        '<div class="tune-line side-row">' +
+          '<span class="lbl"></span>' +
+          audFxDeckHtml("in", "FX deck B", "входящий") +
+          '<span id="aud-side-note" class="tune-note"></span>' +
+        "</div>" +
+        (cur ? '<div class="tech-note">' +
+          // Почему приём годится ИМЕННО СЮДА: темп и энергия из полей
+          // каталога. Раньше подбор их не читал, и объяснять было нечем.
+          (cur.fit_why ? '<span class="fit-why">' + escapeHtml(cur.fit_why) + "</span><br>" : "") +
+          escapeHtml(cur.description || "") +
           (cur.best_for && cur.best_for.length
             ? "<br><b>" + t("aud.bestFor", "лучше всего на стыках:") + "</b> " +
               cur.best_for.map(function (lab) {
@@ -2283,6 +3010,8 @@
             escapeHtml(seam.vocal_note) + "</span>" : "") +
           (seam.detune_note ? '<br><span style="color:var(--warn,#e6a23c)">темп и высота: ' +
             escapeHtml(seam.detune_note) + "</span>" : "") +
+          (seam.layer_note ? '<br><span style="color:var(--muted)">слои: ' +
+            escapeHtml(seam.layer_note) + "</span>" : "") +
           "</div>" : "") +
         // Ряд «вход B −8 −4 −2 −1 +1 +2 +4 +8» убран. Он задумывался как
         // тонкая подгонка плавности, а на деле просто двигал ТОЧКУ ВХОДА
@@ -2290,7 +3019,7 @@
         // вслепую и в тактах. Две ручки на одно и то же, из которых одна
         // врёт про своё назначение.
         audStagesHtml(seam) +
-        audFadersHtml() +
+        audProfileNote(seam) +
       "</div>";
   }
 
@@ -2323,32 +3052,45 @@
            row("b", seam.b_path, seam.entry_seconds || 0, "секции B — вход");
   }
 
-  // Четыре ползунка вместо одного «плавность». Каждый отвечает ровно за
-  // одно, и вместе они описывают то, что диджей делает двумя руками.
-  function audFadersHtml() {
-    const manual = audProfile.entry !== "technique";
-    const row = function (key, label, min, max, step) {
-      return '<div class="tune-line"><span class="lbl">' + label + "</span>" +
-        '<input class="aud-fader" data-k="' + key + '" type="range" min="' + min +
-        '" max="' + max + '" step="' + step + '" value="' + audProfile[key] +
-        '" style="width:180px"><span class="fader-val">' +
-        (key.indexOf("len") > 0 ? Math.round(audProfile[key] * 100) + "%" : audProfile[key]) +
-        "</span></div>";
-    };
-    return '<div class="tune-line">' +
-        '<span class="lbl" data-i18n="aud.mode">ввод</span>' +
-        '<button id="aud-profile" class="' + (manual ? "" : "on") + '" data-mode="technique" ' +
-          'title="Форму ведёт сам приём">' + t("aud.byTechnique", "по приёму") + "</button>" +
-        '<button id="aud-profile-m" class="' + (manual ? "on" : "") + '" data-mode="manual" ' +
-          'title="Два фейдера вручную: входящий поднимается, уходящий уводится — независимо">' +
-          t("aud.manual", "вручную") + "</button>" +
-      "</div>" +
-      (manual
-        ? row("in_len", t("aud.inLen", "входящий: за сколько поднять"), 0.05, 1, 0.05) +
-          row("in_smooth", t("aud.inSmooth", "входящий: ход"), 0, 1, 0.05) +
-          row("out_len", t("aud.outLen", "уходящий: сколько уводить"), 0.05, 1, 0.05) +
-          row("out_smooth", t("aud.outSmooth", "уходящий: ход"), 0, 1, 0.05)
-        : "");
+  // Четырёх ползунков здесь больше нет.
+  //
+  // Они назывались «входящий: за сколько поднять», «входящий: ход»,
+  // «уходящий: сколько уводить», «уходящий: ход» и жили в переменной
+  // экрана. То есть подобранное на одной паре молча уезжало на
+  // следующую — к другому приёму, другой длине, другому стыку. Диджей:
+  // «на других стыках остаются на своих значениях и ломают переходы».
+  //
+  // Дело было не в значениях, а в том, что настройка переживала то, к
+  // чему относилась. Поэтому форму считает сервер из самого шва
+  // (mix_profile.auto: длина в тактах, тип стыка, конфликт басов), и
+  // приезжает она ВМЕСТЕ с карточкой. Новая карточка — новая форма;
+  // наследовать нечего, потому что хранить негде.
+  //
+  // Что осталось у диджея вместо ручек: кнопка «такты» (меняет длину, и
+  // форма пересчитывается под неё) и эффекты по декам.
+  function audProfileText(seam) {
+    const p = (seam && seam.mix_profile) || null;
+    if (!p) return "считается под эту длину…";
+    // Резы и бэкспины форму не получают: у них вход — событие, а не
+    // процесс, и подпись должна говорить именно это, а не проценты.
+    if (p.entry === "technique") {
+      return "ведёт сам приём: входящий вступает сразу и целиком, " +
+             "без подъёма фейдера";
+    }
+    const pct = function (x) { return Math.round((x || 0) * 100) + "%"; };
+    return escapeHtml("входящий поднимается за " + pct(p.in_len) + " перехода, " +
+      "уходящий уводится за последние " + pct(p.out_len) +
+      " — посчитано по длине и стыку" +
+      (seam.layers && seam.layers.bass >= 0.55
+        ? ", укорочено из-за двух непрерывных басов" : ""));
+  }
+
+  function audProfileNote(seam) {
+    return '<div class="tune-line"><span class="lbl">' +
+      t("aud.shapeRow", "форма") + "</span>" +
+      '<span id="aud-profile-note" class="tune-note" ' +
+      'style="color:var(--muted);white-space:normal">' +
+      audProfileText(seam) + "</span></div>";
   }
 
   function audBuildButton() {
@@ -2372,6 +3114,17 @@
   let audSeen = [];
   let audTriedB = [];
   let audSeenPair = "";
+  // Показанные точки стыка — ОТДЕЛЬНО от audSeen.
+  //
+  // audSeen общий на пару и заполняется в том числе «повезёт», который
+  // перебирает ещё и приёмы. Если пустить «другие секции» по тому же
+  // списку, они начнут пропускать стыковки, которые человек на этом
+  // приёме ещё не слышал. Ключ здесь — пара ПЛЮС приём: сменили приём —
+  // круг начинается заново, и это правильно.
+  let audSeenJunction = [];
+  // Номер расклада для «повезёт». null — пусть сервер выдаст новый.
+  let audSeed = null;
+  let audSeenJunctionKey = "";
 
   function audComboKey(x) {
     return [x.technique_id || "", x.pair_label || "",
@@ -2391,17 +3144,331 @@
     if (audSeen.indexOf(k) < 0) audSeen.push(k);
   }
 
+  // ------------------------------- Clipping → Technician
+  //
+  // Clipping отвечает на вопрос «что с чем и где», Technician — «как
+  // именно»: там у каждого приёма свои ползунки, там своя пара с
+  // произвольными точками и там слушают варианты подряд. Пока перехода
+  // между вкладками не было, диджей переносил стык руками — выбирал те
+  // же два трека в списках и на глаз ставил те же секунды.
+  //
+  // Переносим состояние, а не ссылку: приём, оба трека и обе точки. Код
+  // шва идёт с собой, чтобы из Technician можно было вернуться в
+  // Clipping ровно к нему.
+  let techHandoff = null;          // что подставить, одноразово
+  let techFromClipping = "";       // код шва, с которым пришли — для возврата
+
+  async function openSeamInTechnician() {
+    if (!audSeam) return;
+    const st = document.getElementById("aud-status");
+    techHandoff = {
+      a_path: audSeam.a_path, b_path: audSeam.b_path,
+      exit: audSeam.exit_seconds, entry: audSeam.entry_seconds,
+      code: audSeam.code || "",
+      technique_id: audSeam.technique_id,
+    };
+    const nav = document.querySelector('#nav button[data-view="technique"]');
+    if (nav) nav.click();
+    // Приём выбираем ПОСЛЕ переключения: список приёмов рисует сама
+    // вкладка, и до её открытия выбирать нечего.
+    setTimeout(applyTechHandoff, 60);
+    if (st) st.textContent = "стык уехал в Technician — там ползунки приёма";
+  }
+
+  function applyTechHandoff() {
+    const h = techHandoff;
+    if (!h) return;
+    techFromClipping = h.code || "";
+    const idx = (techniquesCache || []).findIndex(function (x) {
+      return x.id === h.technique_id;
+    });
+    if (idx >= 0 && idx !== selectedTechniqueIndex) selectTechnique(idx);
+    // «Пара для разбора» — те же два трека и те же точки. Списки рисуются
+    // асинхронно (ждут библиотеку), поэтому подставляем, когда появятся.
+    const tries = 20;
+    let n = 0;
+    const put = function () {
+      const a = document.getElementById("cp-a"), b = document.getElementById("cp-b");
+      if (!a || !b) { if (++n < tries) setTimeout(put, 120); return; }
+      a.value = h.a_path; b.value = h.b_path;
+      a.dispatchEvent(new Event("change"));
+      b.dispatchEvent(new Event("change"));
+      // Точки приходят в списки после загрузки меток трека — ставим их
+      // следующим заходом, иначе присвоение уйдёт в пустой select.
+      setTimeout(function () {
+        const ac = document.getElementById("cp-a-cue"), bc = document.getElementById("cp-b-cue");
+        const near = function (sel, want) {
+          if (!sel || want == null) return;
+          let best = null, bd = 1e9;
+          Array.prototype.forEach.call(sel.options, function (o) {
+            const v = parseFloat(o.value);
+            if (!isFinite(v)) return;
+            const d = Math.abs(v - want);
+            if (d < bd) { bd = d; best = o.value; }
+          });
+          // Полсекунды — это меньше доли на любом темпе: ближе точки в
+          // списке просто нет, а дальше это уже другое место.
+          if (best !== null && bd <= 0.5) sel.value = best;
+        };
+        near(ac, h.exit); near(bc, h.entry);
+      }, 400);
+    };
+    put();
+    techHandoff = null;
+  }
+
+  // Обратно: из Technician в Clipping — по коду шва, с которым пришли.
+  function backToClippingFromTech(code) {
+    const nav = document.querySelector('#nav button[data-view="audition"]');
+    if (nav) nav.click();
+    if (!code) return;
+    setTimeout(function () {
+      const box = document.getElementById("aud-seed");
+      if (box) { box.value = String(code); audApplyCode(); }
+    }, 120);
+  }
+
+  // ------------------------------------------------------ код шва
+  //
+  // Число, посчитанное от ВСЕГО состояния перехода: пара треков, приём,
+  // точки стыка, длина, эффекты, форма ведения и ручные параметры
+  // приёма. Одинаковое состояние — одинаковый код, всегда.
+  //
+  // Прежний seed был номером РАСКЛАДА: он задавал порядок перебора и
+  // ничего не говорил о том, ЧТО сейчас на экране. Вернуться по нему к
+  // конкретному переходу было нельзя.
+  //
+  // Состояние собирается здесь, а код считает сервер — ему же его и
+  // расшифровывать. Запрос идемпотентный: то же состояние вернёт тот же
+  // номер, ничего не накапливая.
+  function audSeamState(seam) {
+    if (!seam) return null;
+    return {
+      a_path: seam.a_path, b_path: seam.b_path,
+      technique_id: seam.technique_id, pair_label: seam.pair_label,
+      exit_seconds: seam.exit_seconds, entry_seconds: seam.entry_seconds,
+      bars: seam.bars,
+      fx_out: audFxId("out"), fx_in: audFxId("in"),
+      // Настройки эффекта — часть состояния, а не украшение: «эхо на
+      // 1/4 с силой 40%» и «эхо на 3/4 на полную» звучат по-разному, и
+      // код шва обязан их различать.
+      fx_out_opts: audFxOptsFor("out"), fx_in_opts: audFxOptsFor("in"),
+      fx_own_out: audFxOwnOptsFor("out"), fx_own_in: audFxOwnOptsFor("in"),
+      mix_profile: seam.mix_profile || null,
+      // Ручные параметры приёма — то, чем диджей доводит технику. Без
+      // них код описывал бы «тот же приём», а звучало бы иначе.
+      params: (seam.params && seam.params.param_overrides) || seam.param_overrides || null,
+    };
+  }
+
+  let audCodeFor = "";
+
+  async function audRefreshCode(seam) {
+    const box = document.getElementById("aud-seed");
+    if (!box || !seam) return;
+    const state = audSeamState(seam);
+    const key = JSON.stringify(state);
+    if (key === audCodeFor) return;        // состояние то же — и код тот же
+    audCodeFor = key;
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/audition/code", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({state: state}),
+      })).json();
+      if (r.code == null) return;
+      seam.code = String(r.code);
+      const el = document.getElementById("aud-seed");
+      if (el) el.value = seam.code;
+    } catch (e) { /* без кода карточка работает как раньше */ }
+  }
+
+  async function audApplyCode() {
+    const box = document.getElementById("aud-seed");
+    const note = document.getElementById("aud-code-note");
+    if (!box) return;
+    const raw = String(box.value || "").trim();
+    if (!/^\d+$/.test(raw)) {
+      if (note) note.textContent = "код — это число из поля слева";
+      return;
+    }
+    if (note) note.textContent = "собираю…";
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/audition/code/" + encodeURIComponent(raw));
+      const r = await resp.json();
+      if (!resp.ok || !r.state) {
+        if (note) note.textContent = r.detail || "код не найден";
+        return;
+      }
+      const st = r.state;
+      // Эффекты — состояние экрана, а не шва: ставим их отдельно.
+      ["out", "in"].forEach(function (side) {
+        const id = side === "out" ? st.fx_out : st.fx_in;
+        const list = audFxList(side);
+        const i = list.findIndex(function (x) { return x.id === id; });
+        audFxOn[side] = i >= 0;
+        if (i >= 0) audFxIdx[side] = i;
+        const opts = side === "out" ? st.fx_out_opts : st.fx_in_opts;
+        audFxOpts[side] = (i >= 0 && opts) ? Object.assign({}, opts) : {};
+      });
+      const seam = Object.assign({}, audSeam || {}, {
+        a_path: st.a_path, b_path: st.b_path,
+        technique_id: st.technique_id, pair_label: st.pair_label,
+        exit_seconds: st.exit_seconds, entry_seconds: st.entry_seconds,
+        bars: st.bars, mix_profile: st.mix_profile || null, code: raw,
+      });
+      audTechniques = [];
+      renderSeam(seam);
+      if (note) note.textContent = "собран по коду";
+      auditionPlay();
+    } catch (e) {
+      if (note) note.textContent = "не вышло: " + e;
+    }
+  }
+
+  // ------------------------------------------------ лестница «Roll»
+  //
+  // Диджей описал её так: «перебирать все лучшие стыки на данном приёме,
+  // если их нет — менять приёмы, если их нет — менять трек B».
+  //
+  // Это именно ЛЕСТНИЦА, а не четыре отдельные кнопки, и порядок в ней
+  // — порядок стоимости. Переставить точки стыка дёшево: те же два
+  // трека, тот же приём, меняется только место. Сменить приём дороже:
+  // переход зазвучит иначе целиком. Сменить трек — дороже всего: это
+  // уже другая музыка. Поэтому одна кнопка идёт снизу вверх и сама
+  // поднимается на ступень, когда нижняя исчерпана.
+  //
+  // Чем меряется «кончились». Сервер на «другой стык» отдаёт total —
+  // сколько стыковок у этой пары с этим приёмом вообще есть. Как только
+  // показанных столько же, ступень пройдена. Для приёмов так же:
+  // techniques_ranked отдаёт список, и он конечен.
+  let audJunctionTotal = 0;
+  // Сколько стыковок приём РЕКОМЕНДУЕТ. Ступень «стыковки» ходит только
+  // по ним: диджей просил «сначала стыковки только те, что
+  // рекомендуются техникой, потом смена техники, и только потом смена
+  // трека». Раньше ступень перебирала и экспериментальные — приём
+  // играл там, где задуман не был, и до смены приёма дело доходило
+  // через десяток заведомо неудачных вариантов.
+  let audJunctionRec = 0;
+  let audSeenTech = [];
+  // Какие длины уже слушали на этом приёме и стыке.
+  let audSeenBars = [];
+  let audSeenTechKey = "";
+
+  function audResetLadder(seam, level) {
+    // level: 0 — сбросить всё (новая пара), 1 — только стыки (новый приём)
+    const pairKey = (seam && seam.a_path || "") + "|" + (seam && seam.b_path || "");
+    audSeenJunctionKey = pairKey + "|" + (seam && seam.technique_id || "");
+    audSeenJunction = [];
+    audJunctionTotal = 0;
+    audJunctionRec = 0;
+    audSeenBars = [];
+    if (level === 0) {
+      audSeenTechKey = pairKey;
+      audSeenTech = [];
+    }
+  }
+
+  function audRollNote(text) {
+    const n = document.getElementById("aud-roll-note");
+    if (n) n.textContent = text || "";
+  }
+
+  async function audRollLadder() {
+    if (!audSeam) return;
+    const pairKey = (audSeam.a_path || "") + "|" + (audSeam.b_path || "");
+    if (pairKey !== audSeenTechKey) audResetLadder(audSeam, 0);
+    if (audSeam.technique_id &&
+        audSeenTech.indexOf(audSeam.technique_id) < 0) {
+      audSeenTech.push(audSeam.technique_id);
+    }
+
+    // ПОРЯДОК ЛЕСЕНКИ. Диджей: «при roll в первую очередь меняются
+    // стили [приёмы], потом стыки, потом такты».
+    //
+    // Раньше первой шла стыковка, и это было неверно по смыслу: на
+    // одном и том же стыке разные приёмы звучат СОВЕРШЕННО по-разному
+    // (рез против длинного бленда), а один приём на разных стыках — это
+    // вариации одного и того же. Перебирать вариации прежде сути значит
+    // десяток нажатий слушать почти одно.
+
+    // Ступень 1: следующий приём. Список приходит с карточкой уже
+    // отсортированным по пригодности (стык, жанр, вкус, слои, разрыв).
+    const next = (audTechniques || []).filter(function (x) {
+      return x.ok && audSeenTech.indexOf(x.id) < 0;
+    })[0];
+    if (next) {
+      audSeenTech.push(next.id);
+      audRollNote("приём " + next.id + " · " + (next.name || ""));
+      audResetLadder(Object.assign({}, audSeam, {technique_id: next.id}), 1);
+      await audSwapTechnique(next.id);
+      return;
+    }
+
+    // Ступень 2: стыковки, на которых приём рекомендован. Не все
+    // подряд: экспериментальные приём тоже сыграет, но задуман он не
+    // для них.
+    const limit = audJunctionRec || audJunctionTotal;
+    const junctionsLeft = !audJunctionTotal || audSeenJunction.length < limit;
+    if (junctionsLeft) {
+      audRollNote("приёмы кончились — другая стыковка");
+      await audLucky("other-sections");
+      return;
+    }
+
+    // Ступень 3: другая длина. Меняет пропорции, не трогая ни приём, ни
+    // точки, — самая мелкая ручка, поэтому и последняя перед сменой
+    // трека.
+    const opts = (audSeam.bars_options || []).filter(function (n) {
+      return audSeenBars.indexOf(n) < 0;
+    });
+    if (opts.length) {
+      audSeenBars.push(opts[0]);
+      audRollNote("стыковки кончились — " + opts[0] + " тактов");
+      await audSetBars(opts[0]);
+      return;
+    }
+
+    // Ступень 4: другой трек B. Дальше лестницы нет — начинаем сначала
+    // уже на новой паре.
+    audRollNote("всё перебрано — другой трек B");
+    await audLucky("swap-b");
+    audResetLadder(audSeam, 0);
+    audSeenBars = [];
+  }
+
   async function audLucky(kind) {
     if (!audSeam) return;
     const st = document.getElementById("aud-status");
     if (st) {
-      st.textContent = kind === "lucky" ? "перебираю комбинации…"
+      st.textContent = kind === "roll" ? "ищу следующий вариант…"
         : kind === "other-pair" ? "беру другую пару из библиотеки…"
+        : kind === "other-sections" ? "переставляю точки стыка…"
         : "ищу близкий трек…";
     }
     audNoteSeen(audSeam);
     const body = {seam: audSeam, limit: 1};
-    if (kind === "lucky") body.seen = audSeen.slice();
+    // Пул треков сужает поиск: «другая пара» и «сменить трек B» берут
+    // только из отложенного, если диджей так попросил.
+    if (audPoolOnly && audPoolOnly.length > 1) body.only_paths = audPoolOnly;
+    if (kind === "roll") {
+      body.seen = audSeen.slice();
+      body.exclude = audUsedPaths();
+      const sf = document.getElementById("aud-seed");
+      const raw = sf ? String(sf.value || "").trim() : "";
+      // Пустое поле — осознанный запрос нового расклада, а не «оставь
+      // прежний»: иначе кнопка навсегда залипала бы на первом.
+      body.seed = /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
+    }
+    else if (kind === "other-sections") {
+      const key = (audSeam.a_path || "") + "|" + (audSeam.b_path || "") +
+                  "|" + (audSeam.technique_id || "");
+      if (key !== audSeenJunctionKey) { audSeenJunctionKey = key; audSeenJunction = []; }
+      const ck = audComboKey(audSeam);
+      if (ck && audSeenJunction.indexOf(ck) < 0) audSeenJunction.push(ck);
+      body.seen = audSeenJunction.slice();
+    }
     else body.exclude = audUsedPaths();
     try {
       const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
@@ -2410,7 +3477,8 @@
         body: JSON.stringify(body),
       })).json();
       if (r.detail) { if (st) st.textContent = r.detail; return; }
-      if (kind !== "lucky" && r.seam && r.seam.b_path &&
+      if (r.source === "pair_new") { audSeen = []; audTriedB = []; }
+      if (kind !== "roll" && r.seam && r.seam.b_path &&
           audTriedB.indexOf(r.seam.b_path) < 0) {
         audTriedB.push(r.seam.b_path);
       }
@@ -2418,10 +3486,32 @@
       audNoteSeen(r.seam);
       renderSeam(r.seam);
       if (st) {
-        st.textContent = kind === "lucky"
-          ? "перебрано комбинаций: " + (r.tried || 0) +
-            "; показано на этой паре: " + audSeen.length
-          : "";
+        if (kind === "roll") {
+          if (typeof r.seed === "number") {
+            audSeed = r.seed;
+            const sf2 = document.getElementById("aud-seed");
+            if (sf2) sf2.value = String(r.seed);
+          }
+          st.textContent = "расклад " + (r.seed != null ? r.seed : "?") +
+            (r.source === "pair_new"
+              ? "; варианты пары кончились — взял новую пару"
+              : "; вариант " + audSeen.length + " на этой паре");
+        } else if (kind === "other-sections") {
+          const ck2 = audComboKey(r.seam);
+          if (ck2 && audSeenJunction.indexOf(ck2) < 0) audSeenJunction.push(ck2);
+          audJunctionTotal = parseInt(r.total, 10) || 0;
+          audJunctionRec = parseInt(r.recommended, 10) || 0;
+          const exp = r.kind === "experimental";
+          const cap = audJunctionRec || audJunctionTotal;
+          st.textContent = (exp
+              ? "экспериментальная стыковка — приём задуман не для неё"
+              : "рекомендованная стыковка для этого приёма") +
+            " · " + audSeenJunction.length + " из " + cap +
+            (audJunctionRec && audJunctionTotal > audJunctionRec
+              ? " рекомендованных (всего " + audJunctionTotal + ")" : "");
+        } else {
+          st.textContent = "";
+        }
       }
       auditionPlay();
     } catch (e) { if (st) st.textContent = "не удалось: " + e; }
@@ -2652,7 +3742,7 @@
     const old = item.querySelector("audio");
     if (old) old.remove();
     const el = document.createElement("audio");
-    el.controls = true; el.src = url; el.autoplay = true;
+    el.controls = true; el.src = mediaUrl(url); el.autoplay = true;
     item.appendChild(el);
     return el;
   }
@@ -2788,8 +3878,11 @@
         return;
       }
       const seam = r.seam;
+      // Профиль, с которым шов одобряли, кладём В ШОВ: он должен
+      // звучать так же, как звучал тогда, а не так, как посчиталось бы
+      // сейчас. Пересчёт включится, только если поменять такты.
       if (x.params && x.params.mix_profile) {
-        audProfile = Object.assign({}, audProfile, x.params.mix_profile);
+        seam.mix_profile = x.params.mix_profile;
       }
       audEditingPoolId = x.id;
       audFromPlan = null;
@@ -2826,7 +3919,15 @@
     }
     try {
       const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/audition/next")).json();
-      if (r.detail) { document.getElementById("aud-card").innerHTML = '<div class="empty">' + escapeHtml(r.detail) + "</div>"; return; }
+      // Та же беда, что и с «швов больше нет»: ответ сервера затирал
+      // карточку. Если человеку есть с чем работать — сообщение идёт
+      // плашкой, а карточка остаётся.
+      if (r.detail) {
+        if (audSeam) audNotice(String(r.detail));
+        else document.getElementById("aud-card").innerHTML =
+          '<div class="empty">' + escapeHtml(r.detail) + "</div>";
+        return;
+      }
       renderAudProgress(r.progress);
       renderSeam((r.candidates || [])[0] || null);
       loadPool();
@@ -2849,22 +3950,56 @@
           // Длина со шва: на карточке написано «32 такта», и звучать
           // должно ровно столько. Раньше демо всегда шло 38 секунд.
           bars: audSeam.bars,
-          mix_profile: audProfile.entry === "technique" ? null : audProfile,
+          // null — «посчитай сам»: так бывает после смены тактов.
+          // Ответ вернётся в r.mix_profile и ляжет в шов.
+          mix_profile: audSeam.mix_profile || null,
+          pair_label: audSeam.pair_label,
+          fx_out: audFxId("out"),
+          fx_in: audFxId("in"),
+          fx_out_opts: audFxOptsFor("out"),
+          fx_in_opts: audFxOptsFor("in"),
+          fx_own_out: audFxOwnOptsFor("out"),
+          fx_own_in: audFxOwnOptsFor("in"),
         }),
       })).json();
       if (!r.url && !r.filename) { st.textContent = "не вышло: " + (r.detail || r.error || "нет файла"); return; }
+      // Сервер вернул форму, которой свёл. Кладём её в шов: подпись под
+      // карточкой и то, что уедет в пул, обязаны совпадать с тем, что
+      // прозвучало.
+      if (r.mix_profile && audSeam) {
+        audSeam.mix_profile = r.mix_profile;
+        const pn = document.getElementById("aud-profile-note");
+        if (pn) pn.innerHTML = audProfileText(audSeam);
+      }
       const url = r.url || ("/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/demo/" + r.filename);
       audDemoFile = (r.url || "").split("/").pop() || r.filename || null;
       const el = document.getElementById("aud-audio");
       if (!el) return;
       el.style.display = "block";
-      el.src = url;
+      el.src = mediaUrl(url);
       el.volume = audVolume;
       el.onvolumechange = function () { audVolume = el.volume; };
       audAudio = el;
-      el.play();
-      st.textContent = "играет — " + (r.seconds ? r.seconds.toFixed(1) + " с" : "") +
+      // play() возвращает обещание, и оно УМЕЕТ отказывать: файл не
+      // отдался, формат не тот, браузер не разрешил автозапуск. Раньше
+      // подпись «играет» ставилась не глядя — и при полной тишине
+      // человек читал, что всё хорошо, и шёл искать поломку в колонках.
+      const ok = (function () {
+        try { return el.play(); } catch (err) { return Promise.reject(err); }
+      })();
+      const label = "играет — " + (r.seconds ? r.seconds.toFixed(1) + " с" : "") +
         " (полоса ниже — перемотка и громкость)";
+      if (ok && typeof ok.then === "function") {
+        ok.then(function () { st.textContent = label; })
+          .catch(function (err) {
+            st.textContent = (err && err.name === "NotAllowedError")
+              ? "браузер не дал запустить звук сам — нажмите ▶ на полосе ниже"
+              : "звук не пошёл: " + ((err && err.message) || err) +
+                ". Файл: " + url;
+          });
+      } else {
+        st.textContent = label;
+      }
     } catch (e) { st.textContent = "не удалось: " + e; }
   }
 
@@ -2926,9 +4061,9 @@
       // экрана. Иначе одобряешь то, что свёл руками, а в пуле, в сете и
       // на деках играет кроссфейд приёма — и звучит разрозненно.
       const seamToSave = Object.assign({}, audSeam);
-      if (audProfile.entry !== "technique") {
+      if (audSeam.mix_profile) {
         seamToSave.params = Object.assign({}, audSeam.params || {},
-                                          {mix_profile: Object.assign({}, audProfile)});
+                                          {mix_profile: audSeam.mix_profile});
       }
       const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/audition/verdict", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -3132,7 +4267,7 @@
       } else if (msg.type === "companion_status") {
         setCompanionStatus(!!msg.connected);
       } else if (msg.type === "recording_ready") {
-        downloadLink.href = msg.url;
+        downloadLink.href = mediaUrl(msg.url);
         downloadLink.style.display = "inline-block";
         addMessage("Запись готова к скачиванию.", "system");
       } else if (msg.type === "library_updated") {
@@ -3328,9 +4463,220 @@
   // отбор будет резать её саму, то поиск «174» в Библиотеке молча
   // оставил бы подбор пары с двумя треками.
   let libraryView = null;          // null = отбора нет, показываем всё
+  // ====================== ПУЛ ТРЕКОВ ======================
+  //
+  // Не путать с пулом ПЕРЕХОДОВ. Диджей назвал разницу сам:
+  //
+  //     как только выделенные файлы добавить в clipping и в ControlC
+  //     через какой-нибудь пул треков, но не тот, что пул переходов
+  //     для сета, собираемый в Clipping
+  //
+  // Пул переходов — одобренные швы (пара + приём + точки). Пул треков —
+  // просто отложенные вещи, с которыми дальше работают обе вкладки.
+  // Хранится на сервере (track_pool.py), поэтому переживает перезагрузку
+  // страницы и виден из любой вкладки.
+  let trackPool = [];
+  // Ограничения, которые пул накладывает на две другие вкладки.
+  let audPoolOnly = null;     // Clipping: искать только среди этих
+  let ctrlFromPool = null;    // ControlC: собирать сет из этих
+  // «Снял ограничение» — это РЕШЕНИЕ, а не пустое значение. Без
+  // отдельного флага «Построить план» снова подхватывал бы пул, и
+  // кнопка «снять ограничение» работала бы ровно до следующего
+  // нажатия — то есть не работала бы.
+  let audPoolReleased = false;
+  let ctrlPoolReleased = false;
+
+  async function poolLoad() {
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/track-pool")).json();
+      trackPool = r.tracks || [];
+    } catch (e) { trackPool = []; }
+    poolRender();
+  }
+
+  // Полоса пула треков для Clipping и ControlC.
+  //
+  // В Library пул виден целиком, а из двух других вкладок его не было
+  // видно вовсе — и снять ограничение оттуда было нечем. Диджей:
+  // «нет кнопки очистки ни в клиппинг, ни в ControlC». Полоса
+  // показывает, сколько отложено и ограничивает ли пул эту вкладку, и
+  // даёт снять ограничение, не возвращаясь в библиотеку.
+  function poolStripRender() {
+    ["aud-pool-strip", "ctrl-pool-strip"].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const clip = id === "aud-pool-strip";
+      const limited = clip ? (audPoolOnly && audPoolOnly.length > 1)
+                           : (ctrlFromPool && ctrlFromPool.length > 1);
+      const n = trackPool.length;
+      if (!n) { el.style.display = "none"; return; }
+      el.style.display = "flex";
+      el.innerHTML =
+        '<b>★ Пул треков: ' + n + "</b>" +
+        '<span class="hint">' + (limited
+          ? (clip ? "швы ищутся только среди них" : "сет собирается из них")
+          : "ограничение не включено") + "</span>" +
+        '<span class="spacer"></span>' +
+        (limited
+          ? '<button class="ghost" data-pool-free="' + id +
+            '" title="Искать снова по всей библиотеке. Пул останется.">✕ снять ограничение</button>'
+          : '<button class="ghost" data-pool-use="' + id +
+            '" title="Работать только с отложенными треками">★ только пул</button>') +
+        '<button class="ghost" data-pool-wipe="1" title="Очистить пул треков. Библиотеку не трогает.">🗑 очистить пул</button>';
+      el.querySelectorAll("[data-pool-free]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (clip) { audPoolOnly = null; audPoolReleased = true; }
+          else { ctrlFromPool = null; ctrlPoolReleased = true; }
+          poolStripRender();
+        });
+      });
+      el.querySelectorAll("[data-pool-use]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (clip) { audPoolOnly = poolPaths(); audPoolReleased = false; }
+          else { ctrlFromPool = poolPaths(); ctrlPoolReleased = false; }
+          poolStripRender();
+        });
+      });
+      el.querySelectorAll("[data-pool-wipe]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          audPoolOnly = null;
+          ctrlFromPool = null;
+          poolRemove(null, true);
+        });
+      });
+    });
+  }
+
+  function poolRender() {
+    const bar = document.getElementById("pool-bar");
+    const list = document.getElementById("pool-list");
+    if (!bar || !list) return;
+    const n = trackPool.length;
+    bar.style.display = n ? "flex" : "none";
+    list.style.display = n ? "flex" : "none";
+    const cnt = document.getElementById("pool-count");
+    if (cnt) cnt.textContent = n + " " + (n % 10 === 1 && n % 100 !== 11 ? "трек"
+      : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "трека" : "треков"));
+    list.innerHTML = trackPool.map(function (t) {
+      const nm = (t.name || t.path || "").split(/[\\/]/).pop();
+      return '<span class="pool-chip" title="' + escapeHtml(t.path || "") + '">' +
+        escapeHtml(nm.length > 34 ? nm.slice(0, 31) + "…" : nm) +
+        '<button data-pool-del="' + escapeHtml(t.path || "") + '" title="Убрать из пула">✕</button></span>';
+    }).join("");
+    list.querySelectorAll("[data-pool-del]").forEach(function (el) {
+      el.addEventListener("click", function () { poolRemove([el.dataset.poolDel]); });
+    });
+    poolStripRender();
+  }
+
+  async function poolAdd(paths) {
+    if (!paths || !paths.length) return;
+    try {
+      const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/track-pool", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({paths: paths})})).json();
+      const info = document.getElementById("lib-sel-info");
+      if (info && r.added != null) {
+        info.textContent = r.added ? ("отложено " + r.added) : "уже в пуле";
+      }
+    } catch (e) { /* пул — удобство, падать из-за него нечему */ }
+    // Отложили что-то новое — значит ограничение снова нужно: отказ
+    // относился к прежнему составу пула, а не к самой идее.
+    audPoolReleased = false;
+    ctrlPoolReleased = false;
+    poolLoad();
+  }
+
+  async function poolRemove(paths, all) {
+    try {
+      await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/track-pool/remove", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(all ? {all: true} : {paths: paths})});
+    } catch (e) { /* см. выше */ }
+    poolLoad();
+  }
+
+  function poolPaths() { return trackPool.map(function (t) { return t.path; }); }
+
   let libPicked = new Set();       // пути выбранных строк
 
-  function libRows() { return libraryView || libraryCache; }
+  // Сортировка библиотеки. Живёт в клиенте: все треки уже здесь, и
+  // ходить за этим на сервер незачем.
+  let libSort = {key: null, dir: 1};
+
+  // Имя для показа: без номера в плейлисте и без «01 - Альбом - ».
+  //
+  // Папки диджей раскладывает руками, и плееры пишут в начало имени
+  // порядковый номер. Для СВЕДЕНИЯ этот номер не значит ничего, а
+  // сортировку по имени ломает начисто: «02. Current Value» встаёт
+  // между «01…» и «03…», а не к букве C, где его ищут глазом.
+  //
+  // Режем осторожно: «2Pac», «4 Hero», «808 State» и «16bit» — это
+  // ИМЕНА, а не номера. Поэтому номером считается только то, за чем
+  // стоит разделитель (точка, дефис, скобка) и пробел.
+  function cleanName(name) {
+    let v = String(name || "").replace(/\.(mp3|wav|flac|aiff?|m4a|ogg)$/i, "");
+    // «02. », «02 - », «02) », «[02] », и до двух таких групп подряд
+    // («01 - 05 - Имя» встречается у сборников).
+    for (let k = 0; k < 2; k++) {
+      // Два случая: «02. », «02 - » — цифры и разделитель; и «[03] »,
+      // «(03) » — цифры В СКОБКАХ, где скобка сама и есть разделитель.
+      v = v.replace(/^\s*\d{1,3}\s*[.\-–—)]\s+/, "")
+           .replace(/^\s*[\[(]\d{1,3}[\])]\s+/, "");
+    }
+    return v.trim() || String(name || "");
+  }
+
+  function libSortKey(tr, key) {
+    switch (key) {
+      case "name":   return cleanName(tr.name).toLowerCase();
+      case "genre":  return ((tr.genre || "") + " " + (tr.subgenre || "")).trim().toLowerCase();
+      case "bpm":    return Number(tr.bpm) || 0;
+      case "key":    return String(tr.camelot || tr.key || "");
+      case "energy": return Number(tr.energy) || 0;
+      case "dur":    return Number(tr.duration_seconds) || 0;
+      case "stems":  return (tr.has_stems || tr.stems) ? 1 : 0;
+      default:       return 0;
+    }
+  }
+
+  function libRows() {
+    const base = libraryView || libraryCache;
+    if (!libSort.key) return base;
+    // Копия, а не сортировка на месте: libraryCache — это источник для
+    // всего остального, и переставлять его под собой нельзя.
+    const out = base.slice();
+    out.sort(function (a, b) {
+      const x = libSortKey(a, libSort.key), y = libSortKey(b, libSort.key);
+      if (x < y) return -libSort.dir;
+      if (x > y) return libSort.dir;
+      // Развязка по имени: иначе треки с одинаковым BPM прыгают между
+      // перерисовками, и глазу не за что зацепиться.
+      const nx = cleanName(a.name).toLowerCase(), ny = cleanName(b.name).toLowerCase();
+      return nx < ny ? -1 : nx > ny ? 1 : 0;
+    });
+    return out;
+  }
+
+  function libBindSort() {
+    document.querySelectorAll(".lib-table th.sortable").forEach(function (th) {
+      if (th.dataset.wired) return;
+      th.dataset.wired = "1";
+      th.addEventListener("click", function () {
+        const k = th.dataset.sort;
+        if (libSort.key === k) libSort.dir = -libSort.dir;
+        else { libSort.key = k; libSort.dir = 1; }
+        document.querySelectorAll(".lib-table th.sortable").forEach(function (o) {
+          o.classList.remove("sort-asc", "sort-desc");
+        });
+        th.classList.add(libSort.dir > 0 ? "sort-asc" : "sort-desc");
+        renderLibrary();
+      });
+    });
+  }
+
 
   function renderLibrary() {
     const rows = libRows();
@@ -3353,13 +4699,15 @@
       return;
     }
     emptyEl.style.display = "none";
+    libBindSort();
     tbody.innerHTML = "";
     rows.forEach(function (tr, i) {
       const row = document.createElement("tr");
       const on = libPicked.has(tr.path) ? " checked" : "";
       row.innerHTML =
         '<td class="pick"><input type="checkbox" data-path="' + escapeHtml(tr.path || "") + '"' + on + "></td>" +
-        "<td>" + escapeHtml(tr.name || "") + "</td>" +
+        '<td title="' + escapeHtml(tr.name || "") + '">' +
+          escapeHtml(cleanName(tr.name)) + "</td>" +
         "<td>" + stemsCell(tr) + "</td>" +
         "<td>" + genreCell(tr) + "</td>" +
         "<td>" + (tr.bpm !== undefined && tr.bpm !== null ? Number(tr.bpm).toFixed(1) : "—") + "</td>" +
@@ -3384,6 +4732,8 @@
     const n = libPicked.size;
     document.getElementById("lib-sel-info").textContent = n ? ("выбрано " + n) : "";
     document.getElementById("lib-del-btn").disabled = !n;
+    const pb = document.getElementById("lib-pool-btn");
+    if (pb) pb.disabled = !n;
     const all = document.getElementById("lib-pick-all");
     const rows = libRows();
     if (all) all.checked = rows.length > 0 && rows.every(t => libPicked.has(t.path));
@@ -3514,15 +4864,164 @@
 
   function renderAnalyzeSteps(plan) {
     // «-1» значит «заранее не сосчитать» — см. комментарий на сервере.
-    analyzeStepsEl.innerHTML = plan.steps.map(function (st) {
+    const one = function (st) {
       const known = st.missing >= 0;
       const cnt = !known ? "" : (st.missing ? st.missing : "нечего");
-      return '<label title="' + escapeHtml(st.why) + '">' +
+      return '<label title="' + escapeHtml(st.why) + '"' +
+        (st.heavy ? ' class="heavy"' : "") + '>' +
         '<input type="checkbox" data-step="' + st.key + '"' +
         (st.default ? " checked" : "") + '> ' + escapeHtml(st.title) +
         (cnt ? ' <span class="cnt' + (st.missing ? " need" : "") + '">(' + cnt + ')</span>' : "") +
         '</label>';
-    }).join("");
+    };
+    const light = plan.steps.filter(function (x) { return !x.heavy; });
+    const heavy = plan.steps.filter(function (x) { return x.heavy; });
+
+    // Слои вынесены в отдельный блок с ценой вопроса.
+    //
+    // Раньше они стояли галочкой по умолчанию в общем ряду, и человек
+    // нажимал «Анализ библиотеки» не зная, что подписался на часы
+    // счёта. На лендинге при этом честно написано, что пакет слоёв
+    // необязателен — то есть интерфейс противоречил обещанию.
+    let block = "";
+    if (heavy.length) {
+      const d = plan.stems_device || {};
+      let line;
+      // Кнопки «Скачать пакет слоёв» не существует — я написал эту
+      // строку по комментарию-намерению в stems.py и отправил диджея
+      // искать то, чего нет. Теперь заголовок говорит, ЧТО не так, а
+      // что делать — ниже, из stems.STEMS_MISSING_HINT: один текст на
+      // интерфейс и на проверку способа, разъехаться им нечем.
+      if (!d.demucs) {
+        line = "Пакет слоёв не установлен — шаг ничего не посчитает.";
+      } else if (!d.torch) {
+        // demucs нашёлся, а torch в том же Python сломан. Раньше этот
+        // случай проваливался в «считает процессор, 40 минут на трек»
+        // — то есть в оценку времени для того, что вообще не запустится.
+        line = "Слои есть чем считать, но torch в том же Python не " +
+               "поднимается — шаг упадёт на первом же треке.";
+      } else if (d.cuda) {
+        line = "Считает видеокарта" + (d.name ? " (" + d.name + ")" : "") +
+               ": примерно " + d.eta_minutes + " мин на " + d.tracks + " треков.";
+      } else {
+        line = "⚠ Видеокарта не используется — считать будет процессор: " +
+               "примерно " + d.eta_minutes + " мин (" +
+               (d.eta_minutes >= 120 ? Math.round(d.eta_minutes / 60) + " ч" : "меньше часа") +
+               ") на " + d.tracks + " треков. Полоса будет двигаться очень медленно — " +
+               "это не зависание.";
+      }
+      // Кнопка установки — только когда ставить и правда нечего или
+      // сломано. Показывать её рядом с работающими слоями значит
+      // предлагать двадцатиминутную закачку тому, у кого всё есть.
+      const needPack = !d.demucs || !d.torch;
+      block = '<div class="heavy-block">' +
+        '<div class="heavy-head">Разделение на слои — отдельно</div>' +
+        heavy.map(one).join("") +
+        '<div class="heavy-note' + (d.cuda ? "" : " warn") + '">' + escapeHtml(line) + "</div>" +
+        (d.note && !(d.cuda && d.demucs)
+          ? '<div class="heavy-hint">' + escapeHtml(d.note) + "</div>" : "") +
+        // Слои, оставшиеся в старой папке. Без этой строки программа
+        // молча пересчитала бы их заново — часы работы видеокарты и ни
+        // слова о причине.
+        // Треки, у которых слои есть только в .stem.mp4. По ним нельзя
+        // посчитать ни карту вокала, ни признаки слоёв: считать есть по
+        // чему, а записать результат некуда — meta.json живёт в папке
+        // слоёв. Раньше они молча сидели в счётчиках, и те не доходили
+        // до нуля никогда.
+        (plan.mp4_only
+          ? '<div class="heavy-hint">' + plan.mp4_only + " треков лежат одним " +
+            ".stem.mp4, без папки слоёв. Играть по слоям и считать разметку " +
+            "это не мешает — карта вокала и признаки слоёв ложатся файлом-" +
+            "спутником рядом с mp4. «Разделение на слои» им нужно только " +
+            "ради лучшего качества и возможности резать слои по отдельности.</div>"
+          : "") +
+        (plan.stems_legacy && plan.stems_legacy.count
+          ? '<div class="heavy-note warn">Слои от прежней версии: ' +
+            plan.stems_legacy.count + " треков лежат в старой папке и " +
+            "сейчас не видны — иначе они посчитаются заново.</div>" +
+            '<div class="heavy-hint">Перенесите один раз (PowerShell):\n' +
+            'robocopy "' + escapeHtml(plan.stems_legacy.path) + '" "' +
+            escapeHtml(plan.stems_legacy.to) + '" /E /MOVE /R:1 /W:1</div>'
+          : "") +
+        (needPack ? '<div class="heavy-install" id="stem-install"></div>' +
+                    '<div class="install-log" id="stem-install-log" hidden></div>' : "") +
+        "</div>";
+    }
+    analyzeStepsEl.innerHTML = light.map(one).join("") + block;
+    paintStemInstall();
+  }
+
+  // ------------------- установка пакета слоёв
+  //
+  // Долгая операция (гигабайты из PyPI), поэтому здесь ровно то же
+  // устройство, что у разделения: запустили — и опрашиваем статус,
+  // показывая живой вывод. Без вывода двадцать минут тишины неотличимы
+  // от зависания, а это ровно та жалоба, с которой начался весь разбор
+  // тяжёлых шагов.
+  let stemInstallPoll = null;
+
+  async function paintStemInstall() {
+    const box = document.getElementById("stem-install");
+    if (!box) { stopStemInstallPoll(); return; }
+    let st = { running: false, ok: null, tail: [], available: false };
+    try {
+      st = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                              "/stems/install")).json();
+    } catch (e) { /* сеть отвалилась — оставим кнопку как есть */ }
+
+    if (!st.available) {
+      box.innerHTML = '<span class="state">Автоустановка доступна только в ' +
+        "Windows-сборке. Иначе: pip install -r requirements-stems.txt в " +
+        "отдельный Python 3.10-3.12.</span>";
+      return;
+    }
+    const busy = !!st.running;
+    box.innerHTML = '<button id="stem-install-btn"' + (busy ? " disabled" : "") + ">" +
+      (busy ? "Ставлю…" : "Поставить пакет слоёв") + "</button>" +
+      '<span class="state">' + escapeHtml(
+        busy ? "качаю torch и demucs, 20-40 минут"
+             : (st.ok === false ? "прошлая попытка не дала рабочего demucs"
+                                : "≈2,5 ГБ из PyPI, права администратора не нужны")) +
+      "</span>";
+
+    const log = document.getElementById("stem-install-log");
+    if (log) {
+      const tail = st.tail || [];
+      log.hidden = !tail.length;
+      log.textContent = tail.join("\n");
+      log.scrollTop = log.scrollHeight;
+    }
+
+    const btn = document.getElementById("stem-install-btn");
+    if (btn && !busy) {
+      btn.addEventListener("click", async function () {
+        btn.disabled = true;
+        try {
+          const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                                "/stems/install", { method: "POST" });
+          const j = await r.json();
+          if (!r.ok) { addMessage(j.detail || "Не смог запустить установку", "system"); }
+          else { addMessage(j.detail || "Ставлю пакет слоёв", "system"); }
+        } catch (e) {
+          addMessage("Ошибка сети при установке пакета слоёв: " + e, "system");
+        }
+        startStemInstallPoll();
+      });
+    }
+    if (busy) startStemInstallPoll(); else if (st.ok !== null) stopStemInstallPoll();
+  }
+
+  function startStemInstallPoll() {
+    if (stemInstallPoll) return;
+    // Раз в три секунды: лог идёт медленно, pip печатает пачками.
+    stemInstallPoll = setInterval(async function () {
+      if (!document.getElementById("stem-install")) { stopStemInstallPoll(); return; }
+      await paintStemInstall();
+    }, 3000);
+  }
+
+  function stopStemInstallPoll() {
+    if (stemInstallPoll) { clearInterval(stemInstallPoll); stemInstallPoll = null; }
   }
 
   function chosenSteps() {
@@ -3732,6 +5231,37 @@
   // Три ступени по весу, а не одна кнопка. «Убрать из библиотеки» —
   // обратимо и покрывает девять случаев из десяти; файл при этом не
   // трогается вовсе. Стирание с диска спрашивается отдельно и словами.
+
+  // Кнопки пула треков. Все четыре — в одном месте, рядом с той, что
+  // удаляет из библиотеки: разницу между «отложить» и «убрать» видно.
+  (function wireTrackPool() {
+    const add = document.getElementById("lib-pool-btn");
+    if (add) add.addEventListener("click", function () {
+      poolAdd(Array.from(libPicked));
+    });
+    const clr = document.getElementById("pool-clear-btn");
+    if (clr) clr.addEventListener("click", function () { poolRemove(null, true); });
+    const toClip = document.getElementById("pool-clip-btn");
+    if (toClip) toClip.addEventListener("click", async function () {
+      // Clipping ищет швы только между треками пула.
+      audPoolOnly = poolPaths();
+      const nav = document.querySelector('#nav button[data-view="audition"]');
+      if (nav) nav.click();
+      const st = document.getElementById("aud-status");
+      if (st) st.textContent = "ищу швы только среди " + audPoolOnly.length + " треков пула";
+      await audLucky("other-pair");
+    });
+    const toCtrl = document.getElementById("pool-ctrl-btn");
+    if (toCtrl) toCtrl.addEventListener("click", async function () {
+      // ControlC собирает сет из пула — по сходимости, не по дуге.
+      ctrlFromPool = poolPaths();
+      const sel = document.getElementById("arc-shape-select");
+      if (sel) sel.value = "fit";
+      const nav = document.querySelector('#nav button[data-view="strategy"]');
+      if (nav) nav.click();
+      await buildStrategy(false);
+    });
+  })();
 
   document.getElementById("lib-del-btn").addEventListener("click", async function () {
     const paths = Array.from(libPicked);
@@ -4151,9 +5681,15 @@
   // вернуло бы автоподбор длины и сдвинуло все точки.
   let strategyFromPool = false;
 
-  async function buildStrategy(keepOverrides) {
+  async function buildStrategy(keepOverrides, skipLength) {
     if (!currentRoom) return;
     if (!keepOverrides) planOverrides = {};
+    // Пул треков подхватывается САМ: если диджей что-то отложил, план
+    // собирается из отложенного. Не подхватывать значило бы держать
+    // кнопку «сначала нажми там, потом здесь».
+    if (!ctrlFromPool && !ctrlPoolReleased && trackPool && trackPool.length > 1) {
+      ctrlFromPool = poolPaths();
+    }
     const shape = document.getElementById("arc-shape-select").value;
     const minutes = parseFloat(document.getElementById("target-minutes").value);
     const variant = parseInt(document.getElementById("variant-select").value || "0", 10);
@@ -4171,6 +5707,8 @@
           // его правка сильнее одобренного шва.
           overrides: Object.assign({}, poolOverridesByPair, planOverrides),
           track_order: manualOrder,
+          // Треки пула, если сет собирают из него. null — вся библиотека.
+          only_paths: ctrlFromPool && ctrlFromPool.length ? ctrlFromPool : null,
           only_mixable: strategyFromPool ? false : document.getElementById("only-mixable").checked,
           fit_mode: strategyFromPool ? "natural" : "compress",
           exclude: Array.from(excludedTracks),
@@ -4187,6 +5725,13 @@
       fillVariants(currentStrategy);
       fillGenreFilter(currentStrategy.genre_breakdown);
       renderStrategy();
+      poolStripRender();
+      // …и рекомендуемая длина. Пересобираем ОДИН раз и только если она
+      // вправду другая: иначе получился бы бесконечный круг.
+      if (!skipLength) {
+        const better = await suggestLength(true);
+        if (better) await buildStrategy(true, true);
+      }
     } catch (e) {
       body.innerHTML = '<div class="empty" style="padding:18px">Ошибка сети: ' + e + '</div>';
     }
@@ -4226,23 +5771,66 @@
         '<br><span style="opacity:.7">' + (dropped[0] ? dropped[0].reason : "") + '</span></div>';
     }
 
+    // Высота столбика — энергия, ШИРИНА — сколько трек реально звучит.
+    // Диджей: «пусть прямоугольники будут уже или шире, в зависимости
+    // от длины проигрываемого куска в этом треке». Раньше все были
+    // одинаковой ширины, и картинка врала: сорокасекундный кусок
+    // выглядел так же, как пятиминутный.
     html += '<div class="arc-chart">';
-    (s.energy_arc || []).forEach(function (el) {
+    const airs = (s.tracks || []).map(function (t) {
+      return Math.max(1, Number(t.airtime_seconds) || 0);
+    });
+    const airSum = airs.reduce(function (a, b) { return a + b; }, 0) || 1;
+    (s.energy_arc || []).forEach(function (el, i) {
       const h = 15 + el * 15;
-      html += '<div class="arc-bar" style="height:' + h + 'px;background:' + EL_COLORS[el] + '"></div>';
+      const air = airs[i] || (airSum / Math.max(1, airs.length));
+      const tr = (s.tracks || [])[i] || {};
+      // flex-grow пропорционально времени: сумма всегда заполняет
+      // ширину, как бы ни отличались куски.
+      html += '<div class="arc-bar" style="height:' + h + 'px;flex-grow:' +
+        (air / airSum * 1000).toFixed(1) + ';background:' + EL_COLORS[el] +
+        '" title="' + escapeHtml(String(tr.name || "")) + ' · EL' + el + ' · ' +
+        Math.round(air) + ' с в эфире"></div>';
     });
     html += '</div>';
     html += _timelineHtml(s);
 
-    html += '<div class="strategy-section"><h3>Треки (' + s.tracks.length + ')</h3>';
+    // Сколько стыков РЕАЛЬНО сошлось — то число, которое режим «по
+    // сходимости» и максимизирует. Его надо называть, а не только
+    // улучшать: иначе непонятно, стало лучше или нет.
+    const fitInfo = s.joins_ok != null
+      ? ' · сошлось ' + s.joins_ok + ' из ' + s.joins_total +
+        ' стыков (' + Math.round(s.joins_ok / Math.max(1, s.joins_total) * 100) + '%)'
+      : '';
+    html += '<div class="strategy-section"><h3>Треки (' + s.tracks.length + ')' +
+      '<span class="hint" style="font-weight:400;margin-left:8px">' + fitInfo +
+      '</span></h3>';
     s.tracks.forEach(function (tr, i) {
+      // Кнопки ↑↓ рядом с ручкой перетаскивания: порядок правится прямо
+      // здесь, без захода в «⚙ Настроить». Перетаскивание работало и
+      // раньше, но о нём надо было догадаться.
       html += '<div class="track-row" draggable="true" data-i="' + i + '">' +
         '<span class="grip" title="перетащите, чтобы поменять порядок">⠿</span>' +
+        '<button class="track-up" data-i="' + i + '" title="Выше по плану"' +
+        (i === 0 ? " disabled" : "") + '>↑</button>' +
+        '<button class="track-dn" data-i="' + i + '" title="Ниже по плану"' +
+        (i === s.tracks.length - 1 ? " disabled" : "") + '>↓</button>' +
         '<span class="idx">' + (i + 1) + '</span>' +
         '<span class="name">' + tr.name + '</span>' +
-        '<span style="color:var(--muted)">' + tr.bpm.toFixed(1) + ' BPM · ' + tr.camelot + ' · EL' + tr.el + '</span>' +
+        '<span style="color:var(--muted)">' + tr.bpm.toFixed(1) + ' BPM · ' + tr.camelot +
+        ' · EL' + tr.el +
+        (tr.airtime_seconds ? ' · ' + Math.round(tr.airtime_seconds) + ' с' : '') + '</span>' +
+        // Стык — между ЭТИМ треком и следующим, поэтому кнопка стоит
+        // у трека, а не отдельной карточкой внизу: диджей смотрит на
+        // список и слышит переход прямо оттуда. У последнего трека
+        // стыка нет по построению — и кнопки тоже.
+        (i < s.tracks.length - 1
+          ? '<button class="track-hear" data-t="' + i +
+            '" title="Послушать переход из этого трека в следующий">🎧</button>'
+          : '<span class="track-hear-gap"></span>') +
         '<button class="track-drop" data-name="' + tr.name.replace(/"/g, "&quot;") + '"' +
-        ' title="Убрать этот трек из плана">✕</button></div>';
+        ' title="Убрать этот трек из плана">✕</button></div>' +
+        '<div class="track-player" data-player="' + i + '"></div>';
     });
     html += '</div>';
 
@@ -4272,8 +5860,9 @@
         // «▶ Резом · Fader Chop» и так далее — восемь целей для мыши на
         // один переход, и все мелкие. Сначала слушают, потом правят;
         // всё остальное живёт внутри настройщика.
+        // «Прослушать» переехало в строку трека: стык принадлежит
+        // паре соседей, и искать его карточку внизу было лишним шагом.
         '<div class="tr-actions">' +
-          '<button class="demo-btn">🎧 Прослушать</button>' +
           '<button class="edit-toggle">⚙ Настроить</button>' +
         '</div>' +
         '<div class="tr-player" data-h="player" style="margin:6px 0"></div>' +
@@ -4293,6 +5882,46 @@
   // перестроение плана — иначе следующий же пересчёт всё бы затёр.
   // Убрать трек из плана. Перестраиваем сразу — иначе непонятно, что
   // изменилось: план пересобирается целиком, соседи у всех другие.
+  // Послушать переход прямо из списка треков.
+  document.addEventListener("click", async function (e) {
+    const b = e.target.closest && e.target.closest(".track-hear");
+    if (!b) return;
+    const i = parseInt(b.dataset.t, 10);
+    const slot = document.querySelector('[data-player="' + i + '"]');
+    if (!slot) return;
+    b.disabled = true;
+    slot.textContent = "собираю демо…";
+    try {
+      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+        "/strategy/transitions/" + i + "/demo",
+        {method: "POST", headers: {"Content-Type": "application/json"},
+         body: JSON.stringify({})});
+      const d = await r.json();
+      if (!r.ok) { slot.textContent = d.detail || "не удалось"; return; }
+      slot.innerHTML = '<audio controls autoplay src="' + d.url +
+        '" style="height:28px;width:100%"></audio>' +
+        '<div class="tr-hint">' + escapeHtml(d.technique_name || "") + " · " +
+        Math.round(d.duration_seconds) + "с · темп " + (d.master_bpm || "?") + " BPM</div>";
+    } catch (err) {
+      slot.textContent = "ошибка сети: " + err;
+    } finally { b.disabled = false; }
+  });
+
+  // Порядок стрелками. Двигаем manualOrder и пересобираем план: он же
+  // уважает track_order сильнее любого алгоритма.
+  document.addEventListener("click", async function (e) {
+    const up = e.target.closest && e.target.closest(".track-up");
+    const dn = e.target.closest && e.target.closest(".track-dn");
+    if (!up && !dn) return;
+    const i = parseInt((up || dn).dataset.i, 10);
+    const names = (currentStrategy && currentStrategy.tracks || []).map(function (t) { return t.name; });
+    const j = up ? i - 1 : i + 1;
+    if (!(i >= 0 && j >= 0 && j < names.length)) return;
+    const tmp = names[i]; names[i] = names[j]; names[j] = tmp;
+    manualOrder = names;
+    await buildStrategy(true);
+  });
+
   document.addEventListener("click", function (e) {
     const btn = e.target.closest && e.target.closest(".track-drop");
     if (!btn) return;
@@ -4359,8 +5988,14 @@
     buildStrategy(true);
   });
 
-  document.getElementById("suggest-length-btn").addEventListener("click", async function () {
-    if (!currentRoom) { addMessage("Сначала загрузите библиотеку.", "system"); return; }
+  // Подбор длины — часть «Построить план», а не отдельная кнопка.
+  // Диджей: «кнопка построить план, которая и подгрузит из пула треков
+  // треки, и построит план по сходимости, и выставит рекомендуемую
+  // длину». Три действия, которые всегда делались подряд, — это одно
+  // действие, и держать их тремя кнопками значило заставлять помнить
+  // порядок.
+  async function suggestLength(apply) {
+    if (!currentRoom) return;
     const out = document.getElementById("length-picks");
     out.textContent = "считаю...";
     try {
@@ -4373,6 +6008,7 @@
         // но не то, что диджей видит на экране.
         body: JSON.stringify({
           arc_shape: document.getElementById("arc-shape-select").value,
+          only_paths: ctrlFromPool && ctrlFromPool.length ? ctrlFromPool : null,
           only_mixable: strategyFromPool ? false : document.getElementById("only-mixable").checked,
           variant: parseInt(document.getElementById("variant-select").value || "0", 10),
           exclude: Array.from(excludedTracks),
@@ -4414,11 +6050,22 @@
         out.appendChild(b);
       });
       if (!(d.best || []).length) out.textContent = "вариантов нет";
+      // Лучшую длину ставим сразу: спрашивать «а теперь нажми» незачем,
+      // остальные варианты остаются рядом кнопками.
+      const best = (d.best || [])[0];
+      if (apply && best) {
+        const box = document.getElementById("target-minutes");
+        if (box && String(box.value) !== String(best.minutes)) {
+          box.value = best.minutes;
+          return best.minutes;
+        }
+      }
     } catch (err) {
       out.textContent = "ошибка сети: " + err;
       out.style.color = "var(--danger)";
     }
-  });
+    return null;
+  }
 
   let dragFrom = null;
   function _wireTrackDrag(root) {
@@ -4473,6 +6120,59 @@
     fixShortTrack(parseInt(el.dataset.fix, 10));
   });
 
+  // ------------------------------- ControlC → Clipping и обратно
+  //
+  // Один путь для двух случаев: кнопка «править в Clipping» у любого
+  // перехода и клик по короткому треку на полосе. Раньше этот код жил
+  // только внутри «починить обрывающий стык», то есть попасть в Clipping
+  // с конкретным переходом можно было лишь через предупреждение.
+  //
+  // Бесшовность здесь означает ровно две вещи: в Clipping приезжает ТОТ
+  // ЖЕ стык (та же пара, приём, точки, длина — из плана, а не заново
+  // подобранные), и одобрение возвращает правку в план на то же место
+  // (audFromPlan → applyEditToPlan), не пересобирая отбор.
+  async function openSeamInClipping(idx, note) {
+    const s = currentStrategy;
+    if (!s || !s.transitions || !s.transitions[idx]) return;
+    const tr = s.transitions[idx];
+    const a = (s.tracks || [])[idx], b = (s.tracks || [])[idx + 1];
+    if (!a || !b) return;
+    const out = _setOut();
+    out.textContent = "открываю переход в Clipping…";
+    try {
+      const q = "?a_path=" + encodeURIComponent(a.path) +
+                "&b_path=" + encodeURIComponent(b.path) +
+                (tr.technique_id ? "&technique_id=" + encodeURIComponent(tr.technique_id) : "") +
+                (tr.bars ? "&bars=" + tr.bars : "") +
+                // Точки из ПЛАНА, а не те, что подберёт сегментация: иначе
+                // шов откроется не там, где он стоит сейчас, и диджей
+                // будет править не то место, на которое нажал.
+                (((tr.from_point || {}).time_seconds != null)
+                  ? "&exit_seconds=" + tr.from_point.time_seconds : "") +
+                (((tr.to_point || {}).time_seconds != null)
+                  ? "&entry_seconds=" + tr.to_point.time_seconds : "");
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                               "/audition/seam" + q);
+      const r = await resp.json();
+      if (!resp.ok || !r.seam) { out.textContent = r.detail || "не смог собрать шов"; return; }
+      audEditingPoolId = null;      // это переход из плана, а не запись пула
+      audTechniques = [];
+      audDemoFile = null;
+      audFromPlan = {index: idx, a_path: a.path, b_path: b.path};
+      // Пин ставим ДО переключения вкладки: её обработчик сам позовёт
+      // loadAudition, и тот нарисует именно этот шов.
+      audPinnedSeam = r.seam;
+      const nav = document.querySelector('#nav button[data-view="audition"]');
+      if (nav) nav.click(); else loadAudition();
+      const st = document.getElementById("aud-status");
+      if (st) {
+        st.textContent = note || ("переход " + (idx + 1) + " из плана: правьте приём, " +
+          "точки, такты и эффекты — «Нравится» вернёт правку в ControlC");
+      }
+      out.textContent = "";
+    } catch (e) { out.textContent = "не вышло: " + e; }
+  }
+
   async function fixShortTrack(i) {
     const s = currentStrategy;
     if (!s || !s.tracks) return;
@@ -4493,42 +6193,13 @@
       idx = hasOut ? i : i - 1;
     }
     if (idx < 0 || !trs[idx]) return;
-    const a = s.tracks[idx], b = s.tracks[idx + 1];
-    if (!a || !b) return;
-    const out = _setOut();
-    out.textContent = "открываю переход в отборе…";
-    try {
-      const q = "?a_path=" + encodeURIComponent(a.path) +
-                "&b_path=" + encodeURIComponent(b.path) +
-                (trs[idx].technique_id ? "&technique_id=" +
-                  encodeURIComponent(trs[idx].technique_id) : "") +
-                (trs[idx].bars ? "&bars=" + trs[idx].bars : "") +
-                // Точки из ПЛАНА, а не те, что подберёт сегментация: иначе
-                // шов откроется не там, где он стоит сейчас, и диджей будет
-                // править не то место, на которое нажал.
-                (((trs[idx].from_point || {}).time_seconds != null)
-                  ? "&exit_seconds=" + trs[idx].from_point.time_seconds : "") +
-                (((trs[idx].to_point || {}).time_seconds != null)
-                  ? "&entry_seconds=" + trs[idx].to_point.time_seconds : "");
-      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
-                               "/audition/seam" + q);
-      const r = await resp.json();
-      if (!resp.ok || !r.seam) { out.textContent = r.detail || "не смог собрать шов"; return; }
-      audEditingPoolId = null;      // это переход из плана, а не запись пула
-      audTechniques = [];
-      audDemoFile = null;
-      audFromPlan = {index: idx, a_path: a.path, b_path: b.path};
-      // Пин ставим ДО переключения вкладки: её обработчик сам позовёт
-      // loadAudition, и тот нарисует именно этот шов.
-      audPinnedSeam = r.seam;
-      const nav = document.querySelector('#nav button[data-view="audition"]');
-      if (nav) nav.click(); else loadAudition();
-      const st = document.getElementById("aud-status");
-      if (st) st.textContent = "переход из плана: «" +
-        ((a.name || "").replace(/\.mp3$/i, "")) + "» играет меньше секции — " +
-        "подвиньте точку ухода позже или смените приём, потом одобрите";
-      out.textContent = "";
-    } catch (e) { out.textContent = "не вышло: " + e; }
+    // Тот же путь, что и у кнопки «править в Clipping» — см.
+    // openSeamInClipping. Раньше здесь лежала его вторая копия, и
+    // расходиться им ничего не мешало.
+    await openSeamInClipping(idx,
+      "переход из плана: «" + ((s.tracks[idx].name || "").replace(/\.mp3$/i, "")) +
+      "» играет меньше секции — подвиньте точку ухода позже или смените " +
+      "приём, потом одобрите");
   }
 
   function _timelineHtml(s) {
@@ -4599,103 +6270,41 @@
     return h + '</div>';
   }
 
-  function _opts(list, chosen) {
-    const opts = (list || []).slice();
-    // Выбранная точка может не входить в список кандидатов: так бывает у
-    // точек, одобренных в Clipping, и у сдвинутых кнопкой «±такт».
-    // Без этой вставки селектор показывал ЧУЖУЮ точку как выбранную, и
-    // первое же «применить» тихо переносило переход в другое место.
-    if (chosen && !opts.some(p => Math.abs(p.time_seconds - chosen.time_seconds) < 0.01)) {
-      opts.unshift(chosen);
-    }
-    return opts.map(function (p) {
-      const sel = chosen && Math.abs(p.time_seconds - chosen.time_seconds) < 0.01 ? " selected" : "";
-      return '<option value="' + p.time_seconds + '"' + sel + '>' + (p.label || p.time_seconds) + '</option>';
-    }).join("");
-  }
 
-  const TECH_CATEGORY_RU = {stems: "по слоям (STEMS)", fx: "эффекты", eq: "эквалайзер",
-    turntable: "вертушка", classic: "классика", dnb: "драм-н-бейс", house: "хаус",
-    energy: "энергия", other: "прочее"};
 
   function _editorHtml(tr, i) {
-    // Группировка по категориям, а не сплошной список: приёмов больше
-    // шестидесяти, и найти в плоском списке «тот, что по слоям» нельзя.
-    const cats = {};
-    (techniquesCache || []).forEach(function (t) {
-      (cats[t.category || "other"] = cats[t.category || "other"] || []).push(t);
-    });
-    // Слоевые приёмы первыми: их спрашивают чаще всего.
-    const order = Object.keys(cats).sort(function (a, b) {
-      if (a === "stems") return -1;
-      if (b === "stems") return 1;
-      return a.localeCompare(b);
-    });
-    const techOpts = order.map(function (c) {
-      return '<optgroup label="' + escapeHtml(TECH_CATEGORY_RU[c] || c) + '">' +
-        cats[c].map(function (t) {
-          return '<option value="' + t.id + '"' + (t.id === tr.technique_id ? " selected" : "") + '>' +
-                 t.id + ' ' + escapeHtml(t.name) + (t.requires_stems ? " ⟨STEM⟩" : "") + '</option>';
-        }).join("") + '</optgroup>';
-    }).join("") || '<option value="' + tr.technique_id + '" selected>' + tr.technique_id + '</option>';
+    // Настройки стыка здесь БОЛЬШЕ НЕТ — по прямой просьбе диджея:
+    // «в ControlC уберём настройку стыков полностью, оставим только
+    // предпрослушку».
+    //
+    // И дело не в том, что она была плохая, а в том, что она была
+    // ВТОРОЙ. Тот же стык настраивался в Clipping, и две панели про одно
+    // и то же неизбежно расходились: там форма ведения считается по шву,
+    // здесь стояли свои ползунки; там эффекты по декам, здесь — по
+    // слоям; там точки из сегментации, здесь свой список. Диджей правил
+    // в одном месте, слушал в другом и получал третье.
+    //
+    // Теперь ControlC отвечает за СЕТ: порядок, длительности, исполнение.
+    // За отдельный переход отвечает Clipping, и попасть туда можно прямо
+    // отсюда — с этим же стыком, а не «найдите его там сами».
+    const t = (techniquesCache || []).filter(function (x) {
+      return x.id === tr.technique_id;
+    })[0];
     return '<div class="tr-edit">' +
       '<div class="tr-edit-row">' +
-        '<label>техника <select data-f="technique">' + techOpts + '</select></label>' +
-        '<button data-f="hear-tech" class="edit-toggle" title="послушать эту технику">▶</button>' +
-        '<label>тактов <input data-f="bars" type="number" min="0.5" max="64" step="0.5" value="' + tr.bars + '"></label>' +
-      '</div>' +
+        '<span class="tr-what">' + escapeHtml(tr.technique_id || "") +
+          (t ? " · " + escapeHtml(t.name) : "") +
+          (tr.bars ? " · " + tr.bars + " тактов" : "") + "</span>" +
+        (tr.edited ? ' <span class="tr-edited">· правлено в Clipping</span>' : "") +
+      "</div>" +
+      _pointsSummary(tr) +
       '<div class="tr-edit-row">' +
-        '<label>уводим <select data-f="from">' + _opts(tr.from_point_options, tr.from_point) + '</select></label>' +
-        '<button data-f="from-back" class="edit-toggle" title="на такт раньше">−такт</button>' +
-        '<span data-h="from-at" class="nudge-at"></span>' +
-        '<button data-f="from-fwd" class="edit-toggle" title="на такт позже">+такт</button>' +
-        '<button data-f="hear-from" class="edit-toggle" title="послушать с этой точки ухода">▶</button>' +
-      '</div>' +
-      '<div class="tr-hint" data-h="from">' + ((tr.from_point && tr.from_point.hint) || "") + '</div>' +
-      '<div class="tr-edit-row">' +
-        '<label>входим <select data-f="to">' + _opts(tr.to_point_options, tr.to_point) + '</select></label>' +
-        '<button data-f="to-back" class="edit-toggle" title="на такт раньше">−такт</button>' +
-        '<span data-h="to-at" class="nudge-at"></span>' +
-        '<button data-f="to-fwd" class="edit-toggle" title="на такт позже">+такт</button>' +
-        '<button data-f="hear-to" class="edit-toggle" title="послушать с этой точки входа">▶</button>' +
-      '</div>' +
-      '<div class="tr-hint" data-h="to">' + ((tr.to_point && tr.to_point.hint) || "") + '</div>' +
-      // Ползунки самого приёма. Их не было вовсе: диджей мог выбрать
-      // «Дабл-дроп», но не мог сказать, сколько тактов держать
-      // совмещение, — а именно это и отличает работающий переход от
-      // неработающего. Значения живут в плане (transition.params) и
-      // уходят и в демо, и в живое исполнение.
-      '<div class="tr-params" data-h="params"></div>' +
-      '<div class="tr-edit-row">' +
-        '<label>набор <select data-f="preset-pick"><option value="">— свой —</option></select></label>' +
-        '<button data-f="preset-save" class="edit-toggle" title="Сохранить эти ползунки под именем, чтобы не настраивать заново">💾 сохранить набор</button>' +
-        '<button data-f="preset-del" class="edit-toggle" title="Удалить выбранный набор">✕</button>' +
-      '</div>' +
-      // Эффект НА ОДНОМ СЛОЕ — то, ради чего слои и разделяют. Луп
-      // вокала уходящего, эхо на гармонии, реверс барабанов: на полном
-      // миксе ничего из этого сделать нельзя, там эффект мажет всё.
-      '<div class="tr-edit-row">' +
-        '<label>слой <select data-f="fx-stem">' +
-          '<option value="vocals">вокал</option><option value="drums">барабаны</option>' +
-          '<option value="bass">бас</option><option value="other">гармония</option></select></label>' +
-        '<label>дека <select data-f="fx-deck">' +
-          '<option value="source">уходящий</option><option value="target">входящий</option></select></label>' +
-        '<label>что <select data-f="fx-kind">' +
-          '<option value="loop">луп</option><option value="echo">эхо</option>' +
-          '<option value="reverb">реверб</option></select></label>' +
-        '<label>с такта <input data-f="fx-at" type="number" min="0" max="64" step="1" value="0" style="width:64px"></label>' +
-        '<label>длина <input data-f="fx-len" type="number" min="1" max="32" step="1" value="4" style="width:64px"></label>' +
-        '<button data-f="fx-add" class="edit-toggle" title="Добавить к этому переходу">+ добавить</button>' +
-      '</div>' +
-      '<div class="tr-hint" data-h="fx-list"></div>' +
-      '<div class="tr-edit-row">' +
-        '<button data-f="apply" class="edit-toggle">применить</button>' +
-        '<button data-f="reset" class="edit-toggle">сбросить</button>' +
-        '<button data-f="fx-clear" class="edit-toggle">убрать эффекты</button>' +
+        '<button data-f="hear-tech" class="edit-toggle" title="Послушать этот переход как он стоит в плане">▶ послушать</button>' +
+        '<button data-f="edit-clip" class="edit-toggle" title="Открыть ЭТОТ стык в Clipping: там приём, точки, такты и эффекты — и одобренная правка вернётся сюда">✂ править в Clipping</button>' +
         '<button data-f="exec" class="edit-toggle" title="Выполнить приём прямо сейчас на том, что уже лежит на деках A и B">▶ на деках</button>' +
-        '<button data-f="clip" class="edit-toggle" title="Показать ЭТОТ стык в Mixxx: DARAVE сам зальёт оба трека, отмотает на несколько тактов до ухода и сведёт — видно волны и фейдер">🎬 в Mixxx</button>' +
-      '</div>' +
-    '</div>';
+        '<button data-f="clip" class="edit-toggle" title="Показать ЭТОТ стык в Mixxx: DARAVE сам зальёт оба трека, отмотает на несколько тактов до ухода и сведёт">🎬 в Mixxx</button>' +
+      "</div>" +
+    "</div>";
   }
 
   // ===================== Наборы настроек приёма =====================
@@ -4771,205 +6380,46 @@
   }
 
   function _wireEditor(card, tr, i) {
+    // Вяжем ровно то, что осталось: предпрослушка, передача в Clipping и
+    // исполнение. Ползунков, селекторов точек и конструктора эффектов
+    // здесь нет — см. _editorHtml.
     const box = card.querySelector(".tr-edit");
-    const pick = (sel) => box.querySelector('[data-f="' + sel + '"]');
+    if (!box) return;
+    const pick = function (sel) { return box.querySelector('[data-f="' + sel + '"]'); };
 
-    // --- эффекты на отдельных слоях ---
-    // Хранятся как простые записи и превращаются в события плана только
-    // при отправке: так их видно списком и можно убрать по одному.
-    const fxEvents = [];
-    const FX_STEM_RU = {vocals: "вокал", drums: "барабаны", bass: "бас", other: "гармония"};
-    const FX_KIND_RU = {loop: "луп", echo: "эхо", reverb: "реверб"};
-
-    function fxToEvent(f) {
-      const beat = f.at * 4, len = f.len * 4;
-      if (f.kind === "loop") {
-        return {beat_offset: beat, action: "stem_loop", deck: f.deck, kind: "hold",
-                duration_beats: len, params: {stem: f.stem, beats: Math.min(len, 8)}};
-      }
-      return {beat_offset: beat, action: "stem_fx", deck: f.deck, kind: "ramp",
-              duration_beats: len, value_from: 0.0, value_to: 0.85, curve: "ease_in",
-              params: {stem: f.stem, unit: f.kind}};
-    }
-    function drawFx() {
-      const box2 = box.querySelector('[data-h="fx-list"]');
-      if (!box2) return;
-      box2.innerHTML = fxEvents.length
-        ? fxEvents.map(function (f, k) {
-            return '<span class="alt-chip" data-fx="' + k + '" style="cursor:pointer" ' +
-              'title="нажмите, чтобы убрать">' + FX_KIND_RU[f.kind] + " на " +
-              FX_STEM_RU[f.stem] + " (" + (f.deck === "source" ? "A" : "B") + ") · такт " +
-              f.at + "–" + (f.at + f.len) + " ✕</span>";
-          }).join(" ")
-        : "";
-      box2.querySelectorAll("[data-fx]").forEach(function (chip) {
-        chip.addEventListener("click", function () {
-          fxEvents.splice(parseInt(chip.dataset.fx, 10), 1);
-          drawFx();
-        });
-      });
-    }
-
-    // --- ползунки приёма и наборы настроек ---
-    let paramsOf = function () { return {}; };
-    function techMeta(tid) {
-      return (techniquesCache || []).find(x => x.id === tid) || null;
-    }
-    function drawParams(tid, values) {
-      const t = techMeta(tid);
-      const list = (t && t.params) || tr.technique_params || [];
-      paramsOf = renderParamSliders(box.querySelector('[data-h="params"]'), list, values || {});
-      fillPresets(tid);
-    }
-    async function fillPresets(tid) {
-      const sel = pick("preset-pick");
-      if (!sel) return;
-      const all = await loadPresets();
-      const mine = (all || {})[tid] || [];
-      const keep = sel.value;
-      sel.innerHTML = '<option value="">— свой —</option>' +
-        mine.map(p => '<option value="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>').join("");
-      if (mine.some(p => p.name === keep)) sel.value = keep;
-    }
-    drawParams(tr.technique_id, tr.params || {});
-    // Смена приёма меняет и набор ползунков: у каждого приёма свои.
-    pick("technique").addEventListener("change", function () {
-      drawParams(pick("technique").value, {});
-    });
-    pick("preset-pick").addEventListener("change", async function () {
-      const tid = pick("technique").value;
-      const name = pick("preset-pick").value;
-      if (!name) return;
-      const p = ((await loadPresets())[tid] || []).find(x => x.name === name);
-      if (p) drawParams(tid, p.params);
-    });
-    pick("preset-save").addEventListener("click", async function () {
-      const tid = pick("technique").value;
-      const name = prompt("Как назвать набор настроек для «" +
-        ((techMeta(tid) || {}).name || tid) + "»?", pick("preset-pick").value || "мой");
-      if (!name) return;
-      try {
-        await savePreset(tid, name, paramsOf());
-        await fillPresets(tid);
-        pick("preset-pick").value = name;
-        addMessage("Набор «" + name + "» сохранён для " + tid + ".", "system");
-      } catch (e) { addMessage("Не сохранилось: " + e.message, "system"); }
-    });
-    pick("preset-del").addEventListener("click", async function () {
-      const tid = pick("technique").value, name = pick("preset-pick").value;
-      if (!name) return;
-      await deletePreset(tid, name);
-      await fillPresets(tid);
-      addMessage("Набор «" + name + "» удалён.", "system");
-    });
-
-    // Сдвиг точки на такт. Кандидаты из анализа попадают близко, но
-    // «на два такта раньше» ухо слышит, а список готовых вариантов такой
-    // точности не даёт — нужен именно шаг по сетке.
-    const barFrom = 60 / (tr.bpm_from || 174) * 4;
-    const barTo = 60 / (tr.bpm_to || 174) * 4;
-    const nudge = { from: 0, to: 0 };
-    function pointAt(which) {
-      const base = parseFloat(pick(which).value) || 0;
-      return Math.max(0, base + nudge[which] * (which === "from" ? barFrom : barTo));
-    }
-    function showNudge() {
-      ["from", "to"].forEach(function (w) {
-        const el = box.querySelector('[data-h="' + w + '-at"]');
-        if (!el) return;
-        const n = nudge[w];
-        el.textContent = _mmss(pointAt(w)) + (n ? " (" + (n > 0 ? "+" : "") + n + " такт)" : "");
-        el.classList.toggle("nudged", n !== 0);
-      });
-    }
-    ["from", "to"].forEach(function (w) {
-      const back = pick(w + "-back"), fwd = pick(w + "-fwd");
-      if (back) back.addEventListener("click", function () { nudge[w] -= 1; showNudge(); });
-      if (fwd) fwd.addEventListener("click", function () { nudge[w] += 1; showNudge(); });
-      pick(w).addEventListener("change", function () { nudge[w] = 0; showNudge(); });
-    });
-    showNudge();
-
-    // подсказка меняется вместе с выбором — чтобы было видно, ЧЕМ хорош вариант
-    [["from", tr.from_point_options], ["to", tr.to_point_options]].forEach(function (pair) {
-      const el = pick(pair[0]);
-      el.addEventListener("change", function () {
-        const p = (pair[1] || []).find(x => Math.abs(x.time_seconds - parseFloat(el.value)) < 0.01);
-        box.querySelector('[data-h="' + pair[0] + '"]').textContent = p ? p.hint : "";
-      });
-    });
-
-    pick("apply").addEventListener("click", function () {
-      planOverrides[String(i)] = {
-        technique_id: pick("technique").value,
-        bars: parseFloat(pick("bars").value),
-        from_point_seconds: pointAt("from"),
-        to_point_seconds: pointAt("to"),
-        params: paramsOf(),
-      };
-      buildStrategy(true);
-    });
-    pick("reset").addEventListener("click", function () {
-      delete planOverrides[String(i)];
-      buildStrategy(true);
-    });
-
-    // Прослушать один переход, не пересобирая весь сет: правку стыка
-    // надо проверять на слух сразу, иначе выбор техники — гадание.
-    // Предпрослушка ЛЮБОЙ комбинации, не применяя её к плану: варианты
-    // перебираются на слух, план меняется только когда услышал нужное.
-    async function hear(overrides, note) {
-      // плеер живёт в КАРТЕ, а не в панели настроек — панель может быть
-      // закрыта, а слушать нужно и без неё
+    async function hear(note) {
+      // Плеер живёт в КАРТЕ, а не в панели: панель может быть закрыта, а
+      // слушать нужно и без неё.
       const slot = card.querySelector('[data-h="player"]');
-      slot.textContent = "Рендерю" + (note ? " (" + note + ")" : "") + "...";
-      const payload = Object.assign({
-        technique_id: pick("technique").value,
-        from_seconds: pointAt("from"),
-        to_seconds: pointAt("to"),
-        // Демо должно звучать ТЕМИ ЖЕ ползунками, что стоят в панели:
-        // иначе диджей слушает одно, а в плане остаётся другое.
-        param_overrides: paramsOf(),
-        // Ручные добавки (луп/эхо/реверб на слое) едут вместе с демо:
-        // иначе диджей слушает переход без того, что сам к нему повесил.
-        extra_events: fxEvents.length ? fxEvents.map(fxToEvent) : null,
-      }, overrides || {});
+      if (!slot) return;
+      slot.textContent = "Рендерю" + (note ? " (" + note + ")" : "") + "…";
       try {
         const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
                               "/strategy/transitions/" + i + "/demo",
           { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload) });
+            body: JSON.stringify({}) });   // пусто = как стоит в плане
         const d = await r.json();
         if (!r.ok) { slot.textContent = d.detail || "Не удалось"; return; }
-        slot.innerHTML = '<audio controls autoplay src="' + d.url + '" style="height:30px;width:100%"></audio>' +
-          '<div class="tr-hint">' + d.technique_name + ' · ' + Math.round(d.duration_seconds) + 'с · темп ' +
-          (d.master_bpm || '?') + ' BPM</div>';
+        slot.innerHTML = '<audio controls autoplay src="' + d.url +
+          '" style="height:30px;width:100%"></audio>' +
+          '<div class="tr-hint">' + escapeHtml(d.technique_name || "") + " · " +
+          Math.round(d.duration_seconds) + "с · темп " + (d.master_bpm || "?") + " BPM</div>";
       } catch (e) { slot.textContent = "Ошибка сети: " + e; }
     }
+
     const big = card.querySelector(".demo-btn");
     if (big) big.addEventListener("click", function () { hear(); });
     const on = function (name, fn) { const el = pick(name); if (el) el.addEventListener("click", fn); };
-    on("hear-tech", function () { hear(null, "техника"); });
-    on("hear-from", function () { hear(null, "точка ухода"); });
-    on("hear-to", function () { hear(null, "точка входа"); });
+    on("hear-tech", function () { hear(); });
     on("exec", function () { executeTransition(i); });
     on("clip", function () { startAutopilot(i, "clip"); });
-    on("fx-add", function () {
-      fxEvents.push({
-        stem: pick("fx-stem").value, deck: pick("fx-deck").value,
-        kind: pick("fx-kind").value,
-        at: Math.max(0, parseFloat(pick("fx-at").value) || 0),
-        len: Math.max(1, parseFloat(pick("fx-len").value) || 4),
-      });
-      drawFx();
-      hear(null, "с эффектом");
-    });
-    on("fx-clear", function () { fxEvents.length = 0; drawFx(); });
-
-    // Клик по пресету — слушаем его. Двойной клик — ставим в план.
+    on("edit-clip", function () { openSeamInClipping(i); });
   }
 
-  document.getElementById("mixxx-play-btn").addEventListener("click", function () {
+  // Кнопки нет в шапке ControlC — действие осталось, вызывать
+  // его пока неоткуда. Без защиты на null этот вызов ронял
+  // ВЕСЬ блок скрипта ниже, а не только себя.
+  (document.getElementById("mixxx-play-btn") || {addEventListener: function () {}}).addEventListener("click", function () {
     startAutopilot(0, "set");
   });
   document.getElementById("mixxx-stop-btn").addEventListener("click", stopAutopilot);
@@ -4979,7 +6429,10 @@
   // положить трек на деку без интерфейса: контрола «загрузи файл по пути»
   // в Mixxx нет вовсе. Автопилот включает Auto DJ на полсекунды, забирает
   // следующий трек очереди и выключает обратно.
-  document.getElementById("autodj-queue-btn").addEventListener("click", async function () {
+  // Кнопки нет в шапке ControlC — действие осталось, вызывать
+  // его пока неоткуда. Без защиты на null этот вызов ронял
+  // ВЕСЬ блок скрипта ниже, а не только себя.
+  (document.getElementById("autodj-queue-btn") || {addEventListener: function () {}}).addEventListener("click", async function () {
     if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
     const out = _setOut();
     out.textContent = "Кладу порядок сета в очередь Auto DJ...";
@@ -5003,7 +6456,10 @@
   // DARAVE, и никаким контроллером их не переопределить — главная из них
   // форма кроссфейдера. Поэтому проверка живёт рядом с планом, а не в
   // документации, куда никто не заглядывает.
-  document.getElementById("mixxx-settings-btn").addEventListener("click", async function () {
+  // Кнопки нет в шапке ControlC — действие осталось, вызывать
+  // его пока неоткуда. Без защиты на null этот вызов ронял
+  // ВЕСЬ блок скрипта ниже, а не только себя.
+  (document.getElementById("mixxx-settings-btn") || {addEventListener: function () {}}).addEventListener("click", async function () {
     if (!currentRoom) return;
     const out = _setOut();
     out.textContent = "Смотрю mixxx.cfg...";
@@ -5090,7 +6546,7 @@
       out.innerHTML = 'Сет собран целиком: ' + st.minutes + ' мин, ' + st.done + ' сведений' +
         (techs ? ', техник: ' + techs : '') + ', темп ' + (st.master_bpm || '?') + ' BPM<br>' +
         '<audio controls src="' + st.url + '" style="margin-top:6px;height:32px"></audio> ' +
-        '<a href="' + st.url + '" download>скачать ' + _quality(st) + '</a>' +
+        '<a href="' + mediaUrl(st.url) + '" download>скачать ' + _quality(st) + '</a>' +
         (st.skipped && st.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
           st.skipped.slice(0, 3).join("; ") + '</span>' : '');
     }, 3000);
@@ -5139,7 +6595,7 @@
         '<br><span style="opacity:.6">только сведения, без тел треков: сет целиком — ' +
         '«Собрать сет»</span><br>' +
         '<audio controls src="' + st.url + '" style="margin-top:6px;height:32px"></audio> ' +
-        '<a href="' + st.url + '" download>скачать ' + _quality(st) + '</a>' +
+        '<a href="' + mediaUrl(st.url) + '" download>скачать ' + _quality(st) + '</a>' +
         (st.skipped && st.skipped.length ? '<br><span style="color:var(--warn)">пропущено: ' +
           st.skipped.slice(0, 3).join("; ") + '</span>' : '');
     }, 3000);
@@ -5194,7 +6650,7 @@
     // Подготовка может занять до минуты: если очередь Auto DJ разошлась с
     // планом, backend закроет Mixxx, перепишет очередь и поднимет его
     // обратно. Молчать всё это время нельзя — выглядит как зависшая кнопка.
-    const playBtn = document.getElementById("mixxx-play-btn");
+    const playBtn = document.getElementById("mixxx-play-btn");  // может отсутствовать
     if (playBtn) { playBtn.disabled = true; playBtn.textContent = "⏳ готовлю Mixxx…"; }
     try {
       const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/autopilot/start", {
@@ -5234,7 +6690,7 @@
   function renderAutopilot(d) {
     autopilotState = d;
     const bar = document.getElementById("autopilot-bar");
-    const playBtn = document.getElementById("mixxx-play-btn");
+    const playBtn = document.getElementById("mixxx-play-btn");  // может отсутствовать
     const stopBtn = document.getElementById("mixxx-stop-btn");
     if (!bar) return;
     const live = !!(d && d.running);
@@ -5359,7 +6815,16 @@
           '<div class="fav-meta">' + escapeHtml(it.technique || it.technique_id || "") +
             " · " + escapeHtml(it.pair_label || "") +
             " · " + (it.bars ? it.bars + " тактов" : "") +
-            " · уход " + favFmt(it.exit_seconds) + " · вход " + favFmt(it.entry_seconds) + "</div>" +
+            " · уход " + favFmt(it.exit_seconds) + " · вход " + favFmt(it.entry_seconds) +
+            // Код шва: без него отложенный переход нельзя ни вернуть в
+            // Clipping, ни передать словами — а ради этого код и заведён.
+            (it.code
+              ? ' · <span class="fav-code" title="Код шва — вставьте его в Clipping, чтобы собрать этот переход заново">код ' +
+                escapeHtml(it.code) + '</span>' +
+                ' <button class="fav-open" data-code="' + escapeHtml(it.code) +
+                '" title="Открыть этот шов в Clipping">↗ в Clipping</button>'
+              : ' · <span style="color:var(--muted)">кода нет — переход отложен старой версией</span>') +
+            "</div>" +
           '<textarea data-note="' + it.id + '" placeholder="Чем этот переход хорош?">' +
             escapeHtml(it.note || "") + "</textarea>" +
           '<div class="fav-actions">' + demo +
@@ -5375,6 +6840,14 @@
       box.querySelectorAll("[data-note]").forEach(function (ta) {
         ta.addEventListener("change", function () {
           favUpdate(ta.dataset.note, {note: ta.value});
+        });
+      });
+      box.querySelectorAll(".fav-open").forEach(function (b) {
+        b.addEventListener("click", function () {
+          const nav = document.querySelector('#nav button[data-view="audition"]');
+          if (nav) nav.click();
+          const box2 = document.getElementById("aud-seed");
+          if (box2) { box2.value = b.dataset.code; audApplyCode(); }
         });
       });
       box.querySelectorAll("[data-del]").forEach(function (b) {
@@ -5535,10 +7008,15 @@
       html += '<div class="stems-warning">⚠ Требует ' + t.requires_decks + ' дек одновременно.</div>';
     }
 
-    html += '<div class="tech-recommend" id="tech-recommend">' +
-      '<h3>Примеры из вашей библиотеки</h3>' +
-      '<div class="empty-hint">Подбираю подходящие треки…</div>' +
-      '</div>';
+    // Блока «Примеры из вашей библиотеки» здесь больше нет.
+    //
+    // Он подбирал пары под приём сам — то есть делал работу Clipping, и
+    // делал её хуже: там подбор знает про вкус, отвергнутые пары, слои и
+    // код шва, а здесь была отдельная ветка на том же движке. Две двери
+    // в одно и то же неизбежно расходятся, и вторая была лишней.
+    //
+    // Теперь Technician получает пару ИЗВНЕ: из Clipping, из ControlC
+    // или по коду шва. Его дело — ползунки и инструкция, а не поиск.
 
     {
       const opts = _deckOptionNames();
@@ -5594,8 +7072,9 @@
       });
     });
 
-    // Наборы настроек этого приёма — те же, что в настройщике перехода
-    // в ControlC: настроил здесь, применил там.
+    // Наборы настроек этого приёма. Настройщика в ControlC больше нет —
+    // ползунки живут только здесь, и это теперь единственное место, где
+    // приём доводят руками.
     const pSel = document.getElementById("tech-preset-pick");
     if (pSel) {
       const curParams = function () {
@@ -5676,42 +7155,17 @@
       setTechniqueBusy(techniqueBusy);  // кнопку только что перерисовали
     }
 
-    loadTechniqueRecommendations(t);
   }
 
   // Показ вкладки "Техника" как showcase-фичи: для выбранной техники сразу
   // подбираем из библиотеки комнаты готовые пары треков (backend:
   // mix_strategist.recommend_tracks_for_technique) и даём прослушать
   // офлайн-рендер (demo_render.py) без необходимости вручную выбирать деки.
-  let recommendRequestSeq = 0;
   // «Покажи другие пары»: смещение по ранжированному списку. Алгоритм
   // ранжирует всю библиотеку, и пары за пределами первой тройки не хуже —
   // просто другие. Диджею нужно услышать приём на СВОЁМ материале, а не
   // третий раз на одной и той же паре, которая понравилась алгоритму.
-  const recommendOffset = {};
 
-  async function loadTechniqueRecommendations(t) {
-    const container = document.getElementById("tech-recommend");
-    if (!container || !currentRoom) return;
-    const mySeq = ++recommendRequestSeq;
-    const off = recommendOffset[t.id] || 0;
-    try {
-      const resp = await fetch(
-        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) +
-        "/recommend?offset=" + off,
-      );
-      const data = await resp.json();
-      if (mySeq !== recommendRequestSeq) return; // юзер уже переключился на другую технику
-      if (!resp.ok) {
-        container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' + (data.detail || "Не удалось подобрать треки") + '</div>';
-        return;
-      }
-      renderRecommendedPairs(t, container, data.pairs || [], data.hint);
-    } catch (e) {
-      if (mySeq !== recommendRequestSeq) return;
-      container.innerHTML = '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">Ошибка сети при подборе треков: ' + e + '</div>';
-    }
-  }
 
   // "Откуда сводить" — конкретная точка входа/выхода по структуре трека
   // (брейкдаун/дроп/граница фразы из track_analysis.detect_structure),
@@ -5774,11 +7228,45 @@
     }
   }
 
+  // Импорт стыка по коду шва — третий вход в Technician, наравне с
+  // кнопками из Clipping и ControlC. Нужен, когда переход принесли со
+  // стороны: из заметок, из чужого сообщения, из прошлой сессии.
+  async function techApplyCode() {
+    const box = document.getElementById("tech-code");
+    const note = document.getElementById("tech-code-note");
+    if (!box) return;
+    const raw = String(box.value || "").trim();
+    if (!/^\d+$/.test(raw)) {
+      if (note) note.textContent = "код — это число";
+      return;
+    }
+    if (note) note.textContent = "собираю…";
+    try {
+      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
+                               "/audition/code/" + encodeURIComponent(raw));
+      const r = await resp.json();
+      if (!resp.ok || !r.state) {
+        if (note) note.textContent = r.detail || "код не найден";
+        return;
+      }
+      techFromClipping = raw;
+      techHandoff = {
+        a_path: r.state.a_path, b_path: r.state.b_path,
+        exit: r.state.exit_seconds, entry: r.state.entry_seconds,
+        code: raw, technique_id: r.state.technique_id,
+      };
+      applyTechHandoff();
+      if (note) note.textContent = "собрано: " + (r.state.technique_id || "");
+    } catch (e) {
+      if (note) note.textContent = "не вышло: " + e;
+    }
+  }
+
   function customPairHtml() {
     if (!libraryCache.length) {
       if (libraryLoading) loadLibrary();   // подпишемся на текущую загрузку
       else loadLibrary();
-      return '<h3 style="margin-top:4px">Своя пара — любые треки и любые точки</h3>' +
+      return '<h3 style="margin-top:4px">Пара для разбора</h3>' +
         '<div class="empty-hint">' + (libraryLoading
           ? 'Загружаю библиотеку…'
           : 'Библиотека пуста. Откройте вкладку Library и отсканируйте папку с ' +
@@ -5790,8 +7278,15 @@
              (tr.name || "") + '</option>';
     }).join("");
     return '' +
-      '<h3 style="margin-top:4px">Своя пара — любые треки и любые точки</h3>' +
+      '<h3 style="margin-top:4px">Пара для разбора</h3>' +
       '<div class="tech-pair" id="custom-pair">' +
+        '<div class="tech-pair-row" style="margin-top:0">' +
+          '<span style="color:var(--muted);font-size:12px">код шва</span>' +
+          '<input id="tech-code" class="seed-input" placeholder="727936107" ' +
+            'title="Код перехода из Clipping: подставит оба трека, точки и приём">' +
+          '<button id="tech-code-apply">↩ собрать</button>' +
+          '<span id="tech-code-note" style="color:var(--muted);font-size:12px"></span>' +
+        '</div>' +
         '<div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:center">' +
           '<span style="color:var(--muted);font-size:12px">уходит</span>' +
           '<select id="cp-a">' + opts + '</select>' +
@@ -5804,6 +7299,16 @@
           '<button class="tech-demo-btn" id="cp-demo">🎧 Демо этой пары</button>' +
           '<div class="tech-pair-player" id="cp-player"></div>' +
         '</div>' +
+        // Возврат в Clipping. Показываем, только если сюда пришли ИЗ
+        // него: кнопка «вернуться» без того, куда возвращаться, —
+        // обещание, которого интерфейс не выполнит.
+        (techFromClipping
+          ? '<div class="tech-pair-row">' +
+              '<button id="cp-back" title="Вернуться к этому же стыку в Clipping — ' +
+              'по коду шва, с которым он сюда приехал">✂ вернуться в Clipping</button>' +
+              '<span class="tech-pair-meta">код шва ' + escapeHtml(techFromClipping) + '</span>' +
+            '</div>'
+          : "") +
       '</div>';
   }
 
@@ -5820,6 +7325,16 @@
     refresh(a, document.getElementById("cp-a-cue"));
     refresh(b, document.getElementById("cp-b-cue"));
 
+    const capply = document.getElementById("tech-code-apply");
+    const cinp = document.getElementById("tech-code");
+    if (capply) capply.addEventListener("click", techApplyCode);
+    if (cinp) cinp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") techApplyCode();
+    });
+    const back = document.getElementById("cp-back");
+    if (back) back.addEventListener("click", function () {
+      backToClippingFromTech(techFromClipping);
+    });
     document.getElementById("cp-demo").addEventListener("click", function () {
       const btn = this, player = document.getElementById("cp-player");
       const pair = {
@@ -5832,73 +7347,6 @@
     });
   }
 
-  function renderRecommendedPairs(t, container, pairs, hint) {
-    if (!pairs.length) {
-      container.innerHTML = customPairHtml() +
-        '<h3>Примеры из вашей библиотеки</h3><div class="empty-hint">' +
-        (hint || "Не нашлось подходящих пар треков в текущей библиотеке.") + '</div>';
-      wireCustomPair(t);
-      return;
-    }
-    container.innerHTML = customPairHtml() +
-      '<h3>Примеры из вашей библиотеки' +
-      '<button class="tech-more-btn" title="Показать следующие пары из библиотеки">🔀 другие пары</button>' +
-      '</h3>';
-    wireCustomPair(t);
-    const more = container.querySelector(".tech-more-btn");
-    if (more) {
-      more.addEventListener("click", function () {
-        recommendOffset[t.id] = (recommendOffset[t.id] || 0) + pairs.length;
-        loadTechniqueRecommendations(t);
-      });
-    }
-    pairs.forEach(function (pair, idx) {
-      const box = document.createElement("div");
-      box.className = "tech-pair";
-      // pair мутируется при обмене местами — держим его в замыкании
-      function paint() {
-        box.innerHTML =
-          '<div class="tech-pair-tracks">' +
-            '<span class="tech-pair-track">' + pair.track_a.name + '</span>' +
-            '<span class="tech-pair-meta">' + pair.track_a.bpm.toFixed(1) + ' BPM · ' + pair.track_a.camelot + '</span>' +
-            '<button class="tech-swap-btn" title="Поменять треки местами: A→B и B→A — это разные переходы">⇄</button>' +
-            '<span class="tech-pair-track">' + pair.track_b.name + '</span>' +
-            '<span class="tech-pair-meta">' + pair.track_b.bpm.toFixed(1) + ' BPM · ' + pair.track_b.camelot + '</span>' +
-          '</div>' +
-          '<div class="tech-pair-reason">' + pair.reason + '</div>' +
-          _cueHtml(pair.cue) +
-          '<div class="tech-pair-row">' +
-            '<button class="tech-demo-btn">🎧 Демо</button>' +
-            '<div class="tech-pair-player"></div>' +
-          '</div>';
-        const btn = box.querySelector(".tech-demo-btn");
-        const player = box.querySelector(".tech-pair-player");
-        btn.addEventListener("click", function () {
-          renderTechniqueDemo(t, pair, btn, player);
-        });
-        const swap = box.querySelector(".tech-swap-btn");
-        swap.addEventListener("click", async function () {
-          const a = pair.track_a;
-          pair.track_a = pair.track_b;
-          pair.track_b = a;
-          swap.disabled = true;
-          // Точки сведения у A→B и B→A разные — пересчитываем на сервере
-          // тем же кодом, что рисует карточку, иначе подпись соврёт.
-          try {
-            const r = await fetch(
-              "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" +
-              encodeURIComponent(t.id) + "/cue?a=" + encodeURIComponent(pair.track_a.path) +
-              "&b=" + encodeURIComponent(pair.track_b.path));
-            const d = await r.json();
-            if (r.ok && d.cue) pair.cue = d.cue;
-          } catch (e) { /* подписи останутся прежними, звук всё равно верный */ }
-          paint();
-        });
-      }
-      paint();
-      container.appendChild(box);
-    });
-  }
 
   async function renderTechniqueDemo(t, pair, btn, player) {
     btn.disabled = true;
@@ -5935,7 +7383,7 @@
       const audio = document.createElement("audio");
       audio.controls = true;
       audio.autoplay = true;
-      audio.src = data.url;
+      audio.src = mediaUrl(data.url);
       player.appendChild(audio);
     } catch (e) {
       player.innerHTML = '<div class="demo-error">Ошибка сети при рендере демо: ' + e + '</div>';
@@ -5983,6 +7431,10 @@
     roomLabel.textContent = room;
     joinScreen.style.display = "none";
     app.style.display = "flex";
+    // Пул треков грузится ЗДЕСЬ, а не при разборе скрипта: там
+    // currentRoom ещё null, запрос уходит на /api/rooms/null/... и пул
+    // остаётся пустым до первого добавления.
+    poolLoad();
     try {
       const url = new URL(location.href);
       url.searchParams.set("room", room);
@@ -6002,10 +7454,73 @@
   joinBtn.addEventListener("click", function () { join(roomInput.value); });
   roomInput.addEventListener("keydown", function (e) { if (e.key === "Enter") join(roomInput.value); });
 
+  // ------------------------- комнаты, которые уже открывали
+  //
+  // Код комнаты — случайные 16 символов, он нигде не записан и живёт
+  // только в адресной строке. А за ним стоит ВСЯ просканированная
+  // библиотека. Закрыл вкладку — и остаётся сканировать заново, час
+  // работы из-за потерянной строки в адресе. Поэтому список.
+  function agoText(ts) {
+    const sec = Math.max(0, Date.now() / 1000 - (ts || 0));
+    if (sec < 3600) return Math.round(sec / 60) + " мин назад";
+    if (sec < 86400) return Math.round(sec / 3600) + " ч назад";
+    const d = Math.round(sec / 86400);
+    if (d < 30) return d + " дн назад";
+    return Math.round(d / 30) + " мес назад";
+  }
+
+  async function paintRooms() {
+    const box = document.getElementById("join-rooms");
+    const hint = document.getElementById("join-hint");
+    if (!box) return;
+    let rooms = [];
+    try {
+      const r = await fetch("/api/rooms");
+      if (!r.ok) return;
+      rooms = (await r.json()).rooms || [];
+    } catch (e) {
+      return;   // нет списка — просто остаётся поле ввода, как раньше
+    }
+    // Пустые комнаты не показываем: открытая по ошибке комната без
+    // единого трека — это не то, к чему возвращаются, а мусор, из-за
+    // которого нужную придётся искать глазами.
+    rooms = rooms.filter(function (x) { return (x.tracks || 0) > 0; });
+    if (!rooms.length) { box.hidden = true; return; }
+    box.hidden = false;
+    if (hint) {
+      hint.innerHTML = "Или введите код комнаты вручную — тот же, что у companion " +
+                       "(<code>--companion-id</code>)";
+    }
+    box.innerHTML = "<h2>Ваши комнаты</h2>" + rooms.map(function (x) {
+      return '<button class="join-room" data-room="' + escapeHtml(x.room_id) + '">' +
+             '<span class="n">' + x.tracks + "</span>" +
+             '<span class="code">' + escapeHtml(x.room_id) + "</span>" +
+             '<span class="when">' + escapeHtml(agoText(x.updated_at)) + "</span>" +
+             '<span class="x" data-forget="' + escapeHtml(x.room_id) + '" ' +
+             'title="убрать из списка">✕</span></button>';
+    }).join("") +
+    '<p class="hint">Библиотека сохранена внутри комнаты: войдёте в старую — ' +
+    "сканировать заново не придётся.</p>";
+
+    box.querySelectorAll(".join-room").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        const forget = e.target && e.target.getAttribute("data-forget");
+        if (forget) {
+          e.stopPropagation();
+          fetch("/api/rooms/" + encodeURIComponent(forget), { method: "DELETE" })
+            .then(paintRooms).catch(function () {});
+          return;
+        }
+        join(b.getAttribute("data-room"));
+      });
+    });
+  }
+
   const preset = new URL(location.href).searchParams.get("room");
   if (preset) {
     join(preset);
   } else {
+    paintRooms();
     roomInput.focus();
   }
 })();

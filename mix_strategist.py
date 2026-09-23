@@ -156,6 +156,164 @@ def _target_arc(n: int, shape: str = "rising") -> list[int]:
 VARIANT_COUNT = 5
 
 
+# Раскладка «по сходимости». Диджей: «план микса будет составляться не
+# по какой-то дуге, а по сходимости в первую очередь, чтобы максимальное
+# количество треков сошлись».
+#
+# Дуга — это ВКУС: она решает, куда вести энергию. Сходимость — это
+# ФАКТ: сойдутся треки или придётся резать. Ставить вкус впереди факта
+# значит получать сет, где половина швов — вынужденный Quick Cut.
+#
+# Веса при shape="fit": энергия не участвует вовсе, темп и тональность
+# делят всё, а спорящая тональность становится настоящим отказом.
+FIT_WEIGHTS = {"harmonic": 0.40, "el": 0.0, "tempo": 0.60, "clash": -1.0}
+# Вес темпа тот же, что стоял в самой формуле (TEMPO_ORDER_WEIGHT
+# объявлен ниже по файлу, поэтому число здесь, а не ссылка).
+ARC_WEIGHTS = {"harmonic": 0.22, "el": 0.13, "tempo": 0.65, "clash": -0.5}
+
+
+def joins_ok(ordered: list[dict]) -> tuple[int, int]:
+    """Сколько стыков в раскладке РЕАЛЬНО сходятся, из скольких всего.
+
+    Сходится — темп в одной семье (с учётом половинного счёта) И
+    тональности не спорят. Это то самое число, которое диджей просит
+    максимизировать, и его надо уметь называть, а не только улучшать."""
+    good = 0
+    for a, b in zip(ordered, ordered[1:]):
+        rel = tempo.relate(a.get("bpm"), b.get("bpm"))
+        harm = camelot_compatibility(a.get("camelot"), b.get("camelot"))
+        if rel.get("compatible") and harm >= 0.5:
+            good += 1
+    return good, max(0, len(ordered) - 1)
+
+
+def _repair_joins(ordered: list[dict], adj: "list[set[int]] | None" = None,
+                  rounds: int = 6) -> list[dict]:
+    """Развернуть куски раскладки там, где это чинит стык (2-opt).
+
+    Обход графа идёт жадно и всё же оставляет несколько тупиков.
+    Разворот отрезка чинит ровно их: внутри отрезка соседство
+    сохраняется, меняются только два стыка на его краях.
+
+    `adj` — готовый граф сходимости. Без него пришлось бы звать
+    `tempo.relate` внутри тройного цикла: замер на 140 треках — 5.0 с
+    против 0.1 с. Считать одно и то же по два миллиона раз незачем.
+
+    Мера — КОЛИЧЕСТВО сошедшихся стыков, а не сумма весов: диджей
+    просил максимума сошедшихся, и оптимизировать надо ровно то, что
+    просили."""
+    n = len(ordered)
+    if n < 4:
+        return ordered
+    # Граф индексируется В ПОРЯДКЕ ordered — значит позиция в графе и
+    # позиция в раскладке это одно и то же число, и переводить одно в
+    # другое не нужно. Вызывающий обязан передать граф, посчитанный
+    # именно по этому списку.
+    if adj is None:
+        adj = _compat_graph(ordered)
+
+    def good(a: int, b: int) -> int:
+        return 1 if b in adj[a] else 0
+
+    best = list(range(n))
+    best_n = sum(good(x, y) for x, y in zip(best, best[1:]))
+    for _ in range(max(1, rounds)):
+        improved = False
+        for i in range(1, n - 2):
+            for j in range(i + 1, n - 1):
+                # Разворот меняет ровно два стыка — считаем только их,
+                # а не всю раскладку заново.
+                before = good(best[i - 1], best[i]) + good(best[j], best[j + 1])
+                after = good(best[i - 1], best[j]) + good(best[i], best[j + 1])
+                if after > before:
+                    best[i:j + 1] = best[i:j + 1][::-1]
+                    best_n += after - before
+                    improved = True
+        if not improved:
+            break
+    return [ordered[i] for i in best]
+
+
+# Сколько стартов перебрать при обходе графа. Обход жадный, и от точки
+# старта результат заметно зависит; 48 стартов на библиотеке диджея
+# (140 треков) считаются за доли секунды и дают то же, что полный
+# перебор всех 140.
+FIT_STARTS = 48
+
+
+def _compat_graph(tracks: list[dict]) -> list[set[int]]:
+    """Кто с кем сходится. Ровно те же условия, что и у joins_ok —
+    иначе алгоритм оптимизировал бы не то, что потом меряют."""
+    n = len(tracks)
+    adj: list[set[int]] = [set() for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            rel = tempo.relate(tracks[i].get("bpm"), tracks[j].get("bpm"))
+            harm = camelot_compatibility(tracks[i].get("camelot"),
+                                         tracks[j].get("camelot"))
+            if rel.get("compatible") and harm >= 0.5:
+                adj[i].add(j)
+                adj[j].add(i)
+    return adj
+
+
+def _walk_graph(tracks: list[dict], adj: list[set[int]], start: int) -> list[int]:
+    """Пройти все треки, идя по сходимости и прыгая только в тупике.
+
+    Правило выбора следующего — НАИМЕНЬШЕЕ число оставшихся выходов у
+    кандидата. Это правило Варнсдорфа, и оно решает ровно ту беду, от
+    которой страдал прежний жадный отбор: тот на каждом шаге брал
+    лучшего соседа и оттого съедал популярные треки первыми, а под
+    конец оставался с теми, к кому не подходит никто. Забирать сначала
+    «редких» — значит не загонять себя в угол.
+
+    В тупике прыгаем к треку с наибольшим числом выходов: из него
+    цепочка продолжится дальше всего. Каждый прыжок — один несошедшийся
+    стык, и их число мы и минимизируем."""
+    n = len(tracks)
+    left = set(range(n))
+    path = [start]
+    left.discard(start)
+    while left:
+        cand = [j for j in adj[path[-1]] if j in left]
+        if cand:
+            nxt = min(cand, key=lambda j: (len(adj[j] & left), -len(adj[j]), j))
+        else:
+            nxt = max(left, key=lambda j: (len(adj[j] & left), -j))
+        path.append(nxt)
+        left.discard(nxt)
+    return path
+
+
+def _order_by_fit(tracks: list[dict],
+                  adj: "list[set[int]] | None" = None) -> list[dict]:
+    """Раскладка, максимизирующая число сошедшихся стыков.
+
+    Диджей: «план микса будет составляться не по какой-то дуге, а по
+    сходимости в первую очередь, чтобы максимальное количество треков
+    сошлись».
+
+    Почему не прежний жадный отбор по весу. Замер на библиотеке диджея
+    (140 треков): граф сходимости — это ОДНА большая компонента на 137
+    треков плюс три одиночки, то есть потолок 136 сошедшихся стыков из
+    139. Жадный отбор по весу давал 119-123; обход графа даёт 131.
+    Разница не в весах, а в том, что вес ничего не знает о структуре
+    графа и упирается в тупики, которых можно было избежать."""
+    if len(tracks) < 3:
+        return list(tracks)
+    adj = adj if adj is not None else _compat_graph(tracks)
+    starts = sorted(range(len(tracks)),
+                    key=lambda i: (-len(adj[i]), i))[:FIT_STARTS]
+    best: list[int] | None = None
+    best_n = -1
+    for s in starts:
+        p = _walk_graph(tracks, adj, s)
+        n = sum(1 for x, y in zip(p, p[1:]) if y in adj[x])
+        if n > best_n:
+            best, best_n = p, n
+    return [tracks[i] for i in (best or list(range(len(tracks))))]
+
+
 def order_tracks(tracks: list[dict], arc_shape: str = "rising",
                  el_map: dict[str, int] | None = None,
                  variant: int = 0) -> list[dict]:
@@ -172,8 +330,21 @@ def order_tracks(tracks: list[dict], arc_shape: str = "rising",
     def el(tr: dict) -> int:
         return el_map.get(tr["name"], energy_level(tr["energy"]))
 
+    fit_first = str(arc_shape) == "fit"
+    if fit_first:
+        # Сходимость — это про СТРУКТУРУ графа, а не про сумму весов,
+        # поэтому у неё отдельный алгоритм, а не другие коэффициенты.
+        # Граф считается ОДИН раз и уезжает и в обход, и в починку.
+        adj = _compat_graph(tracks)
+        walked = _order_by_fit(tracks, adj)
+        return _repair_joins(walked, _compat_graph(walked))
+    w = FIT_WEIGHTS if fit_first else ARC_WEIGHTS
     remaining = list(tracks)
-    target = _target_arc(len(tracks), arc_shape)
+    # У раскладки по сходимости дуги нет вовсе — но целевой ряд всё
+    # равно нужен, чтобы код ниже был один на оба случая. Берём ровный:
+    # при весе энергии 0 он ни на что не влияет.
+    target = ([3] * len(tracks) if fit_first
+              else _target_arc(len(tracks), arc_shape))
 
     # Стартовый трек — ближе всего к первому целевому EL. Для варианта N
     # берём N-й по этому же признаку: дальше жадный отбор идёт от другой
@@ -209,13 +380,16 @@ def order_tracks(tracks: list[dict], arc_shape: str = "rising",
                 in_tempo = max(0.0, 1.0 - rel["error_pct"] / 4.0)
             # Спорящие тональности — второй повод потерять проценты,
             # поэтому это не мягкий вес, а отказ при прочих равных.
-            clash = -0.5 if harmonic < 0.5 else 0.0
-            return (harmonic * 0.22 + el_fit * 0.13
-                    + in_tempo * TEMPO_ORDER_WEIGHT + clash)
+            clash = w["clash"] if harmonic < 0.5 else 0.0
+            return (harmonic * w["harmonic"] + el_fit * w["el"]
+                    + in_tempo * w["tempo"] + clash)
 
         remaining.sort(key=score, reverse=True)
         ordered.append(remaining.pop(0))
-    return ordered
+    # Починка стыков — только там, где сходимость и заказывали: в режиме
+    # дуги разворот отрезка сломал бы саму дугу, ради которой она и
+    # выбрана.
+    return _repair_joins(ordered) if fit_first else ordered
 
 
 # --- выбор техники для перехода ---
@@ -394,6 +568,7 @@ CLASH_WEIGHT = 0.0
 # поэтому порядок строим по тем же критериям, по которым потом считаются
 # проценты, а не по отдельной шкале.
 TEMPO_ORDER_WEIGHT = 0.65
+assert ARC_WEIGHTS["tempo"] == TEMPO_ORDER_WEIGHT, "вес темпа разъехался с ARC_WEIGHTS"
 
 
 def _both_drums_share(a: dict, b: dict, from_t: float, to_t: float, bars: float) -> float:
@@ -1422,6 +1597,11 @@ def plan_strategy(tracks: list[dict], arc_shape: str = "rising",
             for i, tr in enumerate(ordered)
         ],
         "transitions": transitions,
+        # Сколько стыков реально сошлось — мера, которую максимизирует
+        # раскладка «по сходимости». Её надо уметь НАЗЫВАТЬ, а не только
+        # улучшать: иначе «стало лучше» ничем не подтверждается.
+        "joins_ok": joins_ok(ordered)[0],
+        "joins_total": max(0, len(ordered) - 1),
         "energy_arc": energy_arc,
         "transitions_count": len(transitions),
         "avg_confidence": avg_confidence,

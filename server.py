@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.9"
+APP_VERSION = "1.2.0"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -3348,6 +3348,54 @@ async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str =
     })
 
 
+# ------------------------------------------------------------- пул треков
+#
+# Отдельно от пула ПЕРЕХОДОВ: там одобренные швы, здесь просто отложенные
+# треки. См. track_pool.py — разницу диджей назвал сам.
+
+
+@app.get("/api/rooms/{session_id}/track-pool")
+async def track_pool_list(session_id: str) -> JSONResponse:
+    import track_pool
+
+    room = _room(session_id)
+    items = track_pool.tracks(session_id, room.library_tracks or [])
+    return JSONResponse({"ok": True, "count": len(items), "tracks": [
+        {"path": t.get("path"), "name": t.get("name"),
+         "bpm": t.get("bpm"), "camelot": t.get("camelot"),
+         "genre": t.get("genre"), "subgenre": t.get("subgenre"),
+         "energy": t.get("energy"), "duration_seconds": t.get("duration_seconds")}
+        for t in items]})
+
+
+@app.post("/api/rooms/{session_id}/track-pool")
+async def track_pool_add(session_id: str, body: dict) -> JSONResponse:
+    import track_pool
+
+    added = track_pool.add(session_id, list(body.get("paths") or ()))
+    return JSONResponse({"ok": True, "added": added,
+                         "count": len(track_pool.paths(session_id))})
+
+
+@app.post("/api/rooms/{session_id}/track-pool/remove")
+async def track_pool_remove(session_id: str, body: dict) -> JSONResponse:
+    import track_pool
+
+    if body.get("all"):
+        track_pool.clear(session_id)
+        return JSONResponse({"ok": True, "count": 0})
+    track_pool.remove(session_id, list(body.get("paths") or ()))
+    return JSONResponse({"ok": True, "count": len(track_pool.paths(session_id))})
+
+
+@app.post("/api/rooms/{session_id}/track-pool/order")
+async def track_pool_order(session_id: str, body: dict) -> JSONResponse:
+    import track_pool
+
+    track_pool.reorder(session_id, list(body.get("paths") or ()))
+    return JSONResponse({"ok": True, "paths": track_pool.paths(session_id)})
+
+
 @app.post("/api/rooms/{session_id}/audition/code")
 async def audition_code(session_id: str, body: dict) -> JSONResponse:
     """Запомнить состояние шва и вернуть его код.
@@ -3952,6 +4000,19 @@ async def compute_strategy(session_id: str, body: dict | None = None) -> JSONRes
         tracks = [t for t in tracks if t.get("name") in wanted]
         if not tracks:
             raise HTTPException(status_code=400, detail="Ни один из указанных треков не найден в библиотеке")
+
+    # Пул треков сужает сет до отложенного. Не «фильтр жанра» — явный
+    # список путей, который диджей собрал руками в Library.
+    only_paths = body.get("only_paths")
+    if only_paths:
+        want = {str(p) for p in only_paths}
+        picked = [t for t in tracks if t.get("path") in want]
+        if len(picked) >= 2:
+            tracks = picked
+        elif picked:
+            raise HTTPException(
+                status_code=400,
+                detail="в пуле треков меньше двух треков — сет из одного не собрать")
 
     strategy = mix_strategist.plan_strategy(
         tracks,

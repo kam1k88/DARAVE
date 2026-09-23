@@ -85,12 +85,46 @@ if ($action === 'password') {
 
 // ---------------------------------------------------------- заказы
 if ($action === 'orders') {
-    $st = db()->prepare(
-        'SELECT id, tier, amount, status, paid_at, refunded_at, refund_amount, created_at
-           FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 50'
-    );
-    $st->execute([$u['id']]);
-    json_out(['ok' => true, 'orders' => $st->fetchAll()]);
+    // Заявка на возврат приезжает вместе с оплатой: в кабинете кнопка
+    // «Вернуть деньги» должна либо быть, либо показывать, что заявка уже
+    // принята. Отдельный запрос за этим означал бы, что кнопка секунду
+    // выглядит доступной там, где она уже нажата.
+    //
+    // Запрос с join под try: таблицы заявок может ещё не быть
+    // (db-refund-requests.sql выполняется руками). Список оплат из-за
+    // этого пропадать не должен — это его основная работа.
+    $sql = 'SELECT o.id, o.tier, o.amount, o.status, o.paid_at, o.refunded_at,
+                   o.refund_amount, o.created_at, %s
+              FROM orders o %s
+             WHERE o.user_id = ? ORDER BY o.id DESC LIMIT 50';
+    try {
+        $st = db()->prepare(sprintf($sql,
+            'r.status AS refund_request, r.created_at AS refund_asked_at',
+            'LEFT JOIN refund_requests r ON r.order_id = o.id'));
+        $st->execute([$u['id']]);
+        $orders = $st->fetchAll();
+    } catch (PDOException $e) {
+        error_log('DARAVE orders: заявки недоступны (' . $e->getMessage() . ')');
+        $st = db()->prepare(sprintf($sql, 'NULL AS refund_request, NULL AS refund_asked_at', ''));
+        $st->execute([$u['id']]);
+        $orders = $st->fetchAll();
+    }
+
+    // Возврат без вопросов обещан офертой на 14 дней. Кабинет должен
+    // показывать не «можно ли вообще», а сколько дней осталось: иначе
+    // человек узнаёт о сроке в момент отказа.
+    require_once __DIR__ . '/_refund.php';
+    foreach ($orders as &$o) {
+        $left = refund_days_left($o);
+        $o['refundable']      = $o['status'] === 'succeeded'
+                             && $o['refund_request'] === null
+                             && $o['refund_amount'] === null;
+        $o['refund_days_left'] = $left;
+        $o['refund_free']      = $left !== null && $left >= 0;
+    }
+    unset($o);
+
+    json_out(['ok' => true, 'orders' => $orders, 'refund_free_days' => REFUND_FREE_DAYS]);
 }
 
 // --------------------------------------------------------- удаление

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/_auth.php';
+require_once __DIR__ . '/_refund.php';
 
 /**
  * Админка: одна точка входа, одна проверка прав.
@@ -259,6 +260,90 @@ if ($action === 'log') {
           ORDER BY l.id DESC LIMIT 100'
     );
     json_out(['ok' => true, 'log' => $st->fetchAll()]);
+}
+
+// ------------------------------------------------- заявки на возврат
+//
+// Здесь оказываются только те заявки, по которым решать надо руками:
+// в пределах 14 дней возврат уходит сам из refund_request.php, и сюда
+// такая заявка попадает уже со статусом approved — как след, а не как
+// работа.
+if ($action === 'refund_requests') {
+    try {
+        $st = $pdo->query(
+            "SELECT r.id, r.order_id, r.user_id, r.reason, r.status, r.refund_id,
+                    r.admin_note, r.created_at, r.decided_at,
+                    u.email, o.tier, o.amount, o.paid_at, o.status AS order_status,
+                    DATEDIFF(NOW(), o.paid_at) AS days_passed
+               FROM refund_requests r
+               LEFT JOIN users  u ON u.id = r.user_id
+               LEFT JOIN orders o ON o.id = r.order_id
+              ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 200"
+        );
+    } catch (PDOException $e) {
+        error_log('DARAVE refund_requests: ' . $e->getMessage());
+        json_out(['error' => 'Таблицы заявок нет. Выполните db-refund-requests.sql.'], 500);
+    }
+    json_out(['ok' => true, 'requests' => $st->fetchAll(),
+              'free_days' => REFUND_FREE_DAYS]);
+}
+
+if ($action === 'refund_decide') {
+    $id   = (int)($in['id'] ?? 0);
+    $what = (string)($in['decision'] ?? '');
+    $note = trim((string)($in['note'] ?? ''));
+    if (!in_array($what, ['approve', 'decline'], true)) {
+        json_out(['error' => 'Решение: approve или decline'], 400);
+    }
+    if (mb_strlen($note) > 500) {
+        json_out(['error' => 'Пояснение длиннее 500 символов'], 400);
+    }
+
+    $st = $pdo->prepare('SELECT id, user_id, order_id, status FROM refund_requests WHERE id = ?');
+    $st->execute([$id]);
+    $req = $st->fetch();
+    if (!$req) {
+        json_out(['error' => 'Заявка не найдена'], 404);
+    }
+    if ($req['status'] !== 'pending') {
+        json_out(['error' => "По заявке уже есть решение: «{$req['status']}»"], 409);
+    }
+
+    if ($what === 'decline') {
+        // Отказ без пояснения — это отказ, который потом невозможно
+        // объяснить ни человеку, ни себе через месяц.
+        if ($note === '') {
+            json_out(['error' => 'При отказе нужно пояснение'], 400);
+        }
+        $pdo->prepare("UPDATE refund_requests
+                          SET status = 'declined', decided_by = ?, decided_at = NOW(), admin_note = ?
+                        WHERE id = ? AND status = 'pending'")
+            ->execute([(int)$me['id'], $note, $id]);
+        admin_log((int)$me['id'], 'refund_decline', (int)$req['user_id'],
+                  ['request' => $id, 'order' => (int)$req['order_id'], 'note' => $note]);
+        json_out(['ok' => true, 'status' => 'declined']);
+    }
+
+    $res = refund_order((int)$req['order_id'], null, 'админка, по заявке');
+    if (!($res['ok'] ?? false)) {
+        // Заявку оставляем pending: решение не состоялось, и помечать её
+        // выполненной значит потерять обращение.
+        $code = (int)($res['http'] ?? 500);
+        unset($res['http']);
+        json_out($res, $code);
+    }
+    // status и refund_id заявке уже проставил refund_order(): он это
+    // делает при любом полном возврате, откуда бы тот ни пришёл.
+    // Здесь дописываем только то, чего он знать не может.
+    $pdo->prepare('UPDATE refund_requests SET decided_by = ?, admin_note = ? WHERE id = ?')
+        ->execute([(int)$me['id'], $note === '' ? null : $note, $id]);
+    admin_log((int)$me['id'], 'refund_approve', (int)$req['user_id'],
+              ['request' => $id, 'order' => (int)$req['order_id'],
+               'amount' => $res['amount'], 'refund_id' => $res['refund_id']]);
+
+    unset($res['http']);
+    $res['status_request'] = 'approved';
+    json_out($res);
 }
 
 json_out(['error' => 'Неизвестное действие'], 400);

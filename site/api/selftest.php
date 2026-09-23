@@ -90,6 +90,32 @@ try {
         $o = (int)$pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
         ok('все 6 таблиц на месте', "пользователей: $n, заказов: $o");
     }
+
+    // Таблицы из ручных миграций. Их отсутствие не ломает вход и оплату,
+    // но ломает то, что на них опирается, — и молча: кнопка возврата в
+    // кабинете просто не появится, и понять почему будет негде.
+    foreach (['admin_log' => 'db-admin.sql', 'refund_requests' => 'db-refund-requests.sql'] as $t => $file) {
+        if (in_array($t, $have, true)) {
+            ok("таблица $t на месте");
+        } else {
+            warn("нет таблицы $t", "выполните $file — без неё "
+                . ($t === 'refund_requests'
+                    ? 'заявки на возврат из личного кабинета не работают'
+                    : 'админка не ведёт журнал'));
+        }
+    }
+
+    // Колонки возвратов. db-refunds.sql выполняется руками, и без неё
+    // возврат падает уже ПОСЛЕ того, как ЮKassa отдала деньги.
+    $cols = $pdo->query('SHOW COLUMNS FROM orders')->fetchAll(PDO::FETCH_COLUMN);
+    $needCols = array_values(array_diff(
+        ['tier_before', 'tier_until_before', 'refund_id', 'refunded_at', 'refund_amount'], $cols));
+    if ($needCols) {
+        bad('в orders нет колонок для возврата: ' . implode(', ', $needCols),
+            'выполните db-refunds.sql — иначе деньги вернутся, а база об этом не узнает');
+    } else {
+        ok('orders умеет возвраты');
+    }
 } catch (Throwable $e) {
     bad('база недоступна', $e->getMessage());
 }
@@ -143,6 +169,38 @@ if ($code === 200) {
          'хостинг не пускает сам к себе — проверьте вручную, ЮKassa достучится извне');
 } else {
     bad("адрес уведомлений вернул $code", $hook . ' — ЮKassa считает не-200 сбоем и будет слать повторы сутки');
+}
+
+// ------------------------------------------------------------- Telegram
+//
+// Проверяем getMe, а не отправку: сообщение «проверка» в чат при каждом
+// открытии страницы — это способ приучить себя не читать уведомления.
+// getMe отвечает на те же вопросы: жив ли токен, тот ли бот.
+$tg = cfg()['telegram'] ?? [];
+$tgToken = trim((string)($tg['bot_token'] ?? ''));
+$tgChat  = trim((string)($tg['chat_id'] ?? ''));
+if ($tgToken === '' || $tgChat === '') {
+    warn('уведомления в Telegram не настроены',
+         'оплаты и заявки на возврат будут видны только в логе сайта — '
+         . 'заполните telegram.bot_token и telegram.chat_id в _config.php (как — в PAYMENTS.md)');
+} else {
+    $ch = curl_init('https://api.telegram.org/bot' . $tgToken . '/getMe');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    $me = is_string($raw) ? json_decode($raw, true) : null;
+    if ($code === 200 && is_array($me) && ($me['ok'] ?? false)) {
+        ok('Telegram: бот @' . (string)($me['result']['username'] ?? '?') . ' на связи',
+           'чат ' . $tgChat . ($tgChat[0] === '-' ? ' (группа)' : ''));
+    } elseif ($code === 401) {
+        bad('Telegram не принял токен (401)', 'токен отозван или скопирован с обрезанным началом');
+    } elseif ($code === 0) {
+        warn('не смог проверить Telegram', $err !== '' ? $err : 'хостинг не пускает наружу');
+    } else {
+        bad('Telegram ответил ошибкой ' . $code, substr((string)$raw, 0, 200));
+    }
 }
 
 // ------------------------------------------------------- страницы для ЮKassa

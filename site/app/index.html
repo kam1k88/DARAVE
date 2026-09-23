@@ -277,6 +277,27 @@
 
   var ME = null;    // последний ответ me.php — чтобы не ходить за ним дважды
 
+  // Спросить, кто мы, и запомнить ответ.
+  //
+  // До этого ME объявлялся и больше никогда не заполнялся: профиль читал
+  // из него почту и тариф и показывал пустоту. Теперь один вход для всех,
+  // кому нужны эти данные, и одно место, где они обновляются.
+  function loadMe() {
+    return api("me.php").then(function (r) {
+      ME = (r.data && r.data.authenticated) ? r.data : null;
+      return ME || {};
+    });
+  }
+
+  // Перечитать себя и перерисовать профиль. Нужно после возврата денег:
+  // тариф в этот момент падает к прежнему, и экран, показывающий
+  // оплаченное, врёт.
+  function refreshMe() {
+    return loadMe().then(function (d) {
+      if (d && d.authenticated) { paintWho(); showProfile(); }
+    });
+  }
+
   function accApi(payload) {
     return fetch("/api/account.php", {
       method: "POST", credentials: "same-origin",
@@ -326,8 +347,14 @@
 
     if (ME) renderDevices($("pf-devices"), ME.devices || [], ME.max_devices || 1);
 
-    var out = $("pf-out");
-    function say(cls, text) { out.innerHTML = '<div class="note ' + cls + '">' + text + '</div>'; }
+    // Поле сообщений ищем при каждом вызове, а не запоминаем ссылку:
+    // после возврата денег профиль перерисовывается целиком, и
+    // запомненный узел оказывается уже выброшенным из страницы — текст
+    // уходил бы в никуда.
+    function say(cls, text) {
+      var o = $("pf-out");
+      if (o) o.innerHTML = '<div class="note ' + cls + '">' + text + '</div>';
+    }
 
     $("pf-back").addEventListener("click", findClient);
 
@@ -349,18 +376,81 @@
         });
     });
 
-    accApi({ action: "orders" }).then(function (r) {
-      var box = $("pf-orders");
-      var list = (r.data && r.data.orders) || [];
-      if (!list.length) { box.innerHTML = "Оплат пока не было."; return; }
-      box.innerHTML = list.map(function (o) {
-        var st = o.status === "succeeded" ? "оплачен"
-               : o.status === "refunded" ? "возвращён" : o.status;
-        return '<div class="ord"><span>' + escapeHtml(prettyDate(o.paid_at || o.created_at)) +
-               ' · ' + escapeHtml(o.amount) + ' ₽</span><span class="t">' +
-               escapeHtml(st) + '</span></div>';
-      }).join("");
-    });
+    // Оплаты и возврат по ним.
+    //
+    // Кнопка «Вернуть деньги» стоит здесь, а не в письме, потому что
+    // оферта обещает возврат без объяснения причин в течение 14 дней. Раз
+    // условий нет, то и переписка не нужна: в пределах срока сервер
+    // возвращает деньги сам. Дальше срока кнопка превращается в заявку,
+    // и причину приходится спросить — решение уже не автоматическое.
+    function loadOrders() {
+      accApi({ action: "orders" }).then(function (r) {
+        var box = $("pf-orders");
+        var list = (r.data && r.data.orders) || [];
+        var freeDays = (r.data && r.data.refund_free_days) || 14;
+        if (!list.length) { box.innerHTML = "Оплат пока не было."; return; }
+        box.innerHTML = list.map(function (o) {
+          var st = o.status === "succeeded" ? "оплачен"
+                 : o.status === "refunded" ? "возвращён" : o.status;
+          if (o.refund_request === "pending")       st += " · заявка на возврат принята";
+          else if (o.refund_request === "declined") st += " · в возврате отказано";
+          else if (o.refund_amount && o.status === "succeeded") st += " · возвращено " + escapeHtml(o.refund_amount) + " ₽";
+          return '<div class="ord"><span>' + escapeHtml(prettyDate(o.paid_at || o.created_at)) +
+                 ' · ' + escapeHtml(o.amount) + ' ₽</span><span class="t">' +
+                 escapeHtml(st) +
+                 (o.refundable
+                   ? ' <button type="button" class="quiet ord-refund" data-order="' + o.id +
+                     '" data-amount="' + escapeHtml(o.amount) +
+                     '" data-free="' + (o.refund_free ? "1" : "0") + '">Вернуть деньги</button>'
+                   : "") +
+                 '</span></div>';
+        }).join("");
+
+        Array.prototype.forEach.call(box.querySelectorAll(".ord-refund"), function (b) {
+          b.addEventListener("click", function () { askRefund(b, freeDays); });
+        });
+      });
+    }
+
+    function askRefund(b, freeDays) {
+      var id = Number(b.dataset.order);
+      var payload = { order_id: id };
+
+      if (b.dataset.free === "1") {
+        if (!confirm("Вернуть " + b.dataset.amount + " ₽ по этой оплате?\n\n" +
+                     "Деньги придут тем же способом, которым вы платили. " +
+                     "Оплаченные возможности отключатся сразу.")) return;
+      } else {
+        var why = prompt(freeDays + " дней с оплаты уже прошли, поэтому возврат " +
+                         "не оформляется автоматически.\n\nОпишите, что случилось — " +
+                         "я посмотрю и отвечу:");
+        if (!why || !why.trim()) return;
+        payload.reason = why.trim();
+      }
+
+      b.disabled = true;
+      fetch("/api/refund_request.php", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (d) {
+          b.disabled = false;
+          if (!d.ok) { say("bad", escapeHtml(d.error || "Не вышло")); return; }
+          if (d.status === "refunded") {
+            // Тариф только что упал к прежнему. Перерисовываем экран
+            // целиком и только потом пишем сообщение: иначе оно попадёт
+            // в узел, который перерисовка выбросит.
+            refreshMe().then(function () { say("good", escapeHtml(d.note || "")); });
+          } else {
+            say("good", escapeHtml(d.note || "Заявка принята."));
+            loadOrders();
+          }
+        })
+        .catch(function () { b.disabled = false; say("bad", "Сеть не отвечает."); });
+    }
+
+    loadOrders();
 
     $("pf-del").addEventListener("click", function () {
       var pass = prompt("Удаление учётной записи.\n\nВойти в неё больше будет нельзя. " +
@@ -589,7 +679,7 @@
              '<div class="note">Платёжный сервис ещё не сообщил о результате. ' +
              'Если деньги списались, лицензия включится сама — обновите страницу ' +
              'через несколько минут.<br><br>Если этого не произошло, напишите на ' +
-             '<a href="mailto:kam1k@darave.ru">kam1k@darave.ru</a>, разберусь вручную.</div>' +
+             '<a href="mailto:kam1k88@gmail.com">kam1k88@gmail.com</a>, разберусь вручную.</div>' +
              '<button id="reload">Обновить</button>');
         $("reload").addEventListener("click", function () { location.href = "/app/"; });
       }).catch(function () {
@@ -703,8 +793,7 @@
   function loadDevices() {
     var box = $("devices");
     if (!box) return;
-    api("me.php").then(function (r) {
-      var d = r.data || {};
+    loadMe().then(function (d) {
       if (!d.authenticated) return;
       renderDevices(box, d.devices || [], d.max_devices || 1);
     }).catch(function () { /* список — не главное, молчим */ });
@@ -782,8 +871,8 @@
   // ─────────── старт ───────────
 
   setMode("login");
-  api("me.php").then(function (r) {
-    if (r.data && r.data.authenticated) showConnect(r.data.user);
+  loadMe().then(function (d) {
+    if (d.authenticated) showConnect(d.user);
   }).catch(function () { /* сайт не отвечает — покажем форму, она объяснит */ });
 })();
 </script>

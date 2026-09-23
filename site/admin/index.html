@@ -98,6 +98,7 @@
   <a class="brand" href="/"><img src="/mark.svg" alt="">DARAVE</a>
   <div class="tabs" id="tabs">
     <button class="tab" data-tab="users" aria-selected="true">Пользователи</button>
+    <button class="tab" data-tab="refunds" aria-selected="false">Возвраты</button>
     <button class="tab" data-tab="promo" aria-selected="false">Промокоды</button>
     <button class="tab" data-tab="log" aria-selected="false">Журнал</button>
   </div>
@@ -379,6 +380,86 @@
     });
   }
 
+  // -------------------------------------------------------- возвраты
+  //
+  // Список заявок из личного кабинета. Те, что попали в 14 дней, уже
+  // возвращены сервером и лежат здесь как след. Ждут решения только
+  // просроченные — по ним кнопки «Вернуть» и «Отказать».
+  function tabRefunds() {
+    view.innerHTML = '<div id="r-out"></div><div class="tablewrap"><div class="empty">Загружаю…</div></div>';
+    loadRefunds();
+  }
+
+  function loadRefunds() {
+    api({ action: "refund_requests" }).then(function (r) {
+      var box = document.querySelector(".tablewrap");
+      if (!r.data.ok) {
+        box.innerHTML = '<div class="empty">' + esc(r.data.error || "Не вышло") + "</div>";
+        return;
+      }
+      var list = r.data.requests || [];
+      var free = r.data.free_days || 14;
+      if (!list.length) {
+        box.innerHTML = '<div class="empty">Заявок на возврат не было</div>';
+        return;
+      }
+      box.innerHTML =
+        "<table><thead><tr><th>№</th><th>Кто</th><th>Заказ</th><th>Прошло</th>" +
+        "<th>Причина</th><th>Решение</th><th></th></tr></thead><tbody>" +
+        list.map(function (q) {
+          var late = q.days_passed !== null && Number(q.days_passed) > free;
+          var verdict = q.status === "pending" ? '<span class="pill">ждёт</span>'
+                      : q.status === "approved" ? '<span class="pill paid">возвращено</span>'
+                      : '<span class="pill">отказано</span>';
+          return "<tr><td class='mono'>" + esc(q.id) +
+            "</td><td>" + esc(q.email || ("id " + q.user_id)) +
+            "</td><td class='mono'>" + esc(q.order_id) + " · " + esc(q.tier || "") +
+            " · " + esc(q.amount || "") + " ₽</td>" +
+            "<td class='mono" + (late ? "" : " muted") + "'>" +
+            (q.days_passed === null ? "—" : esc(q.days_passed) + " дн.") + "</td>" +
+            "<td class='muted' style='max-width:260px'>" + esc(q.reason || "") +
+            (q.admin_note ? "<br><span class='mono' style='font-size:11.5px'>" + esc(q.admin_note) + "</span>" : "") +
+            "</td><td>" + verdict + "</td><td>" +
+            (q.status === "pending"
+              ? '<button class="danger r-ok" data-id="' + q.id + '">Вернуть</button> ' +
+                '<button class="quiet r-no" data-id="' + q.id + '">Отказать</button>'
+              : "") +
+            "</td></tr>";
+        }).join("") + "</tbody></table>";
+
+      function say(cls, text) { $("r-out").innerHTML = '<div class="note ' + cls + '">' + text + "</div>"; }
+
+      function decide(id, decision, note, btn) {
+        btn.disabled = true;
+        api({ action: "refund_decide", id: id, decision: decision, note: note })
+          .then(function (r) {
+            btn.disabled = false;
+            if (!r.data.ok) { say("bad", esc(r.data.error || "Не вышло")); return; }
+            say("good", decision === "approve"
+              ? "Возврат " + esc(r.data.refund_id) + " на " + esc(r.data.amount) +
+                " ₽. Не забудьте возвратный чек в «Мой налог»."
+              : "Отказ записан.");
+            loadRefunds();
+          });
+      }
+
+      Array.prototype.forEach.call(box.querySelectorAll(".r-ok"), function (b) {
+        b.addEventListener("click", function () {
+          if (!confirm("Вернуть деньги по заявке " + b.dataset.id +
+                       "? Тариф вернётся к тому, что был до оплаты.")) return;
+          decide(Number(b.dataset.id), "approve", "", b);
+        });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll(".r-no"), function (b) {
+        b.addEventListener("click", function () {
+          var why = prompt("Причина отказа. Её увидите вы и она останется в журнале:");
+          if (!why || !why.trim()) return;
+          decide(Number(b.dataset.id), "decline", why.trim(), b);
+        });
+      });
+    });
+  }
+
   // ------------------------------------------------------- промокоды
   function tabPromo() {
     view.innerHTML =
@@ -443,7 +524,7 @@
   }
 
   // ------------------------------------------------------------ старт
-  var TABS = { users: tabUsers, promo: tabPromo, log: tabLog };
+  var TABS = { users: tabUsers, refunds: tabRefunds, promo: tabPromo, log: tabLog };
   document.getElementById("tabs").addEventListener("click", function (e) {
     var b = e.target.closest(".tab");
     if (!b) return;

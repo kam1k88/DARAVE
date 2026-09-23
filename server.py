@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -2388,6 +2388,21 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
     # а человек видел молчащую полосу и решал, что программа зависла.
     # Разница между видеокартой и процессором тут не в процентах, а в
     # порядке: минуты против часов.
+    # Слои, оставшиеся в старой папке (до 1.1.5 они лежали рядом с
+    # кодом). Молча пересчитывать их заново — часы работы видеокарты и
+    # ни слова о причине.
+    legacy = None
+    try:
+        import stems as _st0
+
+        _old = await asyncio.to_thread(_st0.legacy_stem_dir)
+        if _old is not None:
+            legacy = {"path": str(_old),
+                      "count": await asyncio.to_thread(_st0.legacy_stem_count, _old),
+                      "to": str(_st0.STEM_DIR)}
+    except Exception:                                   # noqa: BLE001
+        legacy = None
+
     dev = {}
     try:
         import stems as _st
@@ -2414,6 +2429,7 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
         "tracks": len(tracks),
         "root": _la.common_root([t.get("path") for t in tracks if t.get("path")]),
         "steps": steps, "missing": missing, "stems_device": dev,
+        "stems_legacy": legacy,
         "cleanup_mb": missing["cleanup_mb"],
         "discogs": bool(_metadata.resolve_discogs_token(None)),
     })
@@ -3269,6 +3285,40 @@ async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str =
         "out": short(fx_presets.presets("out", beats, a_genre)),
         "in": short(fx_presets.presets("in", beats, b_genre)),
     })
+
+
+@app.post("/api/rooms/{session_id}/audition/code")
+async def audition_code(session_id: str, body: dict) -> JSONResponse:
+    """Запомнить состояние шва и вернуть его код.
+
+    Код — короткое число, посчитанное от ВСЕГО состояния: пары треков,
+    приёма, точек стыка, длины, эффектов и формы ведения. Одинаковое
+    состояние даёт одинаковый код всегда, поэтому запрос идемпотентный:
+    повторный вызов ничего не создаёт, а возвращает тот же номер."""
+    import audition
+
+    state = body.get("state") or body
+    if not state.get("a_path") or not state.get("b_path"):
+        raise HTTPException(status_code=400, detail="В состоянии нет треков")
+    code = await asyncio.to_thread(audition.seam_code, session_id, state)
+    return JSONResponse({"ok": True, "code": code})
+
+
+@app.get("/api/rooms/{session_id}/audition/code/{code}")
+async def audition_by_code(session_id: str, code: str) -> JSONResponse:
+    """Состояние шва по коду. 404 — такого кода в этой комнате не видели.
+
+    Коды не общие между комнатами сознательно: код ссылается на треки по
+    путям, а у другой комнаты может быть другая библиотека."""
+    import audition
+
+    state = await asyncio.to_thread(audition.seam_by_code, session_id, code)
+    if state is None:
+        raise HTTPException(status_code=404,
+                            detail="Такого кода в этой комнате нет. Код "
+                                   "запоминается, когда переход показан, и "
+                                   "живёт в базе этой комнаты.")
+    return JSONResponse({"ok": True, "state": state})
 
 
 @app.post("/api/rooms/{session_id}/audition/roll")

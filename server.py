@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.6"
+APP_VERSION = "1.1.7"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -778,7 +778,8 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
             _lay = _sf.gap(_sf.features(track_a_path), _sf.features(track_b_path))
         except Exception:                            # noqa: BLE001
             _lay = None
-        mix_profile = _mp.auto(seam_bars, body.get("pair_label"), _lay)
+        mix_profile = _mp.auto(seam_bars, body.get("pair_label"), _lay,
+                               technique_id)
     vocal_loop = body.get("vocal_loop")
     extra_events = list(body.get("extra_events") or [])
     # FX по сторонам приходят ИДЕНТИФИКАТОРАМИ, а не готовыми событиями:
@@ -786,6 +787,20 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
     # собирать события сам и они разъедутся с рендером.
     fx_out = body.get("fx_out")
     fx_in = body.get("fx_in")
+    # Ручки эффекта (сила, доля эха, хвост реверба…) идут рядом с
+    # идентификатором, а не вместо него: пресет остаётся смыслом, ручки —
+    # его настройкой. Клиент шлёт только то, что двигал; остальное
+    # подставит сам пресет.
+    fx_out_opts = body.get("fx_out_opts") or {}
+    fx_in_opts = body.get("fx_in_opts") or {}
+    # Ручки поверх эффекта САМОГО приёма — отдельная вещь: там не
+    # добавляется второй эффект, а настраивается уже существующий.
+    fx_tune = {}
+    for deck, opts in (("source", body.get("fx_own_out")),
+                       ("target", body.get("fx_own_in"))):
+        if opts:
+            fx_tune[deck] = dict(opts)
+    fx_tune = fx_tune or None
     if fx_out or fx_in:
         import fx_presets
 
@@ -793,7 +808,8 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
         extra_events += fx_presets.events_for(
             fx_out, fx_in, beats,
             genre_out=(track_a.get("subgenre") or track_a.get("genre")),
-            genre_in=(track_b.get("subgenre") or track_b.get("genre")))
+            genre_in=(track_b.get("subgenre") or track_b.get("genre")),
+            out_opts=fx_out_opts, in_opts=fx_in_opts)
     extra_events = extra_events or None
     # Луп вокала уходящего включается ЯВНО (кнопкой или приёмом), а не
     # сам собой: автоматика здесь один раз уже сломала все демо разом.
@@ -824,6 +840,7 @@ async def render_technique_demo(session_id: str, technique_id: str, body: dict) 
             mix_profile=mix_profile,
             vocal_loop=(float(vocal_loop) if vocal_loop else None),
             extra_events=extra_events,
+            fx_tune=fx_tune,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=f"Файл трека не найден на диске backend'а: {exc}") from exc
@@ -2220,6 +2237,16 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
                 if force or not ((t.get("meta") or {}).get("sources"))]
         if not todo:
             return {"state": "skip", "note": "каталоги уже опрошены по всем трекам"}
+        if not token:
+            # Без ключа Discogs шаг опрашивает только MusicBrainz, а тот
+            # по именам файлов вида «44. Lastfragment - …» почти ничего
+            # не находит: у диджея за проход нашлось 0 из 140, и ни одна
+            # строка в базу не легла. Значит и в следующий раз будет 140.
+            # Честный пропуск лучше ежедневного холостого прохода.
+            return {"state": "skip", "total": len(todo),
+                    "note": f"нет ключа Discogs — по именам файлов каталоги "
+                            f"почти ничего не находят. Пропускаю {len(todo)} "
+                            f"треков; ключ кладётся в darave_secrets.json"}
         step = _analyze_step(session_id, key) or {}
         step["total"] = len(todo)
         loop = asyncio.get_running_loop()
@@ -2364,7 +2391,7 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
     import stem_features as _sf
 
     missing = _la.missing_report(tracks, _stems.has_stems, _stems.vocal_map,
-                                 _sf.features)
+                                 _sf.features, _stems.has_layers)
 
     dry = await asyncio.to_thread(housekeeping.session_cleanup, True, None)
     missing["cleanup"] = int(dry.get("removed_count", 0) or 0)
@@ -2374,6 +2401,18 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
     # новых, видно только обойдя папку, а обходить её дважды ради цифры на
     # кнопке — это половина стоимости самого скана. У меток — тоже: их
     # число известно только после сверки с медиатекой Mixxx.
+    # Каталоги без ключа Discogs не сделают ничего — значит и работой не
+    # числятся. Иначе счётчик показывает «140» вечно, шаг запускается
+    # каждый раз и честно находит 0: у диджея так и было.
+    try:
+        import metadata as _md
+
+        if not _md.resolve_discogs_token(None):
+            missing["catalog"] = 0
+            missing["catalog_why"] = "нет ключа Discogs"
+    except Exception:                                   # noqa: BLE001
+        pass
+
     counts = {"scan": -1, "bpm": max(missing.get("bpm", 0), missing.get("maps", 0)),
               "stems": missing.get("stems", 0), "vocals": missing.get("vocals", 0),
               "layers": missing.get("layers", 0),
@@ -2430,6 +2469,8 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
         "root": _la.common_root([t.get("path") for t in tracks if t.get("path")]),
         "steps": steps, "missing": missing, "stems_device": dev,
         "stems_legacy": legacy,
+        "mp4_only": missing.get("mp4_only", 0),
+        "catalog_why": missing.get("catalog_why", ""),
         "cleanup_mb": missing["cleanup_mb"],
         "discogs": bool(_metadata.resolve_discogs_token(None)),
     })
@@ -3270,7 +3311,8 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
 
 @app.get("/api/rooms/{session_id}/audition/fx")
 async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str = "",
-                              bars: float = 16.0) -> JSONResponse:
+                              bars: float = 16.0,
+                              technique_id: str = "") -> JSONResponse:
     """Какие эффекты предложить на уход и на вход для этой пары.
 
     Жанр сужает список, а не задаёт его: свои идут первыми, чужие следом
@@ -3279,11 +3321,30 @@ async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str =
     import fx_presets
 
     beats = max(4.0, float(bars) * 4.0)
+    # Что приём делает с эффектами сам. Без этого панель предлагала бы
+    # ВТОРОЙ эффект поверх первого, а на деке юнит один.
+    own: dict = {}
+    if technique_id:
+        try:
+            import techniques as _tq
+
+            plan = _tq.build_plan(technique_id, "p", "source", "target", 174.0, {})
+            own = fx_presets.technique_fx(
+                plan["events"] if isinstance(plan, dict) else plan)
+        except Exception:                            # noqa: BLE001
+            own = {}
+    # knobs едут вместе с пресетом: интерфейс не должен знать, какие
+    # ручки у какого юнита — иначе этот список придётся держать в двух
+    # местах, и он разойдётся при первой же новой ручке.
     short = lambda items: [{"id": x["id"], "name": x["name"], "unit": x["unit"],
-                            "why": x["why"], "native": x["native"]} for x in items]
+                            "why": x["why"], "native": x["native"],
+                            "knobs": x.get("knobs") or []} for x in items]
     return JSONResponse({
         "out": short(fx_presets.presets("out", beats, a_genre)),
         "in": short(fx_presets.presets("in", beats, b_genre)),
+        # own.out / own.in — эффект приёма на уходящей и входящей деке.
+        "own": {"out": own.get("source") or None, "in": own.get("target") or None},
+        "units": fx_presets.unit_options(),
     })
 
 

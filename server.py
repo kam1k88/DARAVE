@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -445,6 +445,34 @@ async def create_room() -> JSONResponse:
     подобрать/угадать. См. README "Безопасность комнат"."""
     room_id = secrets.token_urlsafe(12)  # ~16 символов, криптостойкий
     return JSONResponse({"room_id": room_id})
+
+
+@app.get("/api/rooms")
+async def list_rooms() -> JSONResponse:
+    """Комнаты, которые на этой машине уже открывали.
+
+    Код комнаты живёт только в адресной строке, а за ним стоит вся
+    просканированная библиотека. Закрыл вкладку — и единственным выходом
+    было сканировать заново. Поэтому список: программа знает свои
+    комнаты, и спрашивать код у человека незачем.
+
+    Список локальный по построению: база `darave.db` лежит рядом с
+    программой, и никакие чужие комнаты в неё попасть не могут. Отдаём
+    только по локальному запросу — снаружи это был бы перечень кодов, то
+    есть ровно то, чего длинный случайный код избегает."""
+    rooms = await asyncio.to_thread(persistence.list_rooms, 30)
+    live = {sid for sid in sessions._rooms}
+    for r in rooms:
+        r["open"] = r["room_id"] in live
+    return JSONResponse({"rooms": rooms})
+
+
+@app.delete("/api/rooms/{session_id}")
+async def forget_room(session_id: str) -> JSONResponse:
+    """Убрать комнату из списка. Файлы и слои не трогает — только
+    запись о комнате: её библиотеку, план и переписку."""
+    await asyncio.to_thread(persistence.forget_room, session_id)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/rooms/{session_id}/recording")
@@ -1979,6 +2007,47 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
         return {"state": "ok", "done": r.get("checked", 0), "total": len(todo),
                 "note": f"посчитано {r.get('checked', 0)}, с вокалом {r.get('with_vocal', 0)}"}
 
+    if key == "layers":
+        import stem_features as _sf
+
+        if not paths:
+            return {"state": "skip", "note": "библиотека пуста"}
+        todo = [p for p in paths
+                if _stems.has_stems(p) and (force or _sf.features(p) is None)]
+        if not todo:
+            have = sum(1 for p in paths if _stems.has_stems(p))
+            if not have:
+                return {"state": "skip",
+                        "note": "слоёв нет ни у одного трека — считать нечего"}
+            return {"state": "skip", "done": have, "total": len(paths),
+                    "note": f"признаки слоёв посчитаны у всех {have}"}
+        step = _analyze_step(session_id, key) or {}
+        step["total"] = len(todo)
+        loop = asyncio.get_running_loop()
+
+        def _tick(i: int, total: int, done: int, failed: int, name: str) -> None:
+            step["done"] = i
+            step["name"] = os.path.basename(name)[:60]
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(_analyze_push(session_id)))
+
+        def _work() -> dict:
+            return _sf.library(todo, rebuild=force,
+                               log=lambda m: logger.info(f"[слои] {m}"),
+                               progress=_tick)
+
+        r = await asyncio.to_thread(_work)
+        # Разметка пары кэшируется по путям на всё время процесса: без
+        # сброса подбор до перезапуска продолжал бы считать, что слоёв
+        # нет, — то есть шаг отработал бы вхолостую с точки зрения
+        # диджея, который сразу жмёт «подобрать».
+        import audition as _aud
+
+        _aud.invalidate_layers()
+        return {"state": "ok", "done": r.get("checked", 0), "total": len(todo),
+                "note": f"размечено по слоям {r.get('checked', 0)}"
+                        + (f", сбоев {r['failed']}" if r.get("failed") else "")}
+
     if key == "catalog":
         import metadata as _metadata
 
@@ -2110,7 +2179,10 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
 
     room = sessions.get_or_create(session_id)
     tracks = room.library_tracks or []
-    missing = _la.missing_report(tracks, _stems.has_stems, _stems.vocal_map)
+    import stem_features as _sf
+
+    missing = _la.missing_report(tracks, _stems.has_stems, _stems.vocal_map,
+                                 _sf.features)
 
     dry = await asyncio.to_thread(housekeeping.session_cleanup, True, None)
     missing["cleanup"] = int(dry.get("removed_count", 0) or 0)
@@ -2122,15 +2194,44 @@ async def analyze_library_plan(session_id: str) -> JSONResponse:
     # число известно только после сверки с медиатекой Mixxx.
     counts = {"scan": -1, "bpm": max(missing.get("bpm", 0), missing.get("maps", 0)),
               "stems": missing.get("stems", 0), "vocals": missing.get("vocals", 0),
+              "layers": missing.get("layers", 0),
               "catalog": missing.get("catalog", 0),
               "cleanup": missing["cleanup"], "cues": -1}
     steps = [{"key": k, "title": _la.ANALYZE_TITLES[k], "why": _la.ANALYZE_WHY[k],
-              "missing": counts.get(k, 0), "default": k in _la.ANALYZE_DEFAULT}
+              "missing": counts.get(k, 0), "default": k in _la.ANALYZE_DEFAULT,
+              "heavy": k in _la.ANALYZE_HEAVY}
              for k in _la.ANALYZE_STEPS]
+
+    # На чём будут считаться слои. Раньше это знал только лог backend'а,
+    # а человек видел молчащую полосу и решал, что программа зависла.
+    # Разница между видеокартой и процессором тут не в процентах, а в
+    # порядке: минуты против часов.
+    dev = {}
+    try:
+        import stems as _st
+
+        info = _st.device_info()
+        # Цифры не выдуманы: они взяты из самого stems.device_info —
+        # «2-4 минуты на трек» на видеокарте и «20-40 минут» на
+        # процессоре. Берём верх вилки, потому что ошибиться в меньшую
+        # сторону здесь хуже: человек уйдёт, думая, что успеет.
+        per_min = 4.0 if info.get("cuda") else 40.0
+        n = max(1, counts.get("stems", 0) or len(tracks))
+        dev = {
+            "cuda": bool(info.get("cuda")),
+            "name": info.get("name"),
+            "torch": bool(info.get("torch")),
+            "demucs": bool(info.get("demucs")),
+            "note": info.get("note") or "",
+            "eta_minutes": round(per_min * n),
+            "tracks": n,
+        }
+    except Exception as exc:                            # noqa: BLE001
+        dev = {"cuda": False, "torch": False, "why": f"не смог спросить torch: {exc}"}
     return JSONResponse({
         "tracks": len(tracks),
         "root": _la.common_root([t.get("path") for t in tracks if t.get("path")]),
-        "steps": steps, "missing": missing,
+        "steps": steps, "missing": missing, "stems_device": dev,
         "cleanup_mb": missing["cleanup_mb"],
         "discogs": bool(_metadata.resolve_discogs_token(None)),
     })

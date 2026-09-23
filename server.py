@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -3203,7 +3203,7 @@ async def audition_verdict(session_id: str, body: dict) -> JSONResponse:
                 f.unlink()
         except OSError as exc:
             logger.info(f"[отбор] не смог убрать демо {demo_file}: {exc}")
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     # Сразу отдаём следующий шов: иначе интерфейсу пришлось бы делать
     # второй запрос ради каждого нажатия.
     nxt = None
@@ -3285,6 +3285,28 @@ async def audition_technique(session_id: str, body: dict) -> JSONResponse:
                          "techniques": audition.techniques_for(a, b, seam.get("pair_label"))})
 
 
+def _tracks_for(session_id: str, body: dict | None) -> list[dict]:
+    """Треки, среди которых искать, с учётом ПУЛА ТРЕКОВ.
+
+    Отдельной функцией, а не строкой в каждом эндпоинте, и это не
+    вкусовщина. Пул сузил поиск только на клиенте: полоса в Clipping
+    честно писала «швы ищутся только среди них», а `Roll`, `Сменить
+    трек B` и `Подобрать пару заново` продолжали перебирать всю
+    библиотеку — сервер про `only_paths` не знал вовсе. Пять эндпоинтов
+    брали `_room_tracks` напрямую, и поправить четыре из пяти было бы
+    ровно тем же багом, только реже.
+
+    Меньше двух треков после сужения — сужать бессмысленно: пара из
+    одного трека не бывает. Тогда честнее искать по всей библиотеке,
+    чем не найти ничего."""
+    tracks = _room_tracks(session_id)
+    want = {str(p) for p in ((body or {}).get("only_paths") or ()) if p}
+    if not want:
+        return tracks
+    picked = [t for t in tracks if t.get("path") in want]
+    return picked if len(picked) >= 2 else tracks
+
+
 @app.post("/api/rooms/{session_id}/audition/lucky")
 async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
     """«Повезёт»: перебрать ВСЕ стыковки этой пары на все подходящие
@@ -3292,7 +3314,7 @@ async def audition_lucky(session_id: str, body: dict) -> JSONResponse:
     import audition
 
     seam = body.get("seam") or {}
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     # seen — комбинации, которые диджей на этой паре уже видел. Без них
     # перебор детерминированный: лучшая комбинация одна, и кнопка со
     # второго нажатия ничего не меняла.
@@ -3465,7 +3487,7 @@ async def audition_roll(session_id: str, body: dict) -> JSONResponse:
     import audition
 
     seam = body.get("seam") or {}
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     seed = _roll_seed(body.get("seed"), tracks)
 
     items = audition.lucky(session_id, tracks, seam.get("a_path"),
@@ -3512,7 +3534,7 @@ async def audition_other_sections(session_id: str, body: dict) -> JSONResponse:
     import audition
 
     seam = body.get("seam") or {}
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     items = audition.other_junction(session_id, tracks, seam,
                                     exclude=list(body.get("seen") or ()))
     if not items:
@@ -3532,7 +3554,7 @@ async def audition_swap_b(session_id: str, body: dict) -> JSONResponse:
     import audition
 
     seam = body.get("seam") or {}
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     # exclude — то, что уже отобрано в пул и что диджей на этой паре уже
     # отверг. Иначе кнопка подставляет трек, который в сете уже стоит.
     cand = audition.nearest_b(tracks, seam.get("a_path"), seam.get("b_path"),
@@ -3552,7 +3574,7 @@ async def audition_other_pair(session_id: str, body: dict) -> JSONResponse:
     import audition
 
     seam = body.get("seam") or {}
-    tracks = _room_tracks(session_id)
+    tracks = _tracks_for(session_id, body)
     items = audition.other_pair(
         session_id, tracks,
         exclude=list(body.get("exclude") or ()),

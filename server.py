@@ -237,7 +237,7 @@ import cloud_auth
 # Версия программы. Одна строка на всё: её печатает /health, её видит
 # сайт при спаривании, и по ней же будет решаться, предлагать ли
 # обновление.
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "DARAVE_ALLOWED_ORIGINS",
@@ -411,7 +411,11 @@ RECORDINGS_DIR = _paths.data_subdir("recordings")
 # машине диджея (см. README).
 DEFAULT_SET_MINUTES = 90.0  # длительность сета, если диджей не задал свою
 SCAN_DB_DIR = _paths.data_subdir("scan_dbs")
-_scan_processes: dict[str, "subprocess.Popen"] = {}  # обычный Popen, см. start_library_scan
+# Значение — subprocess.Popen; модуль импортируется лениво, поэтому в
+# аннотации его имени нет: строковая аннотация с неимпортированным
+# модулем выглядит для линтера как необъявленное имя, а проверка на
+# необъявленные имена нам нужна рабочей (см. _server_has_no_typos).
+_scan_processes: dict = {}   # обычный Popen, см. start_library_scan
 _scan_status: dict[str, dict] = {}
 # «[17/532] Имя файла.mp3» — то, что печатает track_analysis.py --scan
 # на каждый трек. Разбираем здесь, чтобы показать полосу, а не поток строк.
@@ -3358,14 +3362,30 @@ async def audition_fx_presets(session_id: str, a_genre: str = "", b_genre: str =
 async def track_pool_list(session_id: str) -> JSONResponse:
     import track_pool
 
-    room = _room(session_id)
-    items = track_pool.tracks(session_id, room.library_tracks or [])
-    return JSONResponse({"ok": True, "count": len(items), "tracks": [
-        {"path": t.get("path"), "name": t.get("name"),
-         "bpm": t.get("bpm"), "camelot": t.get("camelot"),
-         "genre": t.get("genre"), "subgenre": t.get("subgenre"),
-         "energy": t.get("energy"), "duration_seconds": t.get("duration_seconds")}
-        for t in items]})
+    # Библиотека подтягивается ЛЕНИВО и после перезапуска backend'а может
+    # быть ещё пуста. Пул при этом никуда не делся, и показывать пустую
+    # строку вместо шести отложенных треков — врать. Поэтому пул отдаётся
+    # по СВОИМ путям, а карточка из библиотеки только дополняет их, если
+    # библиотека уже загружена.
+    room = sessions.get_or_create(session_id)
+    by_path = {t.get("path"): t for t in (room.library_tracks or [])
+               if t.get("path")}
+    out = []
+    for p in track_pool.paths(session_id):
+        t = by_path.get(p) or {}
+        out.append({
+            "path": p,
+            "name": t.get("name") or os.path.basename(str(p).replace("\\", "/")),
+            "bpm": t.get("bpm"), "camelot": t.get("camelot"),
+            "genre": t.get("genre"), "subgenre": t.get("subgenre"),
+            "energy": t.get("energy"),
+            "duration_seconds": t.get("duration_seconds"),
+            # Трека нет в текущей библиотеке: файл перенесли, или её
+            # просто ещё не загрузили. Отличать эти случаи интерфейсу не
+            # нужно, а знать, что карточки нет, — нужно.
+            "known": bool(t),
+        })
+    return JSONResponse({"ok": True, "count": len(out), "tracks": out})
 
 
 @app.post("/api/rooms/{session_id}/track-pool")
@@ -3631,7 +3651,8 @@ async def save_transition(session_id: str, body: dict) -> JSONResponse:
     return JSONResponse(transitions.save(
         session_id, seam, rating=rating,
         note=(body.get("note") or None), demo_file=body.get("demo_file"),
-        source=body.get("source") or "audition"))
+        source=body.get("source") or "audition",
+        code=(body.get("code") or seam.get("code") or None)))
 
 
 @app.get("/api/rooms/{session_id}/transitions")

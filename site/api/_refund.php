@@ -20,12 +20,77 @@ require_once __DIR__ . '/_notify.php';
 
 const REFUND_FREE_DAYS = 14;
 
+/**
+ * Комиссия платёжной системы при отказе от лицензии.
+ *
+ * ЮKassa берёт комиссию с каждого успешно принятого платежа и при
+ * возврате её НЕ возвращает — это их прямой ответ, не догадка. Значит
+ * возврат полной суммы означает, что за каждый отказ платит магазин, а
+ * цикл «оплатил — сразу вернул» не стоит тому, кто его крутит, ничего.
+ *
+ * Поэтому при отказе удерживается фактически понесённый расход — та
+ * самая невозвратная комиссия. Основание — статья 32 ЗоЗПП: отказаться
+ * можно в любое время, но за вычетом фактически понесённых исполнителем
+ * расходов. Формулировка в оферте, пункт 7; цифра здесь и цифра там
+ * должны совпадать, иначе удержание нечем объяснить.
+ *
+ * Ставка лежит в _config.php, а не зашита в коде: тариф меняется
+ * письмом от ЮKassa, а не выкладкой новой версии сайта.
+ */
+function refund_fee_percent(): float
+{
+    $p = (float)(cfg()['refund']['fee_percent'] ?? 3.5);
+    // Отрицательная ставка вернула бы БОЛЬШЕ оплаченного, ставка выше
+    // 100 — отрицательную выплату. И то и другое — опечатка в конфиге,
+    // которая не должна доходить до денег.
+    return max(0.0, min(100.0, $p));
+}
+
+function money(float $v): string
+{
+    return number_format($v, 2, '.', '');
+}
+
+/** Сколько удержим по этому заказу, в рублях. */
+function refund_fee_for(array $order): string
+{
+    return money((float)$order['amount'] * refund_fee_percent() / 100);
+}
+
+/**
+ * Сколько человек получит обратно при отказе от лицензии: всё, что ещё
+ * не возвращено, минус удержание. Ниже нуля не опускаем — это не долг
+ * покупателя, а просто «возвращать уже нечего».
+ */
+function refund_payout_for(array $order): string
+{
+    $left = (float)$order['amount'] - (float)($order['refund_amount'] ?? 0);
+    return money(max(0.0, $left - (float)refund_fee_for($order)));
+}
+
+/**
+ * Что ЮKassa удержала на самом деле, если она это сообщила.
+ *
+ * Нужна не для расчёта, а для сверки: удерживаем мы ровно столько,
+ * сколько написано в оферте, а вот РАСХОЖДЕНИЕ между обещанной ставкой и
+ * настоящей надо заметить сразу, а не через квартал по выписке.
+ */
+function refund_fee_reported(array $order): ?float
+{
+    $income = (float)($order['income_amount'] ?? 0);
+    if ($income <= 0) {
+        return null;
+    }
+    $fee = (float)$order['amount'] - $income;
+    return $fee >= 0 ? $fee : null;
+}
+
 /** Заказ со всем, что нужно для возврата. */
 function refund_order_row(PDO $pdo, int $order_id): ?array
 {
     $st = $pdo->prepare(
         'SELECT id, user_id, tier, tier_before, tier_until_before, amount, status,
-                payment_id, paid_at, refund_amount
+                payment_id, paid_at, refund_amount, income_amount
            FROM orders WHERE id = ?'
     );
     $st->execute([$order_id]);
@@ -97,17 +162,46 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
         return ['ok' => false, 'http' => 409, 'error' => 'По этому заказу уже возвращена вся сумма'];
     }
 
-    $amount = trim((string)($amount ?? '')) ?: number_format($left, 2, '.', '');
-    if (!preg_match('/^\d+(\.\d{1,2})?$/', $amount) || (float)$amount <= 0) {
-        return ['ok' => false, 'http' => 400, 'error' => 'Сумма указана неверно'];
+    // Два разных действия, и их нельзя мерить одной меркой.
+    //
+    // ОТКАЗ ОТ ЛИЦЕНЗИИ ($amount не задан) — это про договор, а не про
+    // сумму: лицензия прекращается, тариф падает к прежнему, а денег
+    // возвращается столько, сколько осталось минус удержание. Считать
+    // такой возврат «неполным» только потому, что ушло не всё до копейки,
+    // значит оставить человека с оплаченным доступом после отказа.
+    //
+    // ЧАСТИЧНЫЙ ВОЗВРАТ (сумма задана руками) — наоборот, только про
+    // деньги: удержание не применяется, потому что сумму назвал человек,
+    // и тариф не трогается.
+    $terminate = ($amount === null || trim((string)$amount) === '');
+    $fee       = $terminate ? (float)refund_fee_for($order) : 0.0;
+
+    if ($terminate) {
+        $amount = refund_payout_for($order);
+    } else {
+        $amount = trim((string)$amount);
+        if (!preg_match('/^\d+(\.\d{1,2})?$/', $amount) || (float)$amount <= 0) {
+            return ['ok' => false, 'http' => 400, 'error' => 'Сумма указана неверно'];
+        }
+        if ((float)$amount > $left + 0.001) {
+            return ['ok' => false, 'http' => 400,
+                    'error' => $already > 0
+                        ? sprintf('Осталось вернуть %s ₽ из %s ₽', money($left), $order['amount'])
+                        : "Больше оплаченного не вернуть: заказ на {$order['amount']} ₽"];
+        }
     }
-    if ((float)$amount > $left + 0.001) {
-        return ['ok' => false, 'http' => 400,
-                'error' => $already > 0
-                    ? sprintf('Осталось вернуть %s ₽ из %s ₽', number_format($left, 2, '.', ''), $order['amount'])
-                    : "Больше оплаченного не вернуть: заказ на {$order['amount']} ₽"];
+    $is_full = $terminate;
+
+    // Возвращать нечего, но отказ всё равно должен состояться: лицензия
+    // прекращается, деньги просто не идут. Так бывает, когда почти всё
+    // уже вернули руками и остаток съеден удержанием.
+    if ((float)$amount <= 0.001) {
+        if (!$terminate) {
+            return ['ok' => false, 'http' => 400, 'error' => 'Сумма указана неверно'];
+        }
+        return refund_finish($pdo, $order, null, '0.00', $already, true, $fee, $source,
+                             'Возвращать нечего: остаток меньше удержания. Лицензия прекращена.');
     }
-    $is_full = abs($already + (float)$amount - $total) < 0.001;
 
     // Ключ идемпотентности от заказа, суммы и уже возвращённого:
     // повторный вызов с теми же данными вернёт ТОТ ЖЕ возврат, а не
@@ -137,24 +231,43 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
 
     // ЮKassa отвечает succeeded сразу либо pending (редко, по некоторым
     // способам оплаты). Записываем и то и другое: деньги уже в пути.
-    $status = (string)($r['status'] ?? '');
+    return refund_finish($pdo, $order, $r, $amount, $already, $is_full, $fee, $source, null);
+}
+
+/**
+ * Записать состоявшийся отказ и рассказать о нём.
+ *
+ * Отдельной функцией, потому что сюда приходят два пути: обычный, с
+ * возвратом денег, и вырожденный, когда возвращать уже нечего, а
+ * лицензию прекратить надо. Писать это дважды значит однажды забыть в
+ * одной из копий понижение тарифа.
+ *
+ * $r === null — денег не переводили.
+ */
+function refund_finish(PDO $pdo, array $order, ?array $r, string $amount, float $already,
+                       bool $is_full, float $fee, string $source, ?string $note): array
+{
+    $order_id   = (int)$order['id'];
+    $refund_id  = $r === null ? null : (string)$r['id'];
+    $status     = $r === null ? 'none' : (string)($r['status'] ?? '');
+    $total_back = money($already + (float)$amount);
 
     $pdo->beginTransaction();
     try {
         $pdo->prepare(
-            'UPDATE orders SET status = ?, refund_id = ?, refunded_at = NOW(), refund_amount = ?
+            'UPDATE orders SET status = ?, refund_id = COALESCE(?, refund_id),
+                    refunded_at = NOW(), refund_amount = ?
               WHERE id = ?'
-        )->execute([
-            $is_full ? 'refunded' : 'succeeded',
-            (string)$r['id'],
-            number_format($already + (float)$amount, 2, '.', ''),
-            $order_id,
-        ]);
+        )->execute([$is_full ? 'refunded' : 'succeeded', $refund_id, $total_back, $order_id]);
 
         if ($is_full) {
             // Возвращаем человека туда, где он был до оплаты. Если заказ
             // старый и tier_before не записан (оплачен до этой доработки) —
             // честно опускаем в free.
+            //
+            // Это происходит при ЛЮБОМ отказе от лицензии, даже когда
+            // денег ушло меньше уплаченного: отказ — про договор, а не
+            // про сумму.
             $pdo->prepare('UPDATE users SET tier = ?, tier_until = ? WHERE id = ?')
                 ->execute([$order['tier_before'] ?? 'free', $order['tier_until_before'], (int)$order['user_id']]);
         }
@@ -164,10 +277,10 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
         // Деньги уже вернулись, а база не обновилась — это надо увидеть
         // немедленно, иначе человек останется с тарифом, за который не
         // платил, и узнать об этом будет негде.
-        error_log("DARAVE refund: возврат {$r['id']} прошёл, база НЕ обновлена: " . $e->getMessage());
+        error_log("DARAVE refund: возврат {$refund_id} прошёл, база НЕ обновлена: " . $e->getMessage());
         notify('ВНИМАНИЕ: деньги вернулись, база не обновилась', [
             'Заказ'      => $order_id,
-            'Возврат'    => (string)$r['id'],
+            'Возврат'    => (string)$refund_id,
             'Сумма'      => $amount . ' ₽',
             'Что делать' => 'Поправить заказ руками: status, refund_id, refund_amount и тариф пользователя '
                           . (int)$order['user_id'],
@@ -175,10 +288,10 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
         ]);
         return ['ok' => false, 'http' => 500,
                 'error' => 'Деньги возвращены, но база не обновилась. Смотрите лог сайта.',
-                'refund_id' => $r['id']];
+                'refund_id' => $refund_id];
     }
 
-    // Если возврат шёл по заявке из личного кабинета — закрываем заявку.
+    // Если отказ шёл по заявке из личного кабинета — закрываем заявку.
     // Отдельно от транзакции и под try: таблицы заявок может ещё не быть
     // (db-refund-requests.sql не выполнена), а деньги уже вернулись —
     // ронять это нельзя.
@@ -187,7 +300,7 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
             $pdo->prepare("UPDATE refund_requests
                               SET status = 'approved', refund_id = ?, decided_at = NOW()
                             WHERE order_id = ? AND status = 'pending'")
-                ->execute([(string)$r['id'], $order_id]);
+                ->execute([$refund_id, $order_id]);
         } catch (Throwable $e) {
             error_log('DARAVE refund: заявку отметить не удалось: ' . $e->getMessage());
         }
@@ -197,27 +310,46 @@ function refund_order(int $order_id, ?string $amount = null, string $source = '�
     $st->execute([(int)$order['user_id']]);
     $user = $st->fetch() ?: [];
 
-    notify($is_full ? 'Возврат выполнен' : 'Частичный возврат выполнен', [
+    $lines = [
         'Кто'     => (string)($user['email'] ?? ('id ' . (int)$order['user_id'])),
         'Заказ'   => $order_id . ' (' . $order['tier'] . ', ' . $order['amount'] . ' ₽)',
-        'Вернули' => $amount . ' ₽' . ($already > 0 ? sprintf(' (всего %s ₽)', number_format($already + (float)$amount, 2, '.', '')) : ''),
-        'Тариф'   => $is_full
-            ? 'возвращён к «' . ($order['tier_before'] ?? 'free') . '»'
-            : 'не менялся (частичный возврат)',
-        'Откуда'  => $source,
-        'Не забыть' => 'возвратный чек в «Мой налог»',
-    ]);
+        'Вернули' => $amount . ' ₽' . ($already > 0 ? sprintf(' (всего %s ₽)', $total_back) : ''),
+    ];
+    if ($fee > 0) {
+        $lines['Удержали'] = money($fee) . ' ₽ — невозвратная комиссия ('
+                           . rtrim(rtrim(number_format(refund_fee_percent(), 2, '.', ''), '0'), '.') . '%)';
+    }
+    $lines['Тариф'] = $is_full
+        ? 'прекращён, вернулся к «' . ($order['tier_before'] ?? 'free') . '»'
+        : 'не менялся (частичный возврат)';
+    $lines['Откуда'] = $source;
+
+    // Сверка обещанного с настоящим. Удерживаем мы ровно столько,
+    // сколько написано в оферте, но если ЮKassa взяла другое, об этом
+    // надо узнать сегодня, а не через квартал по выписке: расходится —
+    // значит либо тариф сменили, либо в оферте стоит не та цифра.
+    $real = refund_fee_reported($order);
+    if ($real !== null && abs($real - $fee) > 0.51 && $fee > 0) {
+        $lines['Внимание'] = 'ЮKassa удержала ' . money($real) . ' ₽, а мы удержали '
+                           . money($fee) . ' ₽ — сверьте ставку в _config.php и в оферте';
+    }
+    $lines['Не забыть'] = 'возвратный чек в «Мой налог»';
+
+    notify($is_full ? 'Отказ от лицензии, деньги возвращены' : 'Частичный возврат выполнен', $lines);
 
     return [
         'ok'          => true,
-        'refund_id'   => $r['id'],
+        'refund_id'   => $refund_id,
         'status'      => $status,
         'amount'      => $amount,
+        'fee'         => money($fee),
         'full_refund' => $is_full,
         'order'       => ['id' => $order_id, 'was' => (string)$order['amount'], 'user_id' => (int)$order['user_id']],
         'user'        => $user,
-        'note'        => $is_full
-            ? 'Тариф возвращён к тому, что было до оплаты.'
-            : 'Частичный возврат: тариф не менялся.',
+        'note'        => $note ?? ($is_full
+            ? ($fee > 0
+                ? 'Лицензия прекращена. Удержано ' . money($fee) . ' ₽ — невозвратная комиссия платёжной системы.'
+                : 'Лицензия прекращена, тариф возвращён к тому, что было до оплаты.')
+            : 'Частичный возврат: тариф не менялся.'),
     ];
 }

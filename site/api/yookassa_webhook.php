@@ -125,9 +125,16 @@ if ($status === 'succeeded') {
         $st->execute([(int)$order['user_id']]);
         $was = $st->fetch() ?: ['tier' => 'free', 'tier_until' => null];
 
+        // income_amount — сколько ЮKassa реально зачислит после своей
+        // комиссии. Поле есть не у всех магазинов, поэтому пишем только
+        // когда оно пришло: пустое значение затёрло бы уже известное.
+        // Нужно не для расчётов, а для сверки удержания с реальностью.
+        $income = (string)($p['income_amount']['value'] ?? '');
         $pdo->prepare("UPDATE orders SET status='succeeded', paid_at=NOW(),
-                              tier_before=?, tier_until_before=? WHERE id=?")
-            ->execute([$was['tier'], $was['tier_until'], $order_id]);
+                              tier_before=?, tier_until_before=?,
+                              income_amount=COALESCE(?, income_amount) WHERE id=?")
+            ->execute([$was['tier'], $was['tier_until'],
+                       $income !== '' ? $income : null, $order_id]);
         // Лицензия БЕССРОЧНАЯ: tier_until = NULL. Мы продаём разовую
         // покупку, а не подписку (почему — в PRICING.md). NULL здесь не
         // «неизвестно когда», а «срок не истекает»: так он и читается

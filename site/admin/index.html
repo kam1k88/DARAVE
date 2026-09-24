@@ -362,7 +362,9 @@
     Array.prototype.forEach.call(document.querySelectorAll(".refund"), function (b) {
       b.addEventListener("click", function () {
         var id = Number(b.dataset.order);
-        if (!confirm("Вернуть деньги по заказу " + id + "? Тариф вернётся к тому, что был до оплаты.")) return;
+        if (!confirm("Отказ от лицензии по заказу " + id + ".\n\n" +
+                     "Вернётся сумма за вычетом невозвратной комиссии платёжной системы. " +
+                     "Тариф вернётся к тому, что был до оплаты.")) return;
         b.disabled = true;
         fetch("/api/refund.php", {
           method: "POST", credentials: "same-origin",
@@ -372,8 +374,9 @@
           .then(function (d) {
             b.disabled = false;
             if (!d.ok) { say("bad", esc(d.error || "ЮKassa отказала")); return; }
-            say("good", "Возврат " + esc(d.refund_id) + " на " + esc(d.amount) +
-                " ₽. Не забудьте возвратный чек в «Мой налог».");
+            say("good", "Возврат " + esc(d.refund_id) + " на " + esc(d.amount) + " ₽" +
+                (Number(d.fee) > 0 ? " (удержано " + esc(d.fee) + " ₽ комиссии)" : "") +
+                ". Не забудьте возвратный чек в «Мой налог».");
             loadUsers(); openUser(u.id);
           });
       });
@@ -436,8 +439,9 @@
             btn.disabled = false;
             if (!r.data.ok) { say("bad", esc(r.data.error || "Не вышло")); return; }
             say("good", decision === "approve"
-              ? "Возврат " + esc(r.data.refund_id) + " на " + esc(r.data.amount) +
-                " ₽. Не забудьте возвратный чек в «Мой налог»."
+              ? "Возврат " + esc(r.data.refund_id) + " на " + esc(r.data.amount) + " ₽" +
+                (Number(r.data.fee) > 0 ? " (удержано " + esc(r.data.fee) + " ₽ комиссии)" : "") +
+                ". Не забудьте возвратный чек в «Мой налог»."
               : "Отказ записан.");
             loadRefunds();
           });

@@ -94,7 +94,7 @@ if ($action === 'orders') {
     // (db-refund-requests.sql выполняется руками). Список оплат из-за
     // этого пропадать не должен — это его основная работа.
     $sql = 'SELECT o.id, o.tier, o.amount, o.status, o.paid_at, o.refunded_at,
-                   o.refund_amount, o.created_at, %s
+                   o.refund_amount, o.income_amount, o.created_at, %s
               FROM orders o %s
              WHERE o.user_id = ? ORDER BY o.id DESC LIMIT 50';
     try {
@@ -121,10 +121,20 @@ if ($action === 'orders') {
                              && $o['refund_amount'] === null;
         $o['refund_days_left'] = $left;
         $o['refund_free']      = $left !== null && $left >= 0;
+        // Сумму к возврату считает сервер, а не кнопка: цифра в оферте,
+        // цифра в уведомлении и цифра, которую человек видит перед
+        // нажатием, обязаны быть одной и той же цифрой.
+        $o['refund_payout']    = refund_payout_for($o);
+        $o['refund_fee']       = refund_fee_for($o);
     }
     unset($o);
 
-    json_out(['ok' => true, 'orders' => $orders, 'refund_free_days' => REFUND_FREE_DAYS]);
+    json_out([
+        'ok'               => true,
+        'orders'           => $orders,
+        'refund_free_days' => REFUND_FREE_DAYS,
+        'refund_fee_percent' => refund_fee_percent(),
+    ]);
 }
 
 // --------------------------------------------------------- удаление

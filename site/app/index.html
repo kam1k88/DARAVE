@@ -401,6 +401,8 @@
                  (o.refundable
                    ? ' <button type="button" class="quiet ord-refund" data-order="' + o.id +
                      '" data-amount="' + escapeHtml(o.amount) +
+                     '" data-payout="' + escapeHtml(o.refund_payout || o.amount) +
+                     '" data-fee="' + escapeHtml(o.refund_fee || "0.00") +
                      '" data-free="' + (o.refund_free ? "1" : "0") + '">Вернуть деньги</button>'
                    : "") +
                  '</span></div>';
@@ -416,9 +418,18 @@
       var id = Number(b.dataset.order);
       var payload = { order_id: id };
 
+      // Человек должен увидеть ТУ ЖЕ цифру, что придёт ему на счёт, и
+      // узнать про удержание до нажатия, а не из ответа сервера. Сумму
+      // считает сервер — здесь её только показывают.
+      var fee = Number(b.dataset.fee || 0);
       if (b.dataset.free === "1") {
-        if (!confirm("Вернуть " + b.dataset.amount + " ₽ по этой оплате?\n\n" +
-                     "Деньги придут тем же способом, которым вы платили. " +
+        if (!confirm("Отказ от лицензии по этой оплате.\n\n" +
+                     "Вернётся " + b.dataset.payout + " ₽ из " + b.dataset.amount + " ₽." +
+                     (fee > 0
+                       ? "\nУдерживается " + b.dataset.fee + " ₽ — комиссия платёжной системы, " +
+                         "которую она не возвращает (пункт 7 оферты)."
+                       : "") +
+                     "\n\nДеньги придут тем же способом, которым вы платили. " +
                      "Оплаченные возможности отключатся сразу.")) return;
       } else {
         var why = prompt(freeDays + " дней с оплаты уже прошли, поэтому возврат " +

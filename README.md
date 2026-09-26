@@ -1515,11 +1515,12 @@ while using the appropriate combination of conventional mixing, FX, selective ST
 | Vocal detection | **Done** |
 | STEMS analysis / separation | **Done** |
 | Auto-mix planning and assembly | **Done** |
-| Adaptive mixing / DJing theory research | **In development** |
+| Adaptive mixing / DJing theory research | **Done** |
 | MIDI 2.0 / UMP | **Planned — 2026 Q4** |
 | Own DAW | **Planned — 2027 Q1** |
 | Autonomous presets / auto-sampling | **Planned — 2027 Q1** |
 | HYPERSTEMS / DARAVE 4D | **Planned — 2027** |
+
 
 ---
 

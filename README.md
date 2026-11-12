@@ -1,9 +1,9 @@
-# DARAVE 
+# DARAVE
 
 [English](README.md) · [Русский](README.ru.md)
 
 
-<img width="138" height="138" alt="darave-mark" src="https://github.com/user-attachments/assets/54ecb721-f242-497c-9e7e-219f2ecd1ea2" />
+<img width="276" height="276" alt="darave-mark" src="https://github.com/user-attachments/assets/54ecb721-f242-497c-9e7e-219f2ecd1ea2" />
 
 
 **Digital Audio Rave — A DJ mixing tool that analyzes your music, finds transitions, and renders the mix.**

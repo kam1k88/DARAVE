@@ -3,12 +3,13 @@
 [English](README.md) · [Русский](README.ru.md)
 
 <img width="119" height="118" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
+<img width="276" height="276" alt="darave-mark" src="https://github.com/user-attachments/assets/54ecb721-f242-497c-9e7e-219f2ecd1ea2" />
+
 
 **Digital Audio Rave — A DJ mixing tool that analyzes your music, finds transitions, and renders the mix.**
 
 
-
-[Website](https://darave.ru/) · [Download for Windows](https://darave.ru/) · [Releases](https://github.com/kam1k88/darave-releases) <img width="276" height="276" alt="image" src="https://github.com/user-attachments/assets/34f070f0-4642-4ab4-967f-b79b098cbd49" />
+[Website](https://darave.ru/) · [Download for Windows](https://darave.ru/) · [Releases](https://github.com/kam1k88/darave-releases) 
 
 
 DARAVE is a Windows application for analyzing music libraries, discovering DJ transitions, and assembling complete mixes.

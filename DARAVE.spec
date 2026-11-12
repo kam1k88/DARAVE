@@ -32,7 +32,6 @@ hiddenimports = []
 # --- ресурсы самой программы ---
 datas += [
     ("static", "static"),
-    ("mixxx_catalog.json", "."),
     # Установка стем-стека. Раньше этих двух файлов в сборке не было,
     # и человек, поставивший DARAVE установщиком, слои получить не мог
     # НИКАК: скрипта у него нет, а интерфейс отправлял его к кнопке,
@@ -54,21 +53,6 @@ hiddenimports += _s_hidden
 
 # --- soundfile тащит libsndfile отдельным бинарником ---
 datas += collect_data_files("soundfile")
-
-# --- python-multipart: имя пакета и имя модуля не совпадают ---
-# Ставится как python-multipart, импортируется как multipart (в свежих
-# версиях ещё и как python_multipart). FastAPI ищет его по имени внутри
-# декоратора маршрута, поэтому промах ломает не загрузку файла, а импорт
-# server.py целиком.
-hiddenimports += ["multipart", "multipart.multipart", "python_multipart"]
-for _name in ("multipart", "python_multipart"):
-    try:
-        _m_datas, _m_binaries, _m_hidden = collect_all(_name)
-        datas += _m_datas
-        binaries += _m_binaries
-        hiddenimports += _m_hidden
-    except Exception:
-        pass
 
 # --- uvicorn грузит свои реализации по строковому имени ---
 hiddenimports += collect_submodules("uvicorn")

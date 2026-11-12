@@ -38,7 +38,7 @@ from functools import lru_cache
 import numpy as np
 from scipy.signal import butter, sosfilt, sosfiltfilt
 
-from mixxx_controls import BY_ID as _CONTROLS
+from transition_controls import CONTROL_NEUTRAL
 import transport as _transport
 from techniques import TECHNIQUES, build_plan, _ramp as _mk_ramp
 
@@ -1795,7 +1795,7 @@ def render_demo(
         if explicit != {"source", "target"}:
             eq_src = [e for e in events if e["action"] == "eq_low" and e["deck"] == "source"]
             eq_tgt = [e for e in events if e["action"] == "eq_low" and e["deck"] == "target"]
-            neutral = _CONTROLS["eq_low"].neutral or 1.0
+            neutral = CONTROL_NEUTRAL["eq_low"] or 1.0
             if eq_src and eq_tgt:
                 ga = _envelope_array(_piecewise_ramp(eq_src, spb, default=neutral),
                                      timeline_start, n, sr,
@@ -2052,9 +2052,9 @@ def render_demo(
                 # «одна бочка за раз» ниже — там своя поправка.
                 continue
             # Значения нормализованы 0..1, где «штатный уровень» ручки — это
-            # её neutral (у EQ 0.25, т.к. диапазон Mixxx 0..4). Переводим в
+            # её нейтральное значение (0.25). Переводим в
             # множитель громкости полосы: neutral -> 1.0, ноль -> 0.0.
-            neutral = _CONTROLS[action].neutral or 1.0
+            neutral = CONTROL_NEUTRAL[action] or 1.0
             gain_fn = _piecewise_ramp(ev, spb, default=neutral)
             gain_env = _envelope_array(gain_fn, timeline_start, n, sr,
                                        step_sec=_events_step_sec(ev, spb)) / neutral

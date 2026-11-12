@@ -194,3 +194,7 @@ DARAVE — самостоятельно разработанный програ�
 - [Скачать программу](https://darave.ru/)
 - [Репозиторий релизов](https://github.com/kam1k88/darave-releases)
 - [Профиль разработчика](https://github.com/kam1k88)
+
+## Вкладка Clipping
+
+![Вкладка Clipping в DARAVE](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)

@@ -46,7 +46,6 @@ darave_config.ps1
 # Анализ треков (стемы/кеши классификатора) — большие бинарники
 stems_out/
 *.wav
-*.flac_ t o _ d e l e t e / 
 # Папки, которые не нужно сканировать
 demos/
 recordings/

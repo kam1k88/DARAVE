@@ -5,7 +5,7 @@ SessionManager — комнаты (session_id, он же "код комнаты"
 (companion или chat) с данным session_id и живут, пока в них кто-то есть.
 
 Каждая комната полностью изолирована от других: своя телеметрия, свой
-companion, своя история диалога с DJAgent — ни данные, ни MixPlan одного
+companion, свои данные комнаты — ни данные, ни MixPlan одного
 арендатора никогда не попадают к другому.
 
 MVP-уровень авторизации: session_id — это и есть "пароль" на комнату (как
@@ -20,15 +20,12 @@ from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
-from agent import DJAgent
-from llm_providers import LLMProvider
 import persistence
 
 
 @dataclass
 class SessionRoom:
     session_id: str
-    agent: DJAgent
     companion_ws: WebSocket | None = None
     chat_websockets: set[WebSocket] = field(default_factory=set)
     latest_telemetry: dict[str, dict] = field(default_factory=dict)
@@ -53,9 +50,6 @@ class SessionRoom:
     # автопилот доигрывает по этому полю прошедшее с последнего тика
     # время, а расхождение часов машин дало бы ошибку в секунды.
     telemetry_at: float = 0.0
-    # Автопилот этой комнаты (autopilot.Autopilot) — создаётся лениво,
-    # чтобы session.py не тянул mix_strategist на импорте.
-    autopilot: object | None = None
 
     async def broadcast_to_chat(self, message: dict) -> None:
         dead = set()
@@ -100,15 +94,6 @@ class SessionRoom:
         await self.companion_ws.send_json({"type": "deck_action", **msg})
         return True
 
-    def get_autopilot(self, logger=None):
-        """Автопилот комнаты. Ленивый импорт: mix_strategist тяжёлый, а
-        комнаты создаются на каждое подключение чата."""
-        if self.autopilot is None:
-            import autopilot as _ap
-
-            self.autopilot = _ap.Autopilot(self, logger=logger)
-        return self.autopilot
-
     async def send_command_to_companion(self, action: str) -> bool:
         if self.companion_ws is None:
             return False
@@ -117,33 +102,14 @@ class SessionRoom:
 
 
 class SessionManager:
-    def __init__(self, provider: LLMProvider) -> None:
-        self._provider = provider
+    def __init__(self) -> None:
         self._rooms: dict[str, SessionRoom] = {}
-
-    @property
-    def provider(self) -> LLMProvider:
-        return self._provider
-
-    def set_provider(self, provider: LLMProvider) -> None:
-        """Подменить провайдера у менеджера И у уже открытых комнат.
-
-        Ключ вставляют, когда программа уже запущена и комната уже
-        создана: без второй половины диджей сохранил бы ключ, увидел
-        «ассистент подключён» — и продолжил получать в чат заглушку,
-        потому что его собственная комната родилась раньше."""
-        self._provider = provider
-        for room in self._rooms.values():
-            room.agent._provider = provider
 
     def get_or_create(self, session_id: str) -> SessionRoom:
         room = self._rooms.get(session_id)
         if room is None:
-            persisted_turns = persistence.load_history(session_id)
-            agent = DJAgent(self._provider, persisted_turns=persisted_turns)
             room = SessionRoom(
                 session_id=session_id,
-                agent=agent,
                 last_plan=persistence.load_last_plan(session_id),
                 library_tracks=persistence.load_library(session_id),
                 last_strategy=persistence.load_strategy(session_id),
@@ -151,7 +117,7 @@ class SessionManager:
             self._rooms[session_id] = room
             print(
                 f"[backend] новая комната '{session_id}' "
-                f"(история: {len(persisted_turns)} реплик, всего активных комнат: {len(self._rooms)})"
+                f"(всего активных комнат: {len(self._rooms)})"
             )
         return room
 

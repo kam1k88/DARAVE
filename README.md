@@ -215,7 +215,7 @@ DARAVE is distributed as a Windows installer.
 - 16 GB RAM recommended for stem processing
 - NVIDIA GPU optional; it can accelerate stem separation
 
-No Python installation, Mixxx installation, or administrator privileges are required.
+No Python installation or administrator privileges are required.
 
 Stem separation is an optional additional package of approximately 3 GB.
 

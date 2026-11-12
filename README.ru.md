@@ -188,13 +188,13 @@ DARAVE — самостоятельно разработанный програ�
 
 ![Управление сетом DARAVE](https://github.com/kam1k88/DARAVE/blob/main/site/shot-controlc.webp)
 
+### Контроль перегрузок
+
+![Контроль перегрузок в DARAVE](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)
+
 ## Ссылки
 
 - [Официальный сайт](https://darave.ru/)
 - [Скачать программу](https://darave.ru/)
 - [Репозиторий релизов](https://github.com/kam1k88/darave-releases)
 - [Профиль разработчика](https://github.com/kam1k88)
-
-## Вкладка Clipping
-
-![Вкладка Clipping в DARAVE](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)

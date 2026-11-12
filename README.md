@@ -1,4 +1,4 @@
-# DARAVE <img width="25" height="25" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
+# DARAVE <img width="30" height="30" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />
 
 [English](README.md) · [Русский](README.ru.md)
 

@@ -1,24 +1,10 @@
 """
-SessionManager — комнаты (session_id, он же "код комнаты"/room code) для
-мультиарендной модели: один companion + один или несколько браузерных
-чат-клиентов на комнату. Комнаты создаются лениво при первом подключении
-(companion или chat) с данным session_id и живут, пока в них кто-то есть.
-
-Каждая комната полностью изолирована от других: своя телеметрия, свой
-companion, свои данные комнаты — ни данные, ни MixPlan одного
-арендатора никогда не попадают к другому.
-
-MVP-уровень авторизации: session_id — это и есть "пароль" на комнату (как
-код встречи в Zoom). Companion и браузер должны знать один и тот же код.
-Для реальной сдачи в аренду это стоит усилить (случайные длинные ID,
-возможно — привязка к аккаунту), но сам механизм изоляции уже такой,
-каким должен быть.
+SessionManager хранит состояние комнат приложения между подключениями
+WebSocket. Данные библиотек и планы сетов загружаются из SQLite.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-from fastapi import WebSocket
 
 import persistence
 
@@ -26,30 +12,9 @@ import persistence
 @dataclass
 class SessionRoom:
     session_id: str
-    companion_ws: WebSocket | None = None
     chat_websockets: set[WebSocket] = field(default_factory=set)
-    latest_telemetry: dict[str, dict] = field(default_factory=dict)
-    # Последний отправленный MixPlan — для "повторить микс" и для персистентности
-    # (переживает рестарт backend'а, см. persistence.py).
-    last_plan: dict | None = None
-    # Путь к последней загруженной companion'ом записи микса этой комнаты
-    # (см. server.py: POST /api/rooms/{id}/recording) — None, пока не загружена.
-    recording_path: str | None = None
-    # Библиотека, загруженная track_analysis.py --upload (см. server.py:
-    # POST /api/rooms/{id}/library) — список аналитических записей треков.
     library_tracks: list[dict] = field(default_factory=list)
-    # Последний посчитанный mix_strategist.py::plan_strategy() план сета.
-    # ПЕРСИСТИТСЯ (persistence.save_strategy): раньше считалось, что его
-    # дёшево пересчитать, но пересчёт не вернёт правки — технику, точки
-    # ухода и входа, ползунки приёмов у конкретных переходов. Любой
-    # перезапуск backend'а выбрасывал час работы, а закрыть Mixxx ради
-    # очереди Auto DJ без этого было нельзя: план исчезал вместе с ним.
     last_strategy: dict | None = None
-    # Когда телеметрия приехала В BACKEND (монотонные часы). received_at
-    # внутри пакета — часы companion'а, и сравнивать их с нашими нельзя:
-    # автопилот доигрывает по этому полю прошедшее с последнего тика
-    # время, а расхождение часов машин дало бы ошибку в секунды.
-    telemetry_at: float = 0.0
 
     async def broadcast_to_chat(self, message: dict) -> None:
         dead = set()
@@ -60,45 +25,6 @@ class SessionRoom:
                 dead.add(ws)
         self.chat_websockets -= dead
 
-    async def send_plan_to_companion(self, plan: dict) -> bool:
-        if self.companion_ws is None:
-            return False
-        await self.companion_ws.send_json({"type": "mixplan", "plan": plan})
-        self.last_plan = plan
-        persistence.save_last_plan(self.session_id, plan)
-        return True
-
-    async def send_control_to_companion(self, cmd: dict) -> bool:
-        """Шлёт companion'у команду «дёрни один контрол сейчас» (см.
-        live_control.py). cmd уже проверен live_control.validate()."""
-        if self.companion_ws is None:
-            return False
-        await self.companion_ws.send_json({"type": "control", **cmd})
-        return True
-
-    async def send_load_to_companion(self, msg: dict) -> bool:
-        """«Положи вот этот трек на деку N» — путь автопилота.
-
-        Отдельный тип сообщения, а не control: загрузка не мгновенная
-        (поиск в медиатеке, фокус окна, ожидание телеметрии) и обязана
-        вернуть ответ — backend без него не знает, тот ли трек нашёлся."""
-        if self.companion_ws is None:
-            return False
-        await self.companion_ws.send_json({"type": "load_track", **msg})
-        return True
-
-    async def send_deck_action_to_companion(self, msg: dict) -> bool:
-        """Транспорт одной деки без плана: play/stop/игла/играть с CUE."""
-        if self.companion_ws is None:
-            return False
-        await self.companion_ws.send_json({"type": "deck_action", **msg})
-        return True
-
-    async def send_command_to_companion(self, action: str) -> bool:
-        if self.companion_ws is None:
-            return False
-        await self.companion_ws.send_json({"type": "command", "action": action})
-        return True
 
 
 class SessionManager:
@@ -110,7 +36,6 @@ class SessionManager:
         if room is None:
             room = SessionRoom(
                 session_id=session_id,
-                last_plan=persistence.load_last_plan(session_id),
                 library_tracks=persistence.load_library(session_id),
                 last_strategy=persistence.load_strategy(session_id),
             )
@@ -125,6 +50,6 @@ class SessionManager:
         room = self._rooms.get(session_id)
         if room is None:
             return
-        if room.companion_ws is None and not room.chat_websockets:
+        if not room.chat_websockets:
             del self._rooms[session_id]
             print(f"[backend] комната '{session_id}' закрыта (пусто), осталось: {len(self._rooms)}")

@@ -12,7 +12,7 @@
 [Website](https://darave.ru/) · [Download for Windows](https://darave.ru/) · [Releases](https://github.com/kam1k88/darave-releases) 
 
 
-<img width="24" height="24" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />DARAVE is a Windows application for analyzing music libraries, discovering DJ transitions, and assembling complete mixes.
+<img width="16" height="16" alt="DARAVE" src="https://github.com/user-attachments/assets/573d6515-baaf-4ab7-b7fb-3aabd4388139" />DARAVE is a Windows application for analyzing music libraries, discovering DJ transitions, and assembling complete mixes.
 
 It does more than match tracks by BPM and key. DARAVE analyzes musical structure, estimates transition points, selects mixing techniques, and lets you audition every proposed transition before approving it.
 

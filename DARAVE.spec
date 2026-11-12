@@ -55,21 +55,6 @@ hiddenimports += _s_hidden
 # --- soundfile тащит libsndfile отдельным бинарником ---
 datas += collect_data_files("soundfile")
 
-# --- google-genai: пространство имён, а не обычный пакет ---
-# `from google import genai` — это namespace package: каталога с
-# __init__.py у `google` нет, и статический анализ PyInstaller'а такой
-# импорт не видит вовсе. Симптом отложенный и оттого злой: программа
-# ставится, запускается, работает — и ломается ровно в тот момент, когда
-# пользователь вставил ключ и нажал «Подключить».
-try:
-    _g_datas, _g_binaries, _g_hidden = collect_all("google.genai")
-    datas += _g_datas
-    binaries += _g_binaries
-    hiddenimports += _g_hidden
-    hiddenimports += ["google", "google.genai", "google.genai.types"]
-except Exception as _exc:      # пакет не установлен в окружении сборки
-    print(f"[spec] google-genai не найден ({_exc}) — чат-ассистент в сборке работать не будет")
-
 # --- python-multipart: имя пакета и имя модуля не совпадают ---
 # Ставится как python-multipart, импортируется как multipart (в свежих
 # версиях ещё и как python_multipart). FastAPI ищет его по имени внутри
@@ -96,7 +81,7 @@ hiddenimports += [
 
 # --- модули DARAVE, которые запускаются как дочерние (child.py) и на
 #     которые нет прямой ссылки import в точке входа ---
-hiddenimports += ["track_analysis", "stems", "fix_library_bpm", "autopilot_selftest"]
+hiddenimports += ["track_analysis", "stems", "fix_library_bpm"]
 
 # fx_presets импортируется ЛЕНИВО, из тела обработчика: статический
 # анализ такие импорты обычно находит, но проверять это падением сборки

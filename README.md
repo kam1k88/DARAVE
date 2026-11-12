@@ -256,3 +256,7 @@ The product is actively developed. Its scope is deliberately focused on transiti
 - [Download](https://darave.ru/)
 - [Release repository](https://github.com/kam1k88/darave-releases)
 - [Developer profile](https://github.com/kam1k88)
+
+## Clipping
+
+![DARAVE Clipping tab](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)

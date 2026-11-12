@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -40,7 +40,7 @@ try:
 except Exception:  # без numpy/librosa — просто нет автопочинки темпа
     fix_library_bpm = None
 from session import SessionManager
-from techniques import TECHNIQUES, build_plan
+from techniques import TECHNIQUES
 
 # Раньше все print() уходили только в консоль отдельного окна backend'а —
 # чтобы разобрать ошибку, диджею приходилось делать скриншот этого окна
@@ -335,7 +335,6 @@ sessions = SessionManager()
 persistence.init_db()
 
 CHAT_HTML_PATH = _paths.resource_dir() / "static" / "chat.html"
-RECORDINGS_DIR = _paths.data_subdir("recordings")
 
 # Локальное сканирование библиотеки прямо из веб-UI (кнопка "Сканировать" во
 # вкладке "Библиотека") — см. POST .../library/scan ниже. Работает, только
@@ -414,30 +413,6 @@ async def forget_room(session_id: str) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-@app.post("/api/rooms/{session_id}/recording")
-async def upload_recording(session_id: str, file: UploadFile) -> JSONResponse:
-    """Companion шлёт сюда свежесозданный аудиофайл записи после остановки
-    (см. recording_uploader.py) — храним последнюю запись комнаты на диске
-    backend'а, чтобы диджей мог скачать её из браузерного чата."""
-    suffix = Path(file.filename or "recording.wav").suffix or ".wav"
-    dest = RECORDINGS_DIR / f"{session_id}{suffix}"
-    with open(dest, "wb") as out:
-        out.write(await file.read())
-
-    room = sessions.get_or_create(session_id)
-    room.recording_path = str(dest)
-    await room.broadcast_to_chat({"type": "recording_ready", "url": f"/api/rooms/{session_id}/recording"})
-    return JSONResponse({"ok": True})
-
-
-@app.get("/api/rooms/{session_id}/recording")
-async def download_recording(session_id: str) -> FileResponse:
-    room = sessions.get_or_create(session_id)
-    if room.recording_path is None or not Path(room.recording_path).exists():
-        raise HTTPException(status_code=404, detail="Запись ещё не готова")
-    return FileResponse(room.recording_path, filename=Path(room.recording_path).name)
-
-
 @app.get("/api/version")
 async def code_version() -> JSONResponse:
     """Какой код реально крутится в этом процессе — чтобы «перезапустил, а
@@ -451,79 +426,6 @@ async def list_techniques() -> JSONResponse:
     static/chat.html) и как справочный контекст (используется agent.py
     отдельно, тут — для UI)."""
     return JSONResponse([t.to_dict() for t in TECHNIQUES.values()])
-
-
-@app.post("/api/rooms/{session_id}/techniques/{technique_id}/execute")
-async def execute_technique(session_id: str, technique_id: str, body: dict | None = None) -> JSONResponse:
-    """Кнопка "▶ Выполнить" во вкладке "Техника": в отличие от чата (там
-    LLM сама решает source/target/technique_id) и от "Стратегии" (там план
-    уже построен по всей библиотеке), здесь диджей вручную выбрал технику
-    И деки — просто материализуем MixPlan под уже выбранные параметры
-    (paramOverrides с левой панели) и шлём companion'у, LLM не участвует.
-    body: {"source_deck": "A", "target_deck": "B", "param_overrides": {...}}"""
-    room = sessions.get_or_create(session_id)
-    if technique_id not in TECHNIQUES:
-        raise HTTPException(status_code=404, detail=f"Неизвестная техника: {technique_id}")
-    technique = TECHNIQUES[technique_id]
-
-    body = body or {}
-    source = body.get("source_deck", "A")
-    target = body.get("target_deck", "B")
-    third = body.get("third_deck")
-    overrides = body.get("param_overrides")
-
-    telemetry = room.latest_telemetry
-    if source not in telemetry or target not in telemetry:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Дека {source} или {target} не видна в телеметрии (сейчас есть: {list(telemetry.keys())}) — companion подключён и деки загружены?",
-        )
-
-    if technique.requires_stems:
-        # Mixxx 2.6+ умеет играть слои сам, если на деке лежит .stem.mp4.
-        # Раньше здесь стоял безусловный отказ «живьём отдельных каналов
-        # под слои нет» — он был верен для 2.4 и перестал быть верным.
-        # Теперь спрашиваем деку, а не догадываемся: stem_count приходит
-        # телеметрией и равен 4 у стемового файла и 0 у обычного.
-        plain = [d for d in (source, target)
-                 if int(telemetry.get(d, {}).get("stem_count") or 0) < 4]
-        if plain:
-            raise HTTPException(
-                status_code=400,
-                detail=f"«{technique.name}» работает по слоям, а на деке "
-                       f"{' и '.join(plain)} обычный файл без слоёв. "
-                       f"Соберите стемы: python stems.py --dir \"путь к музыке\" — "
-                       f"рядом с треком появится .stem.mp4, загрузите в Mixxx его. "
-                       f"Если стемы уже есть, обновите скрипт контроллера в Mixxx: "
-                       f"без поля stem_count в телеметрии дека выглядит обычной.",
-            )
-
-    if technique.requires_decks >= 3:
-        # Третью деку не угадываем: раньше она была зашита как "C", и
-        # приём молча играл не на той деке, если трек лежал на D.
-        if not third:
-            free = [d for d in sorted(telemetry) if d not in (source, target)
-                    and telemetry[d].get("track_loaded")]
-            third = free[0] if free else None
-        if not third:
-            raise HTTPException(
-                status_code=400,
-                detail=f"«{technique.name}» играется на трёх деках, а кроме "
-                       f"{source} и {target} ни на одной деке нет загруженного трека.")
-        if third not in telemetry:
-            raise HTTPException(status_code=400,
-                                detail=f"Дека {third} не видна в телеметрии")
-
-    bpm = telemetry[source].get("bpm") or 128.0
-    plan_id = f"tech_{session_id}_{source}_to_{target}_{technique_id}"
-    try:
-        plan = build_plan(technique_id, plan_id, source, target, bpm, overrides,
-                          third=third)
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    sent = await room.send_plan_to_companion(plan)
-    return JSONResponse({"ok": sent, "plan_id": plan_id, "third_deck": third})
 
 
 @app.get("/api/rooms/{session_id}/techniques/{technique_id}/recommend")
@@ -621,29 +523,6 @@ async def track_sections(session_id: str, path: str = "", name: str = "") -> JSO
         data["warning"] = ("карты барабанов у трека нет — границы секций условны. "
                            "Отсканируйте библиотеку заново.")
     return JSONResponse(data)
-
-
-@app.post("/api/rooms/{session_id}/cues/export")
-async def export_cues_to_mixxx(session_id: str, body: dict | None = None) -> JSONResponse:
-    """Выгружает точки всей библиотеки в горячие метки Mixxx.
-
-    body: {"dry_run": true} — показать, что будет записано;
-          {"slots": 8}      — сколько кнопок занимать.
-    ВАЖНО: Mixxx должен быть закрыт — он держит библиотеку в памяти и
-    перезапишет файл при выходе."""
-    import mixxx_cues
-
-    body = body or {}
-    room = sessions.get_or_create(session_id)
-    if not room.library_tracks:
-        raise HTTPException(status_code=400,
-                            detail="Библиотека комнаты пуста — сначала отсканируйте музыку")
-    r = await asyncio.to_thread(
-        mixxx_cues.export_library, room.library_tracks, None,
-        bool(body.get("dry_run")), logger.info, int(body.get("slots") or 8))
-    if not r.get("ok"):
-        raise HTTPException(status_code=400, detail=r.get("error") or "не вышло")
-    return JSONResponse(r)
 
 
 @app.post("/api/rooms/{session_id}/techniques/{technique_id}/demo")
@@ -844,41 +723,6 @@ async def export_set(session_id: str, body: dict | None = None) -> JSONResponse:
         "skipped": result["skipped"],
         "how_to": "В Mixxx: Медиатека -> Импорт плейлиста -> выбрать этот .m3u8",
     })
-
-
-@app.post("/api/rooms/{session_id}/strategy/autodj")
-async def export_autodj(session_id: str, body: dict | None = None) -> JSONResponse:
-    """Кладёт порядок сета в очередь Auto DJ самого Mixxx.
-
-    Единственное место в Mixxx, где есть последовательное воспроизведение.
-    Плейлист .m3u8 порядок ИГРАТЬ не заставляет — он только список путей;
-    ни точки, ни приёма в него положить нельзя, потому что таких полей
-    нет в модели плейлиста Mixxx (см. mixxx_autodj.py)."""
-    require_paid("Отправить сет в Auto DJ")
-    import mixxx_autodj
-
-    room = sessions.get_or_create(session_id)
-    if room.last_strategy is None:
-        raise HTTPException(status_code=400, detail="Сначала постройте план (кнопка «Построить план»).")
-    body = body or {}
-    if not body.get("dry_run") and _mixxx_running():
-        raise HTTPException(status_code=409,
-                            detail="Mixxx запущен — он перезапишет библиотеку при выходе. Закройте его.")
-    by_name = {t.get("name"): t.get("path")
-               for t in room.library_tracks if t.get("name")}
-    paths = []
-    for tr in (room.last_strategy.get("tracks") or []):
-        p = tr.get("path") or by_name.get(tr.get("name"))
-        if p:
-            paths.append(p)
-    if not paths:
-        raise HTTPException(status_code=400, detail="в плане нет треков с путями")
-    out = mixxx_autodj.export_autodj(paths, dry_run=bool(body.get("dry_run")),
-                                     replace=body.get("replace", True),
-                                     log=logger.info)
-    if not out.get("ok"):
-        raise HTTPException(status_code=400, detail=out.get("error") or "не вышло")
-    return JSONResponse(out)
 
 
 _preview_tasks: dict[str, asyncio.Task] = {}
@@ -2127,25 +1971,6 @@ async def _analyze_one(session_id: str, key: str, path: str, force: bool,
             note += f"; убрано из базы треков, которых нет на диске: {missing}"
         return {"state": "ok", "done": removed, "total": removed, "note": note}
 
-    if key == "cues":
-        import mixxx_cues
-        import mixxx_process
-
-        if not tracks:
-            return {"state": "skip", "note": "библиотека пуста"}
-        if mixxx_process.is_running():
-            # Не «попробуем и посмотрим»: Mixxx держит библиотеку в памяти
-            # и при выходе перезаписывает файл — метки, записанные сейчас,
-            # он сотрёт, и выглядеть это будет как «метки не работают».
-            return {"state": "fail",
-                    "note": "Mixxx запущен — он перезапишет базу при выходе. Закройте его."}
-        r = await asyncio.to_thread(mixxx_cues.export_library, tracks, None,
-                                    False, logger.info, 8)
-        if not r.get("ok"):
-            return {"state": "fail", "note": str(r.get("error") or "не вышло")[:200]}
-        return {"state": "ok", "done": r.get("tracks", 0), "total": len(tracks),
-                "note": f"метки расставлены у {r.get('tracks', 0)} треков"}
-
     return {"state": "skip", "note": "шаг не знаю"}
 
 
@@ -2154,7 +1979,7 @@ async def analyze_library(session_id: str, body: dict | None = None) -> JSONResp
     """Кнопка «Анализ библиотеки» — один проход по всем шагам.
 
     body: {"path": папка, "steps": [...], "force": false, "backend": "auto"}
-    Без steps берётся ANALYZE_DEFAULT (всё, кроме меток в Mixxx).
+    Без steps берётся ANALYZE_DEFAULT.
     force=true считает заново даже то, что уже посчитано."""
     body = body or {}
     task = _analyze_tasks.get(session_id)
@@ -3511,65 +3336,6 @@ async def delete_transition(session_id: str, tid: int) -> JSONResponse:
     return JSONResponse(transitions.remove(session_id, tid))
 
 
-@app.get("/api/rooms/{session_id}/mixxx-library")
-async def mixxx_library_compare(session_id: str) -> JSONResponse:
-    """Что разошлось между библиотекой DARAVE и библиотекой Mixxx.
-
-    Ничего не меняет — только показывает. Добавить файл в медиатеку
-    Mixxx снаружи нельзя, это делает только он сам пересканированием."""
-    import mixxx_library
-
-    return JSONResponse(mixxx_library.compare(_room_tracks(session_id)))
-
-
-# ------------------------------------------------- профиль настроек Mixxx
-
-def _mixxx_running() -> bool:
-    """Запущен ли Mixxx прямо сейчас.
-
-    Нужно ровно перед записью в его файлы: Mixxx держит и mixxx.cfg, и
-    библиотеку в памяти и перезаписывает их при выходе, стирая всё, что
-    туда положили снаружи. Ту же граблю мы уже проходили с метками."""
-    try:
-        import subprocess as _sp
-
-        if os.name == "nt":
-            out = _sp.run(["tasklist", "/FI", "IMAGENAME eq mixxx.exe"],
-                          capture_output=True, text=True, timeout=8).stdout
-            return "mixxx.exe" in out.lower()
-        out = _sp.run(["pgrep", "-x", "mixxx"], capture_output=True, timeout=8)
-        return out.returncode == 0
-    except Exception:
-        return False
-
-
-@app.get("/api/rooms/{session_id}/mixxx-profile")
-async def mixxx_profile_status(session_id: str) -> JSONResponse:
-    import mixxx_profile
-
-    return JSONResponse(mixxx_profile.profile_status(session_id))
-
-
-@app.post("/api/rooms/{session_id}/mixxx-profile")
-async def mixxx_profile_action(session_id: str, body: dict | None = None) -> JSONResponse:
-    """{action: export|apply, dry_run}. Настройки Mixxx принадлежат
-    комнате: снимаются с текущей установки и накладываются на любую
-    другую сборку — см. mixxx_profile.py."""
-    import mixxx_profile
-
-    body = body or {}
-    action = str(body.get("action") or "export")
-    if action == "export":
-        return JSONResponse(mixxx_profile.export_profile(session_id, log=logger.info))
-    if action == "apply":
-        if _mixxx_running():
-            raise HTTPException(status_code=409,
-                                detail="Mixxx запущен — он перезапишет mixxx.cfg при выходе. Закройте его.")
-        return JSONResponse(mixxx_profile.apply_profile(
-            session_id, dry_run=bool(body.get("dry_run")), log=logger.info))
-    raise HTTPException(status_code=400, detail="action: export | apply")
-
-
 @app.get("/api/rooms/{session_id}/audition/pool")
 async def audition_pool(session_id: str) -> JSONResponse:
     import audition
@@ -4069,64 +3835,7 @@ async def ws_allowed(websocket: "WebSocket") -> bool:
     return cloud_auth.token_ok(token)
 
 
-@app.websocket("/ws/companion/{session_id}")
-async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
-    if not await ws_allowed(websocket):
-        # 1008 — policy violation. Закрываем ДО accept(): принятое и
-        # тут же закрытое соединение браузер показывает как разрыв
-        # сети, и человек идёт чинить роутер вместо того, чтобы войти.
-        await websocket.close(code=1008)
-        return
-    await websocket.accept()
-    room = sessions.get_or_create(session_id)
-    room.companion_ws = websocket
-    logger.info(f"companion подключился, комната '{session_id}'")
-
-    try:
-        while True:
-            msg = await websocket.receive_json()
-            msg_type = msg.get("type")
-
-            if msg_type == "hello":
-                logger.info(f"hello от companion_id={msg.get('companion_id')} (комната '{session_id}')")
-
-            elif msg_type == "telemetry":
-                room.latest_telemetry = msg["decks"]
-                # Отметка по МОНОТОННЫМ часам backend'а: автопилот
-                # доигрывает по ней время, прошедшее с последнего тика, и
-                # часы companion'а тут не годятся — они чужие.
-                room.telemetry_at = time.monotonic()
-                # Транслируем сырую телеметрию в чат тоже — фронтенду пригодится
-                # для отрисовки BPM/waveform-позиции, не только агенту.
-                payload = {"type": "telemetry", "decks": msg["decks"]}
-                if "recording_status" in msg:
-                    payload["recording_status"] = msg["recording_status"]
-                await room.broadcast_to_chat(payload)
-
-            elif msg_type in ("load_result", "deck_result"):
-                # Ответы на «положи трек на деку» / «дёрни транспорт» —
-                # их ждёт автопилот, чтобы идти по сету дальше.
-                if not msg.get("ok"):
-                    logger.info(f"{msg_type}: {msg.get('error')} (комната '{session_id}')")
-                    await room.broadcast_to_chat(msg)
-
-            elif msg_type in ("plan_started", "plan_finished", "plan_rejected", "control_done"):
-                # Companion теперь исполняет MixPlan отдельной задачей и
-                # рассказывает, что с ним происходит. Транслируем в чат: без
-                # этого нажатие "Выполнить" во время уже идущего перехода
-                # выглядело как "кнопка не сработала".
-                logger.info(f"{msg_type}: {msg.get('plan_id')} (комната '{session_id}')")
-                await room.broadcast_to_chat(msg)
-
-    except WebSocketDisconnect:
-        logger.info(f"companion отключился, комната '{session_id}'")
-        if room.companion_ws is websocket:
-            room.companion_ws = None
-        await room.broadcast_to_chat({"type": "companion_status", "connected": False})
-        sessions.drop_if_empty(session_id)
-
-
-@app.websocket("/ws/chat/{session_id}")
+@app.websocket("/ws/events/{session_id}")
 async def chat_endpoint(websocket: WebSocket, session_id: str) -> None:
     """Односторонний канал событий интерфейса: прогресс анализа и статусы."""
     if not await ws_allowed(websocket):
@@ -4136,9 +3845,6 @@ async def chat_endpoint(websocket: WebSocket, session_id: str) -> None:
     room = sessions.get_or_create(session_id)
     room.chat_websockets.add(websocket)
     logger.info(f"клиент событий подключился, комната '{session_id}'")
-    if room.latest_telemetry:
-        await websocket.send_json({"type": "telemetry", "decks": room.latest_telemetry})
-    await websocket.send_json({"type": "companion_status", "connected": room.companion_ws is not None})
     try:
         while True:
             await websocket.receive_text()

@@ -26,7 +26,7 @@ from pathlib import Path
 # Модули, которые бэкенд имеет право запускать как подпроцесс. Список
 # закрытый: первый аргумент --child приходит из нашего же кода, но пусть
 # опечатка падает сразу и понятно, а не поднимает что-то постороннее.
-CHILD_MODULES = ("track_analysis", "stems", "fix_library_bpm", "autopilot_selftest")
+CHILD_MODULES = ("track_analysis", "stems", "fix_library_bpm")
 
 
 def frozen() -> bool:

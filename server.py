@@ -1,65 +1,8 @@
-"""
-FastAPI backend — облачный сервис DARAVE.
+"""FastAPI backend локального приложения DARAVE.
 
-Мультисессионность: каждый арендатор получает свой session_id ("код
-комнаты"), который связывает его companion (дома, у пульта рядом с Mixxx)
-с его же браузерным чатом. Комнаты полностью изолированы друг от друга —
-см. session.py.
-
-Эндпоинты:
-  GET  /                            — браузерная страница чата (static/chat.html)
-  WS   /ws/companion/{session_id}   — протокол companion: hello/telemetry,
-                                       backend -> companion: mixplan / command
-  WS   /ws/chat/{session_id}        — браузер: {"type": "user_message", "text": "..."} ->
-                                       агент отвечает {"type": "agent_reply", "text": "..."}
-                                       всем чат-клиентам этой комнаты и, если решил
-                                       действовать, шлёт MixPlan companion'у той же
-                                       комнаты; {"type": "command", "action": "..."} —
-                                       разовые команды ("replay_last_mix", "recording_toggle")
-  POST /api/rooms                   — сгенерировать случайный код новой комнаты
-  POST /api/rooms/{session_id}/recording — companion грузит сюда файл записи
-  GET  /api/rooms/{session_id}/recording — диджей скачивает запись из чата
-  POST /api/rooms/{session_id}/library   — companion грузит результаты
-                                            track_analysis.py --upload
-  GET  /api/rooms/{session_id}/library   — браузер читает библиотеку комнаты
-  POST /api/rooms/{session_id}/library/scan        — кнопка "Сканировать" в
-                                            UI: запускает track_analysis.py
-                                            локально на машине backend'а
-  GET  /api/rooms/{session_id}/library/scan/status — статус/прогресс скана
-  POST /api/rooms/{session_id}/strategy  — построить план сета (mix_strategist.py)
-                                            по всей/части загруженной библиотеки
-  POST /api/rooms/{session_id}/strategy/execute — исполнить ОДИН переход из
-                                            последнего построенного плана прямо сейчас
-  POST /api/rooms/{session_id}/autopilot/start  — играть СЕТ в самом Mixxx:
-                                            DARAVE сам грузит треки на деки,
-                                            ставит иглу в нужную секунду, ждёт
-                                            момент по телеметрии и сводит
-                                            (mode="clip" — один стык с разбегом)
-  POST /api/rooms/{session_id}/autopilot/stop   — остановить автопилот
-  GET  /api/rooms/{session_id}/autopilot        — что играет и сколько до перехода
-  GET  /api/techniques              — библиотека техник сведения (techniques.py)
-
-Запуск:
-    export DARAVE_LLM_PROVIDER=gemini    # или "ollama" — см. llm_providers.py
-    # для gemini:
-    export GEMINI_API_KEY=...           # обязателен — без него DJAgent не поднимется
-                                         # (получить бесплатно: https://aistudio.google.com)
-    export GEMINI_MODEL=gemini-3.6-flash # опционально
-    # для ollama (локальная модель, без geo-блоков, бесплатно):
-    #   ollama pull llama3.1  &&  export DARAVE_LLM_PROVIDER=ollama
-    uvicorn server:app --host 0.0.0.0 --port 8765
-
-Companion подключается на ws://<host>:8765/ws/companion/{session_id}
-(session_id = --companion-id, см. companion_main.py). Диджей открывает
-http://<host>:8765/?room={session_id} в браузере.
-
-ВАЖНО про Gemini из РФ: Google не пускает Gemini API/AI Studio из России
-(и Беларуси, Ирана, КНР и т.д. — geo-блок на уровне аккаунта/IP, не биллинг).
-Если backend крутится на машине с российским IP — вызовы будут падать вне
-зависимости от денег на счету. Два выхода: (1) поднять backend на зарубежном
-VPS (см. README "Деплой") — тогда обращения к Gemini идут с его IP; (2) для
-локальной отладки — задать HTTPS_PROXY/HTTP_PROXY на зарубежный прокси/VPN
-перед запуском, google-genai ходит через httpx и уважает эти переменные.
+Обслуживает интерфейс библиотеки, анализа треков, подбора переходов,
+предпрослушивания и сборки миксов. Долгие задачи выполняются отдельными
+процессами, а WebSocket используется для передачи прогресса и статусов.
 """
 from __future__ import annotations
 
@@ -85,10 +28,8 @@ except ImportError:
     # должен стартовать и без них, просто кнопка "Демо" вернёт понятную
     # ошибку вместо падения ВСЕГО backend'а при импорте.
     demo_render = None
-import full_catalog
 from child import child_cmd
 import library_analysis as _la
-import live_control
 import mix_strategist
 import set_export
 import persistence
@@ -98,8 +39,6 @@ try:
     import fix_library_bpm
 except Exception:  # без numpy/librosa — просто нет автопочинки темпа
     fix_library_bpm = None
-import llm_providers
-from llm_providers import make_provider
 from session import SessionManager
 from techniques import TECHNIQUES, build_plan
 
@@ -392,11 +331,7 @@ async def unpair() -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-# Один провайдер на весь процесс — общий пул соединений для всех комнат, а
-# не по клиенту на комнату. gemini/ollama выбирается DARAVE_LLM_PROVIDER,
-# см. llm_providers.py.
-_llm_provider = make_provider()
-sessions = SessionManager(_llm_provider)
+sessions = SessionManager()
 persistence.init_db()
 
 CHAT_HTML_PATH = _paths.resource_dir() / "static" / "chat.html"
@@ -878,136 +813,6 @@ async def get_technique_demo(session_id: str, filename: str) -> FileResponse:
     # прошлых прогонов продолжали открываться.
     return FileResponse(path, media_type="audio/mpeg" if path.suffix.lower() == ".mp3"
                         else "audio/wav")
-
-
-@app.get("/api/llm")
-async def llm_status() -> JSONResponse:
-    """Состояние разговорного ассистента для UI.
-
-    Нужен потому, что отсутствие ключа больше не роняет программу (см.
-    llm_providers.NoProvider): раз она поднимается и работает, диджей
-    должен где-то увидеть, что именно выключено и почему."""
-    st = llm_providers.provider_status()
-    st["active"] = type(sessions.provider).__name__ != "NoProvider"
-    return JSONResponse(st)
-
-
-@app.post("/api/llm")
-async def set_llm_key(body: dict) -> JSONResponse:
-    """Вставить ключ Gemini (или адрес Ollama) прямо из браузера.
-
-    У установленной версии нет ни переменных окружения, ни консоли —
-    просить диджея «задайте GEMINI_API_KEY» бессмысленно. Ключ пишется в
-    darave_secrets.json папки данных, провайдер пересоздаётся на месте,
-    перезапуск не нужен.
-
-    Ключ ПРОВЕРЯЕТСЯ настоящим запросом, и нерабочий не сохраняется:
-    иначе кнопка «Подключить» гасила бы баннер, а первое же сообщение в
-    чат падало бы с API_KEY_INVALID — и виноватой выглядела бы программа."""
-    body = body or {}
-    key = str(body.get("gemini_api_key") or "").strip()
-    host = str(body.get("ollama_host") or "").strip()
-    if not key and not host:
-        raise HTTPException(status_code=400, detail="Нужен ключ Gemini или адрес Ollama")
-
-    # Что было до нас — чтобы вернуть, если новое не заработало.
-    prev_key = llm_providers.secret("gemini_api_key")
-    prev_host = llm_providers.secret("ollama_host")
-    try:
-        if key:
-            llm_providers.save_secret("gemini_api_key", key)
-        if host:
-            llm_providers.save_secret("ollama_host", host)
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Не смог сохранить ключ: {exc}") from exc
-
-    def _build_and_check() -> tuple[object, bool, str]:
-        prov = make_provider()
-        ok, why = llm_providers.verify(prov)
-        return prov, ok, why
-
-    try:
-        provider, ok, why = await asyncio.to_thread(_build_and_check)
-    except Exception as exc:
-        provider, ok, why = None, False, str(exc)[:200]
-
-    if not ok:
-        # Откатываем, чтобы следующий запуск не подхватил заведомо
-        # нерабочий ключ и не выглядел сломанным уже без объяснений.
-        try:
-            llm_providers.save_secret("gemini_api_key", prev_key or "")
-            llm_providers.save_secret("ollama_host", prev_host or "")
-        except OSError:
-            pass
-        # Ответ-заглушка для чата здесь не годится: диджей только что
-        # вставил ключ и ждёт вердикт по НЕМУ, а не общую справку.
-        if key and (not why or why == llm_providers.NO_PROVIDER_REPLY):
-            why = ("Ключ сохранить получилось, а подключиться — нет. "
-                   "Чаще всего это либо неполный ключ, либо отсутствующий "
-                   "пакет google-genai в сборке.")
-        return JSONResponse({"ok": False, "active": False,
-                             "note": why or "Провайдер не поднялся."},
-                            status_code=200)
-
-    sessions.set_provider(provider)
-    st = llm_providers.provider_status()
-    st["active"] = True
-    return JSONResponse(st)
-
-
-@app.get("/api/controls")
-async def list_controls() -> JSONResponse:
-    """Каталог всех контролов Mixxx, которыми умеет управлять DARAVE."""
-    return JSONResponse({"controls": live_control.catalog_for_ui()})
-
-
-@app.post("/api/rooms/{session_id}/control")
-async def set_control(session_id: str, body: dict) -> JSONResponse:
-    """Дёрнуть один контрол Mixxx прямо сейчас (веб-пульт, отладка, и тот же
-    путь, которым пользуется ИИ-чат через set_mixxx_control).
-    body: {"control": "eq_low", "deck": "A", "value": 0 | "neutral"}"""
-    room = sessions.get_or_create(session_id)
-    body = body or {}
-    try:
-        cmd = live_control.validate(
-            body.get("deck") or "A", body.get("control") or "", body.get("value"),
-        )
-    except live_control.ControlError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    sent = await room.send_control_to_companion(cmd)
-    if not sent:
-        raise HTTPException(status_code=409, detail="Companion не подключён — команду некуда слать.")
-    logger.info(f"контрол: {live_control.describe(cmd)} (комната '{session_id}')")
-    return JSONResponse({"ok": True, "applied": live_control.describe(cmd), "command": cmd})
-
-
-@app.get("/api/controls/search")
-async def search_controls(q: str = "", limit: int = 25) -> JSONResponse:
-    """Поиск по ПОЛНОМУ каталогу Mixxx (то же, чем пользуется ИИ-чат)."""
-    return JSONResponse({"stats": full_catalog.stats(), "hits": full_catalog.search(q, limit)})
-
-
-@app.post("/api/rooms/{session_id}/control/raw")
-async def set_control_raw(session_id: str, body: dict) -> JSONResponse:
-    """Дёрнуть ЛЮБОЙ контрол Mixxx по ключу — идёт через SysEx, номера
-    маплить не нужно. body: {"key": "parameter3", "unit": 1, "slot": 2,
-    "deck": "A", "index": 3, "value": 0.7}"""
-    room = sessions.get_or_create(session_id)
-    body = body or {}
-    try:
-        cmd = live_control.validate_raw(
-            key=body.get("key") or "", deck=body.get("deck"), unit=body.get("unit"),
-            slot=body.get("slot"), index=body.get("index"), value=body.get("value"),
-            family=body.get("family"),
-        )
-    except live_control.ControlError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    sent = await room.send_control_to_companion(cmd)
-    if not sent:
-        raise HTTPException(status_code=409, detail="Companion не подключён — команду некуда слать.")
-    logger.info(f"контрол(raw): {live_control.describe(cmd)} (комната '{session_id}')")
-    return JSONResponse({"ok": True, "applied": live_control.describe(cmd), "command": cmd})
 
 
 @app.post("/api/rooms/{session_id}/strategy/export")
@@ -4214,227 +4019,6 @@ async def suggest_length(session_id: str, body: dict | None = None) -> JSONRespo
                                    for x in sorted(scored, key=lambda y: y["minutes"])]})
 
 
-@app.post("/api/rooms/{session_id}/strategy/execute")
-async def execute_strategy_transition(session_id: str, body: dict) -> JSONResponse:
-    """Материализует и сразу отправляет companion'у ОДИН переход из
-    последнего построенного плана — кнопка "▶" у перехода в "Стратегии".
-    body: {"transition_index": int, "source_deck": "A", "target_deck": "B"}"""
-    require_paid("Проиграть переход из плана")
-    room = sessions.get_or_create(session_id)
-    if room.last_strategy is None:
-        raise HTTPException(status_code=400, detail="Сначала постройте план (POST .../strategy)")
-
-    index = body.get("transition_index")
-    source = body.get("source_deck", "A")
-    target = body.get("target_deck", "B")
-    if index is None or not (0 <= index < len(room.last_strategy["transitions"])):
-        raise HTTPException(status_code=400, detail="Некорректный transition_index")
-    # Ползунки, настроенные у ЭТОГО перехода в плане, — часть перехода, а
-    # не украшение интерфейса: живое исполнение обязано звучать так же,
-    # как демо, которое диджей слушал.
-    overrides = {**(room.last_strategy["transitions"][index].get("params") or {}),
-                 **(body.get("param_overrides") or {})} or None
-
-    plan = mix_strategist.build_transition_plan(
-        room.last_strategy, index, source, target, f"strategy_{session_id}_{index}", overrides,
-    )
-    sent = await room.send_plan_to_companion(plan)
-    return JSONResponse({"ok": sent, "plan_id": plan["plan_id"]})
-
-
-def _strategy_paths(room, from_index: int = 0) -> list[str]:
-    """Пути треков плана, начиная с трека `from_index`.
-
-    Именно этот список должен лежать в очереди Auto DJ: автопилот
-    наполняет деки ею, а очередь отдаёт треки строго по порядку."""
-    by_name = {t.get("name"): t.get("path")
-               for t in (room.library_tracks or []) if t.get("name")}
-    out: list[str] = []
-    for tr in ((room.last_strategy or {}).get("tracks") or [])[max(0, from_index):]:
-        p = tr.get("path") or by_name.get(tr.get("name"))
-        if p:
-            out.append(p)
-    return out
-
-
-TELEMETRY_WAIT_SECONDS = 90.0
-
-
-async def _wait_for_telemetry(room, timeout: float) -> bool:
-    """Ждём, пока Mixxx снова начнёт рассказывать о деках."""
-    mark = float(getattr(room, "telemetry_at", 0.0) or 0.0)
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        now = float(getattr(room, "telemetry_at", 0.0) or 0.0)
-        if now > mark and room.latest_telemetry:
-            return True
-        await asyncio.sleep(0.5)
-    return False
-
-
-async def _ensure_autodj_queue(room, paths: list[str]) -> str | None:
-    """Привести очередь Auto DJ в соответствие с планом — сколько бы это
-    ни стоило, но без единого действия от диджея.
-
-    Очередь живёт в библиотеке Mixxx, а её он держит в памяти и пишет при
-    выходе. Значит переписать очередь можно только при закрытом Mixxx.
-    Раньше здесь стоял отказ «закройте Mixxx», и это складывалось в
-    замкнутый круг: закрыл -> план потерян -> построил заново -> очередь
-    снова не та. Теперь backend закрывает и поднимает Mixxx сам: он и так
-    работает на этой машине, а план переживает перезапуск."""
-    import mixxx_autodj
-    import mixxx_process
-
-    state = mixxx_autodj.queue_matches(paths)
-    if state["ok"]:
-        return None
-
-    logger.info("очередь Auto DJ расходится с планом (в ней %d, нужно %d) — готовлю",
-                state["queued"], state["expected"])
-    was_running = await asyncio.to_thread(mixxx_process.is_running)
-    exe = None
-    if was_running:
-        closed = await asyncio.to_thread(mixxx_process.close, 30.0, logger.info)
-        if not closed.get("ok"):
-            raise HTTPException(status_code=409, detail=closed.get("error") or
-                                "не смог закрыть Mixxx, чтобы переписать очередь")
-        exe = closed.get("path")
-
-    out = await asyncio.to_thread(mixxx_autodj.export_autodj, paths, None, True, False,
-                                  logger.info)
-    if not out.get("ok"):
-        if was_running:
-            await asyncio.to_thread(mixxx_process.start, exe, logger.info)
-        raise HTTPException(status_code=409,
-                            detail=f"не смог подготовить очередь Auto DJ: {out.get('error')}")
-    logger.info("очередь Auto DJ переписана под план: %d треков", out.get("queued"))
-
-    # Обратно Mixxx поднимает _ensure_mixxx_ready: он нужен автопилоту в
-    # любом случае — и когда мы его закрывали ради очереди, и когда диджей
-    # просто не запускал его сам.
-    return exe
-
-
-async def _ensure_mixxx_ready(room, exe: str | None = None) -> None:
-    """Mixxx должен работать и слать телеметрию — иначе играть некому.
-
-    Раньше здесь была дыра: очередь готовилась, а Mixxx поднимался только
-    если мы сами его закрывали. Диджей, нажавший «В Mixxx» при закрытом
-    Mixxx, получал «Auto DJ не положил трек ни на одну деку» — команда
-    уходила в никуда, и виноватой выглядела очередь, хотя дело было в
-    том, что играть попросту нечему."""
-    import mixxx_process
-
-    if not await asyncio.to_thread(mixxx_process.is_running):
-        started = await asyncio.to_thread(mixxx_process.start, exe, logger.info)
-        if not started.get("ok"):
-            raise HTTPException(status_code=409, detail=started.get("error") or
-                                "не смог запустить Mixxx")
-
-    # Процесс есть — это ещё не значит, что он готов принимать команды:
-    # маппинг контроллера поднимается позже, и до этого момента телеметрия
-    # молчит, а автопилот по ней и ориентируется.
-    if room.latest_telemetry and await _wait_for_telemetry(room, 3.0):
-        return
-    if not await _wait_for_telemetry(room, TELEMETRY_WAIT_SECONDS):
-        raise HTTPException(
-            status_code=409,
-            detail=("Mixxx не присылает телеметрию. Проверьте, что маппинг DARAVE "
-                    "включён в Настройках -> Контроллеры, и что companion запущен."))
-
-
-# ---------------------------------------------------------------- автопилот
-#
-# «В Mixxx» — это не выгрузка, а исполнение. Плейлист и очередь Auto DJ
-# отдают Mixxx только ПОРЯДОК треков: ни точки входа, ни приёма в них
-# положить некуда, таких полей в модели плейлиста нет. Поэтому сет,
-# собранный в DARAVE, играет в Mixxx единственным честным способом — его
-# играет DARAVE, руками своего виртуального контроллера. Зато на экране
-# при этом настоящие деки: две волны, движущийся фейдер, живые ручки —
-# то, ради чего это и понадобилось (на слух правку не всегда слышно).
-
-@app.get("/api/rooms/{session_id}/mixxx-settings")
-async def mixxx_settings_check(session_id: str) -> JSONResponse:
-    """Настройки самого Mixxx, от которых зависит, звучит ли живое
-    сведение так же, как посчитанное демо (см. mixxx_settings.py)."""
-    import mixxx_settings
-
-    out = mixxx_settings.check()
-    if not out.get("ok"):
-        raise HTTPException(status_code=404, detail=out.get("error"))
-    return JSONResponse(out)
-
-
-@app.post("/api/rooms/{session_id}/mixxx-settings")
-async def mixxx_settings_apply(session_id: str, body: dict | None = None) -> JSONResponse:
-    import mixxx_settings
-
-    if _mixxx_running():
-        raise HTTPException(status_code=409,
-                            detail="Mixxx запущен — он перезапишет mixxx.cfg при выходе. Закройте его.")
-    out = mixxx_settings.apply(only_must=bool((body or {}).get("must_only")),
-                               log=logger.info)
-    if not out.get("ok"):
-        raise HTTPException(status_code=400, detail=out.get("error") or "не вышло")
-    return JSONResponse(out)
-
-
-@app.post("/api/rooms/{session_id}/autopilot/start")
-async def autopilot_start(session_id: str, body: dict | None = None) -> JSONResponse:
-    """Играть сет в Mixxx подряд, начиная с перехода `index`.
-
-    mode="set" — весь сет до конца; mode="clip" — один переход с разбегом
-    в несколько тактов и коротким хвостом (чтобы посмотреть ОДИН стык,
-    не слушая сет целиком)."""
-    require_paid("Автопилот")
-    room = sessions.get_or_create(session_id)
-    if room.last_strategy is None:
-        raise HTTPException(status_code=400, detail="Сначала постройте план сета.")
-    body = body or {}
-    index = int(body.get("index") or 0)
-
-    # Очередь Auto DJ — это и есть то, чем автопилот наполняет деки
-    # (см. autodj_loader.py: контрола «загрузи файл по пути» в Mixxx нет).
-    # Значит порядок в ней обязан совпадать с планом начиная с текущего
-    # перехода, иначе на деку приедет чужой трек. Проверяем ДО старта, а
-    # не ловим по длительности на третьем переходе.
-
-    paths = _strategy_paths(room, index)
-    exe = None
-    if paths and not bool(body.get("skip_queue")):
-        exe = await _ensure_autodj_queue(room, paths)
-    await _ensure_mixxx_ready(room, exe)
-
-    ap = room.get_autopilot(logger=logger.info)
-    import autopilot as _ap
-    try:
-        out = await ap.start(room.last_strategy, index=index,
-                             mode=str(body.get("mode") or "set"))
-    except _ap.AutopilotError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from None
-    logger.info(f"автопилот запущен (комната '{session_id}'): {out['mode']}, "
-                f"переход №{out['index'] + 1} из {out['total']}")
-    return JSONResponse(out)
-
-
-@app.post("/api/rooms/{session_id}/autopilot/stop")
-async def autopilot_stop(session_id: str) -> JSONResponse:
-    room = sessions.get_or_create(session_id)
-    if room.autopilot is None:
-        return JSONResponse({"type": "autopilot", "running": False, "state": "idle"})
-    return JSONResponse(await room.autopilot.stop())
-
-
-@app.get("/api/rooms/{session_id}/autopilot")
-async def autopilot_status(session_id: str) -> JSONResponse:
-    room = sessions.get_or_create(session_id)
-    if room.autopilot is None:
-        return JSONResponse({"type": "autopilot", "running": False, "state": "idle",
-                             "index": 0, "total": len(
-                                 (room.last_strategy or {}).get("transitions") or [])})
-    return JSONResponse(room.autopilot.status())
-
-
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
 
@@ -4522,15 +4106,11 @@ async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
             elif msg_type in ("load_result", "deck_result"):
                 # Ответы на «положи трек на деку» / «дёрни транспорт» —
                 # их ждёт автопилот, чтобы идти по сету дальше.
-                if room.autopilot is not None:
-                    room.autopilot.on_load_result(msg)
                 if not msg.get("ok"):
                     logger.info(f"{msg_type}: {msg.get('error')} (комната '{session_id}')")
                     await room.broadcast_to_chat(msg)
 
             elif msg_type in ("plan_started", "plan_finished", "plan_rejected", "control_done"):
-                if room.autopilot is not None and msg_type != "control_done":
-                    room.autopilot.on_plan_event(msg)
                 # Companion теперь исполняет MixPlan отдельной задачей и
                 # рассказывает, что с ним происходит. Транслируем в чат: без
                 # этого нажатие "Выполнить" во время уже идущего перехода
@@ -4548,88 +4128,21 @@ async def companion_endpoint(websocket: WebSocket, session_id: str) -> None:
 
 @app.websocket("/ws/chat/{session_id}")
 async def chat_endpoint(websocket: WebSocket, session_id: str) -> None:
+    """Односторонний канал событий интерфейса: прогресс анализа и статусы."""
     if not await ws_allowed(websocket):
-        # 1008 — policy violation. Закрываем ДО accept(): принятое и
-        # тут же закрытое соединение браузер показывает как разрыв
-        # сети, и человек идёт чинить роутер вместо того, чтобы войти.
         await websocket.close(code=1008)
         return
     await websocket.accept()
     room = sessions.get_or_create(session_id)
     room.chat_websockets.add(websocket)
-    logger.info(f"чат-клиент подключился, комната '{session_id}'")
-
-    # Новому клиенту (например, открывшему второй таб) сразу отдаём то, что
-    # уже знаем о деках — не заставляем ждать следующего тика телеметрии.
+    logger.info(f"клиент событий подключился, комната '{session_id}'")
     if room.latest_telemetry:
         await websocket.send_json({"type": "telemetry", "decks": room.latest_telemetry})
     await websocket.send_json({"type": "companion_status", "connected": room.companion_ws is not None})
-
     try:
         while True:
-            msg = await websocket.receive_json()
-
-            if msg.get("type") == "user_message":
-                text = msg.get("text", "")
-                if not text.strip():
-                    continue
-                try:
-                    reply_text, plan, controls = await room.agent.handle_message(text, room.latest_telemetry)
-                except Exception:  # ошибка LLM не должна ронять WS-соединение
-                    logger.exception(f"ошибка DJAgent в комнате '{session_id}'")
-                    await room.broadcast_to_chat({
-                        "type": "agent_reply",
-                        "text": "Ошибка на стороне ассистента, попробуйте ещё раз.",
-                    })
-                    continue
-
-                persistence.append_history(session_id, "user", text)
-                persistence.append_history(session_id, "model", reply_text)
-
-                await room.broadcast_to_chat({"type": "agent_reply", "text": reply_text})
-
-                # Прямые движения ручек (set_mixxx_control) — до плана:
-                # если агент и покрутил EQ, и построил переход, ручки должны
-                # встать ДО того, как поедет кроссфейдер.
-                for cmd in controls or []:
-                    sent = await room.send_control_to_companion(cmd)
-                    await room.broadcast_to_chat({
-                        "type": "agent_reply",
-                        "text": (f"⇒ {live_control.describe(cmd)}" if sent
-                                 else f"⇒ {live_control.describe(cmd)} — companion не подключён"),
-                    })
-
-                if plan is not None:
-                    sent = await room.send_plan_to_companion(plan)
-                    if not sent:
-                        await room.broadcast_to_chat({
-                            "type": "agent_reply",
-                            "text": "(companion не подключён — план не отправлен)",
-                        })
-
-            elif msg.get("type") == "command":
-                action = msg.get("action", "")
-                if action == "replay_last_mix":
-                    if room.last_plan is None:
-                        await room.broadcast_to_chat({
-                            "type": "agent_reply",
-                            "text": "Пока нечего повторять — ни один микс в этой комнате ещё не игрался.",
-                        })
-                    else:
-                        sent = await room.send_plan_to_companion(room.last_plan)
-                        await room.broadcast_to_chat({
-                            "type": "agent_reply",
-                            "text": "Повторяю последний микс." if sent else "(companion не подключён)",
-                        })
-                elif action == "recording_toggle":
-                    sent = await room.send_command_to_companion("recording_toggle")
-                    if not sent:
-                        await room.broadcast_to_chat({
-                            "type": "agent_reply",
-                            "text": "(companion не подключён — команда записи не отправлена)",
-                        })
-
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        logger.info(f"чат-клиент отключился, комната '{session_id}'")
+        logger.info(f"клиент событий отключился, комната '{session_id}'")
         room.chat_websockets.discard(websocket)
         sessions.drop_if_empty(session_id)

@@ -250,7 +250,7 @@ The product is actively developed. Its scope is deliberately focused on transiti
 
 ![DARAVE set control](https://github.com/kam1k88/DARAVE/blob/main/site/shot-controlc.webp)
 
-### Clipping control
+### Transition parameter selection
 
 ![DARAVE clipping control](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)
 

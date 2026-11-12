@@ -190,7 +190,7 @@ DARAVE — самостоятельно разработанный програ�
 
 ### Подбор параметров перехода
 
-![Подбор параметров перехода в DARAVE](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)
+![Подбор параметров перехода в DARAVE](https://raw.githubusercontent.com/kam1k88/DARAVE/main/site/Clipping.png)
 
 ## Ссылки
 

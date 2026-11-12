@@ -219,7 +219,7 @@ def smoke_test() -> int:
     def run(name: str, fn, optional: bool = False) -> None:
         """optional=True — проверка на то, без чего программа живёт.
 
-        Без google-genai работает всё, кроме чат-ассистента (и остаётся
+        Без подключения к внешним AI-сервисам работает весь основной функционал (
         Ollama). Валить из-за этого сборку нельзя, а молчать — тем более:
         именно так и появляются сборки, где кнопка «Подключить» не
         работает, а узнаётся об этом от пользователя."""
@@ -277,12 +277,6 @@ def smoke_test() -> int:
         for mod in child.CHILD_MODULES:
             __import__(mod)
 
-    def _genai() -> None:
-        # Namespace-пакет: PyInstaller его не видит без явной подсказки в
-        # .spec, и ломается это не при старте, а когда пользователь
-        # нажимает «Подключить» с ключом на руках.
-        from google import genai  # noqa: F401
-
     def _backend_builds() -> None:
         # САМАЯ ВАЖНАЯ проверка, и добавлена она задним числом. FastAPI
         # разбирает подписи обработчиков ПРЯМО В ДЕКОРАТОРЕ: не хватает
@@ -294,16 +288,6 @@ def smoke_test() -> int:
         routes = len(getattr(server.app, "routes", []))
         if routes < 10:
             raise RuntimeError(f"у приложения всего {routes} маршрутов — похоже, собралось не всё")
-
-    def _llm_starts_without_key() -> None:
-        # Главная поломка первого запуска: провайдер создавался при
-        # импорте server.py и бросал RuntimeError, если ключа нет. Первый
-        # же запуск установленной версии заканчивался трейсбеком.
-        import llm_providers
-
-        prov = llm_providers.make_provider()
-        if prov is None:
-            raise RuntimeError("make_provider вернул None")
 
     def _fx_units_exist() -> None:
         # Словарь эффектов (fx_presets.py) и рендер (demo_render.py) —
@@ -1585,8 +1569,6 @@ def smoke_test() -> int:
     run("страница чата на месте", _static)
     run("ffmpeg доступен", _ffmpeg)
     run("дочерние модули импортируются", _children)
-    run("google-genai на месте (нужен только для чата)", _genai, optional=True)
-    run("старт без ключа LLM не падает", _llm_starts_without_key)
     run("бэкенд собирается целиком", _backend_builds)
     run("свой интерфейс пускают в WebSocket", _local_ui_allowed)
     run("эффекты по сторонам рендер понимает", _fx_units_exist)
@@ -1690,14 +1672,6 @@ def doctor(port: int) -> int:
         print("                 считает, что уже запущена, и сразу выходит.")
         print("                 Закройте ту копию (или DARAVE, поднятый из исходников).")
 
-    try:
-        import llm_providers
-
-        st = llm_providers.provider_status()
-        print(f"  ассистент      {'подключён: ' + str(st.get('provider')) if st.get('ok') else 'выключен (программе не мешает)'}")
-    except Exception as exc:
-        print(f"  ассистент      не смог проверить: {exc}")
-
     # Собрать приложение — единственный способ поймать нехватку пакета,
     # которую FastAPI проверяет в декораторе маршрута. Без этой строки
     # --doctor рапортовал «всё в порядке» ровно в тот раз, когда
@@ -1753,7 +1727,7 @@ def serve(argv: list[str]) -> int:
     print(f"{APP_NAME}: поднимаю сервер на 127.0.0.1:{port}")
     import uvicorn
 
-    from server import app  # noqa: F401  — импорт поднимает провайдера LLM
+    from server import app  # noqa: F401  — собираем приложение FastAPI
 
     print(f"{APP_NAME}: бэкенд собран, открываю браузер")
     if "--no-browser" not in argv:

@@ -5,6 +5,7 @@
 
 <img width="276" height="276" alt="darave-mark" src="https://github.com/user-attachments/assets/54ecb721-f242-497c-9e7e-219f2ecd1ea2" />
 
+<img width="367" height="367" alt="favicon" src="https://github.com/user-attachments/assets/7cbcb0e1-28aa-4d61-abca-546bb060c6b5" />
 
 **Digital Audio Rave — A DJ mixing tool that analyzes your music, finds transitions, and renders the mix.**
 

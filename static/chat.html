@@ -1135,7 +1135,7 @@
 
     <div id="stage">
 
-    <div id="log" hidden></div>
+    <div id="log" aria-live="polite" style="position:fixed;right:18px;bottom:18px;z-index:50;max-width:420px;max-height:150px;overflow:auto;pointer-events:none"></div>
 
     <!-- ===== Библиотека ===== -->
     <div id="library-view" class="view active">
@@ -1264,10 +1264,8 @@
               <tbody id="lib-tbody"></tbody>
             </table>
             <div id="lib-empty" class="detail-col empty" style="display:none;border:none;width:auto">
-              Библиотека пуста — впишите папку с музыкой выше и нажмите
-              «🔍 Сканировать» (работает, если backend запущен на этой же
-              машине), либо отсканируйте вручную:<br>
-              <code>python track_analysis.py --scan "путь/к/музыке" --upload http://&lt;backend&gt; --room &lt;код&gt;</code>
+              Библиотека пуста — укажите папку с музыкой выше и нажмите
+              «Анализ библиотеки». DARAVE просканирует файлы на этом компьютере.
             </div>
           </div>
         </div>
@@ -4579,7 +4577,7 @@
 
   // ----- Одна кнопка «Анализ библиотеки» -------------------------------
   //
-  // Было пять: сканировать, стемы, метки, перемерить темп, убрать мусор.
+  // Анализ выполняется в установленном порядке; интерфейс показывает план работ.
   // Порядок между ними был неписаным, и нарушение порядка не ругалось, а
   // молча давало неверный результат. Теперь порядок задаёт backend
   // (library_analysis.order_steps), а здесь остаются три вещи: показать,
@@ -4790,9 +4788,6 @@
       if (s.key === "cleanup" && s.missing > 0) {
         lines.push("🧹 УДАЛИТЬ " + s.missing + " файлов (" + plan.cleanup_mb +
                    " МБ) — демо, сеты, записи. Последние и свежие остаются.");
-      } else if (s.key === "cues") {
-        lines.push("📍 Записать метки в базу Mixxx. MIXXX ДОЛЖЕН БЫТЬ ЗАКРЫТ — " +
-                   "иначе он перезапишет её при выходе и метки пропадут.");
       } else if (s.missing > 0) {
         lines.push("· " + s.title + ": " + s.missing);
       } else if (s.missing === 0) {
@@ -5271,7 +5266,7 @@
   const scanPathInput = document.getElementById("scan-path-input");
   // Отдельной кнопки «Сканировать» больше нет — скан стал первым шагом
   // конвейера. Ссылка ведёт на кнопку анализа: её же блокирует опрос
-  // статуса, если скан запустили в обход UI (например, из скина Mixxx).
+  // статуса, если скан запустили не из этого окна.
   const scanBtn = document.getElementById("analyze-btn");
   const scanStatusEl = document.getElementById("scan-status");
   const scanProgressEl = document.getElementById("scan-progress");
@@ -6867,8 +6862,7 @@
     if (!rooms.length) { box.hidden = true; return; }
     box.hidden = false;
     if (hint) {
-      hint.innerHTML = "Или введите код комнаты вручную — тот же, что у companion " +
-                       "(<code>--companion-id</code>)";
+      hint.textContent = "Или введите код комнаты вручную, чтобы открыть сохранённую библиотеку.";
     }
     box.innerHTML = "<h2>Ваши комнаты</h2>" + rooms.map(function (x) {
       return '<button class="join-room" data-room="' + escapeHtml(x.room_id) + '">' +

@@ -24,5 +24,3 @@ soundfile>=0.12
 mutagen>=1.47
 lameenc>=1.7          # честные 320 кбит/с без ffmpeg; при отсутствии — падаем на ffmpeg
 
-# Разговорная часть.
-google-genai>=0.3     # Gemini; альтернатива — ollama, ставится отдельно

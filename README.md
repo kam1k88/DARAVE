@@ -252,7 +252,7 @@ The product is actively developed. Its scope is deliberately focused on transiti
 
 ### Transition parameter selection
 
-![DARAVE clipping control](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)
+![DARAVE clipping control](https://raw.githubusercontent.com/kam1k88/DARAVE/main/site/Clipping.png)
 
 ## Links
 

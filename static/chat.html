@@ -4583,9 +4583,8 @@
   // (library_analysis.order_steps), а здесь остаются три вещи: показать,
   // что будет сделано, спросить один раз, и показать полосы.
   //
-  // Спрашиваем ДО запуска и один раз на весь проход: два шага
-  // необратимы — уборка удаляет файлы, метки пишут в чужую базу Mixxx.
-  // Пять отдельных подтверждений подряд диджей перестал бы читать.
+  // Спрашиваем ДО запуска и один раз на весь проход:
+  // уборка может удалять временные файлы.
 
   const analyzeBtn = document.getElementById("analyze-btn");
   const analyzeStepsBtn = document.getElementById("analyze-steps-btn");
@@ -6457,10 +6456,7 @@
     html += "<h2>" + t.name + "</h2>";
     html += '<div class="desc">' + t.description + '</div>';
     if (t.requires_stems) {
-      html += '<div class="stems-warning">⚠ Требует живых стемов — сейчас DARAVE умеет только офлайн-разделение (stems.py), выполнить эту технику пока нельзя.</div>';
-    }
-    if (t.requires_decks > 2) {
-      html += '<div class="stems-warning">⚠ Требует ' + t.requires_decks + ' дек одновременно.</div>';
+      html += '<div class="stems-warning">⚠ Для этой техники нужны заранее подготовленные аудиослои.</div>';
     }
 
     // Блока «Примеры из вашей библиотеки» здесь больше нет.

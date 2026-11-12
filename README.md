@@ -250,13 +250,13 @@ The product is actively developed. Its scope is deliberately focused on transiti
 
 ![DARAVE set control](https://github.com/kam1k88/DARAVE/blob/main/site/shot-controlc.webp)
 
+### Clipping control
+
+![DARAVE clipping control](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)
+
 ## Links
 
 - [Official website](https://darave.ru/)
 - [Download](https://darave.ru/)
 - [Release repository](https://github.com/kam1k88/darave-releases)
 - [Developer profile](https://github.com/kam1k88)
-
-## Clipping
-
-![DARAVE Clipping tab](https://raw.githubusercontent.com/kam1k88/DARAVE/main/Clipping.png)

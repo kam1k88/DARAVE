@@ -326,34 +326,6 @@
   }
   #composer button:disabled { opacity: .5; cursor: default; }
 
-  /* ===== баннер «ассистент не подключён» ===== */
-  .llm-banner {
-    margin: 12px 12px 0; padding: 12px 14px; border-radius: 10px;
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-left: 3px solid var(--warn);
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  .llm-banner-head { display: flex; flex-direction: column; gap: 3px; }
-  .llm-banner-head b { font-size: 13.5px; }
-  .llm-banner-head span { font-size: 12.5px; color: var(--muted); }
-  .llm-banner-row { display: flex; gap: 8px; }
-  .llm-banner-row input {
-    flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--border);
-    color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none;
-  }
-  .llm-banner-row input:focus { border-color: var(--accent); }
-  .llm-banner-row button {
-    background: var(--accent); color: #fff; border: none; border-radius: 8px;
-    padding: 0 16px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-  }
-  .llm-banner-row button:disabled { opacity: .5; cursor: default; }
-  .llm-banner-note { font-size: 12px; color: var(--muted); line-height: 1.5; }
-  .llm-banner-note code {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
-    padding: 1px 5px; font-size: 11.5px;
-  }
-  .llm-banner.ok { border-left-color: var(--ok, #2fbf9b); }
-
   /* ===== общие элементы для Library / ControlC / Technician ===== */
   .browser-view { flex: 1; display: flex; min-width: 0; }
   .list-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1120,7 +1092,7 @@
   <div class="card">
     <h1>DARAVE</h1>
     <div id="join-rooms" hidden></div>
-    <p id="join-hint">Введите код комнаты — тот же, что задан у companion (<code>--companion-id</code>)</p>
+    <p id="join-hint">Введите код комнаты, чтобы открыть сохранённую библиотеку и планы сетов</p>
     <input id="room-input" placeholder="например, my-club-fri" autocomplete="off">
     <button id="join-btn">Войти</button>
   </div>
@@ -1154,7 +1126,7 @@
         <option value="mono">Моноширинный</option>
         <option value="serif">С засечками</option>
       </select>
-      <div class="status"><span class="dot" id="companion-dot"></span><span id="companion-label">companion не подключён</span></div>
+      
       <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-label">соединение...</span></div>
       <button type="button" class="acct-btn" id="acct-btn" title="Аккаунт, тариф, выход" hidden>
         <span class="acct-av" id="acct-av"></span><span id="acct-name"></span>
@@ -1163,46 +1135,7 @@
 
     <div id="stage">
 
-    <!-- ===== Чат ===== -->
-    <div id="chat-view" class="view">
-      <div id="decks">
-        <h2>Деки</h2>
-        <div id="deck-list"><div class="empty">телеметрии пока нет</div></div>
-      </div>
-      <div id="chat-col">
-        <!-- Ассистент без ключа. Раньше отсутствие ключа роняло весь
-             backend при старте, и увидеть это было негде. Теперь
-             программа работает, а чат честно говорит, что выключен он
-             один — и даёт вставить ключ прямо здесь, потому что у
-             установленной версии нет ни консоли, ни переменных
-             окружения, куда его можно было бы положить. -->
-        <div id="llm-banner" class="llm-banner" hidden>
-          <div class="llm-banner-head">
-            <b>Ассистент не подключён</b>
-            <span>Библиотека, техники, отбор и сборка сета работают без него.</span>
-          </div>
-          <div class="llm-banner-row">
-            <input id="llm-key-input" type="password" autocomplete="off"
-                   placeholder="Ключ Gemini — бесплатный, aistudio.google.com">
-            <button id="llm-key-save">Подключить</button>
-          </div>
-          <div class="llm-banner-note" id="llm-banner-note">
-            Или поднимите Ollama на этом компьютере: <code>ollama serve</code>,
-            затем <code>ollama pull llama3.1</code>.
-          </div>
-        </div>
-        <div id="log"></div>
-        <div id="toolbar">
-          <button id="replay-btn" title="Проиграть последний отправленный микс заново">🔁 Повторить микс</button>
-          <button id="record-btn" title="Начать/остановить запись микса в Mixxx">⏺ Запись</button>
-          <a id="download-link" class="download-link" style="display:none" href="#" download>⬇ Скачать запись</a>
-        </div>
-        <div id="composer">
-          <input id="msg-input" placeholder="Напишите ассистенту..." autocomplete="off">
-          <button id="send-btn">Отправить</button>
-        </div>
-      </div>
-    </div>
+    <div id="log" hidden></div>
 
     <!-- ===== Библиотека ===== -->
     <div id="library-view" class="view active">
@@ -1213,8 +1146,8 @@
             <span class="count" id="lib-count">0 треков</span>
             <div class="spacer"></div>
             <button id="lib-refresh-btn">↻ Обновить</button>
-            <button id="lib-sync-btn" data-i18n="lib.sync" title="Сверить с библиотекой Mixxx: чего у кого нет и у каких треков есть стемовая запись">⇄ Сверить с Mixxx</button>
-            <button id="lib-profile-btn" data-i18n="lib.profile" title="Настройки Mixxx (mixxx.cfg, контроллеры, эффекты) принадлежат комнате DARAVE и накладываются на любую сборку">⚙ Профиль Mixxx</button>
+
+
           </div>
           <div class="scan-bar">
             <input id="scan-path-input" placeholder="Папка с музыкой, напр. C:\Music" autocomplete="off">
@@ -1230,7 +1163,7 @@
           </div>
           <!-- Разбор по шагам. Свёрнут: обычный день — это одна кнопка, а
                выбор шагов нужен в двух случаях — что-то одно пересчитать
-               заново и метки в Mixxx, которые сами не включаются. -->
+               заново или включить дополнительные вычисления. -->
           <div id="analyze-steps" class="analyze-steps" style="display:none"></div>
           <!-- Поиск по каталогам. Отдельной строкой, а не в поиске по
                библиотеке: он ищет СВЕДЕНИЯ о треках, которых у диджея
@@ -1372,7 +1305,7 @@
               <option value="wav">WAV</option>
               <option value="mp3">mp3 320</option>
             </select>
-            <button id="mixxx-stop-btn" style="display:none" title="Остановить автопилот">⏹ Стоп</button>
+
             <button id="strategy-more-btn" title="Раскладка, вариант, длительность, жанр">⚙</button>
           </div>
           <!-- Редко трогаемое — за кнопкой «⚙».
@@ -1403,19 +1336,6 @@
                     style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">
               <option value="">+ добавить трек…</option>
             </select>
-          </div>
-          <!-- Ход автопилота. Пока сет играет в Mixxx, диджей смотрит В
-               MIXXX, а не сюда — поэтому здесь только то, чего на деках
-               не видно: который это переход из скольких, каким приёмом и
-               сколько секунд до него. -->
-          <div id="autopilot-bar" style="display:none;gap:10px;align-items:center;flex-wrap:wrap;
-               padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel-2)">
-            <span id="ap-state" style="font-weight:600"></span>
-            <span id="ap-progress" style="color:var(--muted);font-size:12px"></span>
-            <span id="ap-now" style="font-size:12px"></span>
-            <span id="ap-eta" style="font-variant-numeric:tabular-nums;font-size:12px"></span>
-            <div class="spacer"></div>
-            <button id="ap-stop-btn">⏹ Стоп</button>
           </div>
           <!-- Пул треков и отсюда: снять ограничение или очистить. -->
           <div id="ctrl-pool-strip" class="pool-bar" style="display:none"></div>
@@ -1484,29 +1404,18 @@
       </div>
     </div>
 
-        <!-- Ассистент и справочники стоят рядом со ВСЕМИ вкладками, а не
-           отдельной вкладкой и не только в ControlC. Спрашивают о том,
-           на что смотрят: про трек — из Library, про приём — из
-           Technician, про шов — из Clipping. Панель, доступная из
-           одного места, вынуждает уходить с того экрана, про который
-           вопрос, — то есть терять как раз то, о чём спрашиваешь.
-
-           Сам чат никуда не переезжал: в #assist-slot переносится
-           готовый узел #chat-col, чтобы вся его проводка (ws, история,
-           запись) осталась той же. -->
       <aside class="assist-col" id="assist-col">
           <div class="assist-head">
-            <b>Ассистент</b>
+            <b>Справка</b>
             <button class="ghost doc-btn" data-doc="guide" title="Как пользоваться DARAVE">Руководство</button>
             <button class="ghost doc-btn" data-doc="dj" title="Темп, фразировка, тональность, уровень">Сведение</button>
             <button class="ghost doc-btn" data-doc="music" title="Квадраты, колесо Камелота, секции, слои">Теория</button>
             <button class="ghost doc-btn" data-doc="techniques" title="Все приёмы: что делают и когда">Приёмы</button>
             <span class="spacer"></span>
-            <button id="assist-hide" class="ghost" title="Свернуть — рабочая область станет шире">✕</button>
+            <button id="assist-hide" class="ghost" title="Свернуть справку">✕</button>
           </div>
-          <div id="assist-slot"></div>
       </aside>
-      <button id="assist-show" title="Спросить ассистента">💬</button>
+      <button id="assist-show" title="Открыть справку">?</button>
     </div><!-- /#stage -->
   </div>
 </div>
@@ -1847,22 +1756,13 @@
   const joinBtn = document.getElementById("join-btn");
   const roomLabel = document.getElementById("room-label");
   const log = document.getElementById("log");
-  const msgInput = document.getElementById("msg-input");
-  const sendBtn = document.getElementById("send-btn");
-  const deckList = document.getElementById("deck-list");
   const wsDot = document.getElementById("ws-dot");
   const wsLabel = document.getElementById("ws-label");
-  const companionDot = document.getElementById("companion-dot");
-  const companionLabel = document.getElementById("companion-label");
-  const replayBtn = document.getElementById("replay-btn");
-  const recordBtn = document.getElementById("record-btn");
-  const downloadLink = document.getElementById("download-link");
 
   let ws = null;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
   let currentRoom = null;
-  let currentDecks = {};
 
   // ===================== оформление =====================
   //
@@ -2119,28 +2019,18 @@
     document.documentElement.lang = lang === "zh" ? "zh" : lang;
   }
 
-  // Ассистент переезжает в ControlC ЦЕЛИКОМ, вместе с уже собранной
-  // проводкой: сокет, история сообщений, кнопки записи и повтора микса
-  // ищут свои элементы по id, и переписывать это ради переезда незачем.
-  // Поэтому переносим готовый узел, а не копируем разметку.
-  (function moveAssistant() {
-    const slot = document.getElementById("assist-slot");
-    const col = document.getElementById("chat-col");
-    const decks = document.getElementById("decks");
-    if (!slot || !col) return;
-    // Деки с телеметрией — туда же: во время сборки сета смотреть на них
-    // осмысленнее всего, а отдельной вкладки под них больше нет.
-    if (decks) slot.appendChild(decks);
-    slot.appendChild(col);
+  // Панель справки находится рядом с рабочей областью.
+  (function wireDocsPanel() {
     const box = document.getElementById("assist-col");
     const show = document.getElementById("assist-show");
+    if (!box) return;
     const set = function (open) {
       box.classList.toggle("hidden", !open);
       if (show) show.style.display = open ? "none" : "block";
-      try { localStorage.setItem("darave-assist", open ? "1" : "0"); } catch (e) {}
+      try { localStorage.setItem("darave-docs", open ? "1" : "0"); } catch (e) {}
     };
     let open = true;
-    try { open = localStorage.getItem("darave-assist") !== "0"; } catch (e) {}
+    try { open = localStorage.getItem("darave-docs") !== "0"; } catch (e) {}
     set(open);
     const hide = document.getElementById("assist-hide");
     if (hide) hide.addEventListener("click", function () { set(false); });
@@ -4177,16 +4067,6 @@
 
   // ===================== Чат (WebSocket) =====================
 
-  function setRecordingStatus(status) {
-    recordBtn.classList.toggle("recording", status === 1);
-    recordBtn.textContent = status === 1 ? "⏹ Остановить запись" : "⏺ Запись";
-  }
-
-  function sendCommand(action) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "command", action: action }));
-  }
-
   function addMessage(text, cls) {
     const el = document.createElement("div");
     el.className = "msg " + cls;
@@ -4195,57 +4075,20 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  function renderDecks(decks) {
-    currentDecks = decks || {};
-    const names = Object.keys(currentDecks).sort();
-    if (names.length === 0) {
-      deckList.innerHTML = '<div class="empty">телеметрии пока нет</div>';
-      return;
-    }
-    deckList.innerHTML = "";
-    for (const name of names) {
-      const d = currentDecks[name];
-      const card = document.createElement("div");
-      card.className = "deck-card";
-      const pct = Math.max(0, Math.min(1, d.position || 0)) * 100;
-      card.innerHTML =
-        '<div class="row1"><span class="name">Дека ' + name + '</span>' +
-        '<span class="play' + (d.playing ? " playing" : "") + '">' + (d.playing ? "▶ играет" : "⏸ пауза") + '</span></div>' +
-        '<div class="bpm">BPM ' + (d.bpm !== undefined ? Number(d.bpm).toFixed(1) : "—") + '</div>' +
-        '<div class="bar"><span style="width:' + pct.toFixed(1) + '%"></span></div>' +
-        '<div class="meta">' + (d.track_loaded ? "трек загружен" : "дека пуста") + '</div>';
-      deckList.appendChild(card);
-    }
-  }
-
   function setWsStatus(connected, label) {
     wsDot.classList.toggle("on", connected);
     wsLabel.textContent = label;
   }
 
-  function setCompanionStatus(connected) {
-    companionDot.classList.toggle("on", connected);
-    companionLabel.textContent = connected ? "companion подключён" : "companion не подключён";
-  }
-
   function connect(room) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const url = proto + "//" + location.host + "/ws/chat/" + encodeURIComponent(room) + wsToken();
+    const url = proto + "//" + location.host + "/ws/events/" + encodeURIComponent(room) + wsToken();
     setWsStatus(false, "соединение...");
     ws = new WebSocket(url);
 
     ws.onopen = function () {
       reconnectDelay = 1000;
       setWsStatus(true, "на связи");
-      // Сет мог начаться в другой вкладке или до перезагрузки страницы —
-      // спрашиваем состояние, а не показываем «ничего не играет».
-      fetch("/api/rooms/" + encodeURIComponent(room) + "/autopilot")
-        .then(function (r) { return r.json(); })
-        .then(renderAutopilot).catch(function () {});
-
-      // И сам план. Он жил только в памяти вкладки, поэтому перезагрузка
-      // страницы означала «стройте заново» — вместе со всеми правками
-      // переходов, которые и есть работа. Теперь backend его хранит.
       if (!currentStrategy) {
         fetch("/api/rooms/" + encodeURIComponent(room) + "/strategy")
           .then(function (r) { return r.ok ? r.json() : null; })
@@ -4259,18 +4102,7 @@
 
     ws.onmessage = function (ev) {
       const msg = JSON.parse(ev.data);
-      if (msg.type === "agent_reply") {
-        addMessage(msg.text, "agent");
-      } else if (msg.type === "telemetry") {
-        renderDecks(msg.decks);
-        if (msg.recording_status !== undefined) setRecordingStatus(msg.recording_status);
-      } else if (msg.type === "companion_status") {
-        setCompanionStatus(!!msg.connected);
-      } else if (msg.type === "recording_ready") {
-        downloadLink.href = mediaUrl(msg.url);
-        downloadLink.style.display = "inline-block";
-        addMessage("Запись готова к скачиванию.", "system");
-      } else if (msg.type === "library_updated") {
+      if (msg.type === "library_updated") {
         addMessage("Библиотека обновлена: " + msg.count + " треков.", "system");
         if (document.getElementById("library-view").classList.contains("active")) loadLibrary();
       } else if (msg.type === "scan_finished") {
@@ -4281,106 +4113,16 @@
         } else {
           addMessage("Сканирование завершилось с ошибкой — см. вкладку Library.", "system");
         }
-      } else if (msg.type === "autopilot") {
-        renderAutopilot(msg);
-      } else if (msg.type === "load_result" || msg.type === "deck_result") {
-        if (!msg.ok && msg.error) addMessage("Mixxx: " + msg.error, "system");
-      } else if (msg.type === "plan_started") {
-        setTechniqueBusy(true);
-      } else if (msg.type === "plan_finished") {
-        setTechniqueBusy(false);
-        if (!msg.ok) addMessage("Техника прервалась ошибкой: " + (msg.error || "?"), "system");
-      } else if (msg.type === "plan_rejected") {
-        setTechniqueBusy(true);
-        addMessage(msg.reason || "Техника отклонена — предыдущая ещё исполняется.", "system");
       }
     };
 
     ws.onclose = function () {
       setWsStatus(false, "переподключение...");
-      setCompanionStatus(false);
       reconnectTimer = setTimeout(function () { connect(room); }, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 1.6, 15000);
     };
 
     ws.onerror = function () { ws.close(); };
-  }
-
-  function send() {
-    const text = msgInput.value.trim();
-    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-    addMessage(text, "user");
-    ws.send(JSON.stringify({ type: "user_message", text: text }));
-    msgInput.value = "";
-  }
-
-  sendBtn.addEventListener("click", send);
-  msgInput.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
-  replayBtn.addEventListener("click", function () { sendCommand("replay_last_mix"); });
-  recordBtn.addEventListener("click", function () { sendCommand("recording_toggle"); });
-
-  // ===================== ассистент: ключ =====================
-  //
-  // Программа поднимается и работает без ключа — выключен только чат.
-  // Но у установленной версии нет ни консоли, ни переменных окружения,
-  // поэтому единственное место, где ключ можно задать, — вот это поле.
-  const llmBanner = document.getElementById("llm-banner");
-  const llmKeyInput = document.getElementById("llm-key-input");
-  const llmKeySave = document.getElementById("llm-key-save");
-  const llmNote = document.getElementById("llm-banner-note");
-  const LLM_NOTE_DEFAULT = llmNote ? llmNote.innerHTML : "";
-
-  async function refreshLlmStatus() {
-    if (!llmBanner) return;
-    try {
-      const r = await fetch("/api/llm");
-      if (!r.ok) return;
-      const st = await r.json();
-      llmBanner.hidden = !!st.active;
-      if (st.active) {
-        msgInput.placeholder = "Напишите ассистенту...";
-      } else {
-        msgInput.placeholder = "Ассистент не подключён — вставьте ключ выше";
-      }
-    } catch (e) {
-      // Backend не отвечает — это покажет ws-точка, баннер тут ни при чём.
-    }
-  }
-
-  if (llmKeySave) {
-    llmKeySave.addEventListener("click", async function () {
-      const key = (llmKeyInput.value || "").trim();
-      if (!key) { llmKeyInput.focus(); return; }
-      llmKeySave.disabled = true;
-      llmKeySave.textContent = "Проверяю…";
-      try {
-        const r = await fetch("/api/llm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gemini_api_key: key }),
-        });
-        const st = await r.json().catch(function () { return {}; });
-        if (r.ok && st.active) {
-          llmKeyInput.value = "";
-          llmBanner.hidden = true;
-          msgInput.placeholder = "Напишите ассистенту...";
-          addMessage("Ассистент подключён — " + (st.provider || "") +
-                     (st.model ? " (" + st.model + ")" : "") + ".", "system");
-        } else {
-          llmNote.textContent = st.note || st.detail ||
-            "Ключ сохранён, но провайдер не поднялся. Проверьте, что ключ вставлен целиком.";
-        }
-      } catch (e) {
-        llmNote.textContent = "Не достучался до backend: " + e;
-      } finally {
-        llmKeySave.disabled = false;
-        llmKeySave.textContent = "Подключить";
-        setTimeout(function () { if (llmNote) llmNote.innerHTML = LLM_NOTE_DEFAULT; }, 8000);
-      }
-    });
-    llmKeyInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") llmKeySave.click();
-    });
   }
 
   // ===================== Библиотека =====================
@@ -6301,8 +6043,6 @@
       '<div class="tr-edit-row">' +
         '<button data-f="hear-tech" class="edit-toggle" title="Послушать этот переход как он стоит в плане">▶ послушать</button>' +
         '<button data-f="edit-clip" class="edit-toggle" title="Открыть ЭТОТ стык в Clipping: там приём, точки, такты и эффекты — и одобренная правка вернётся сюда">✂ править в Clipping</button>' +
-        '<button data-f="exec" class="edit-toggle" title="Выполнить приём прямо сейчас на том, что уже лежит на деках A и B">▶ на деках</button>' +
-        '<button data-f="clip" class="edit-toggle" title="Показать ЭТОТ стык в Mixxx: DARAVE сам зальёт оба трека, отмотает на несколько тактов до ухода и сведёт">🎬 в Mixxx</button>' +
       "</div>" +
     "</div>";
   }
@@ -6411,89 +6151,8 @@
     if (big) big.addEventListener("click", function () { hear(); });
     const on = function (name, fn) { const el = pick(name); if (el) el.addEventListener("click", fn); };
     on("hear-tech", function () { hear(); });
-    on("exec", function () { executeTransition(i); });
-    on("clip", function () { startAutopilot(i, "clip"); });
     on("edit-clip", function () { openSeamInClipping(i); });
   }
-
-  // Кнопки нет в шапке ControlC — действие осталось, вызывать
-  // его пока неоткуда. Без защиты на null этот вызов ронял
-  // ВЕСЬ блок скрипта ниже, а не только себя.
-  (document.getElementById("mixxx-play-btn") || {addEventListener: function () {}}).addEventListener("click", function () {
-    startAutopilot(0, "set");
-  });
-  document.getElementById("mixxx-stop-btn").addEventListener("click", stopAutopilot);
-  document.getElementById("ap-stop-btn").addEventListener("click", stopAutopilot);
-
-  // Очередь Auto DJ — не «пусть Mixxx играет сам», а единственный способ
-  // положить трек на деку без интерфейса: контрола «загрузи файл по пути»
-  // в Mixxx нет вовсе. Автопилот включает Auto DJ на полсекунды, забирает
-  // следующий трек очереди и выключает обратно.
-  // Кнопки нет в шапке ControlC — действие осталось, вызывать
-  // его пока неоткуда. Без защиты на null этот вызов ронял
-  // ВЕСЬ блок скрипта ниже, а не только себя.
-  (document.getElementById("autodj-queue-btn") || {addEventListener: function () {}}).addEventListener("click", async function () {
-    if (!currentRoom || !currentStrategy) { addMessage("Сначала постройте план.", "system"); return; }
-    const out = _setOut();
-    out.textContent = "Кладу порядок сета в очередь Auto DJ...";
-    try {
-      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/autodj",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const d = await r.json();
-      if (!r.ok) { out.textContent = d.detail || "Не удалось"; return; }
-      out.innerHTML = "В очередь положено <b>" + d.queued + "</b> треков" +
-        (d.stems ? " (из них стемовых " + d.stems + ")" : "") + "." +
-        '<div style="color:var(--muted);margin-top:4px">Теперь запустите Mixxx и нажмите ' +
-        "«▶ В Mixxx» — деки автопилот наполнит этой очередью.</div>" +
-        ((d.missing || []).length
-          ? '<div style="color:var(--warn, #e6a23c)">Не нашлось в медиатеке Mixxx: ' +
-            d.missing.length + " — пересканируйте папку в самом Mixxx.</div>"
-          : "");
-    } catch (e) { out.textContent = "Ошибка сети: " + e; }
-  });
-
-  // Настройки самого Mixxx. Часть решений о звуке принимает он, а не
-  // DARAVE, и никаким контроллером их не переопределить — главная из них
-  // форма кроссфейдера. Поэтому проверка живёт рядом с планом, а не в
-  // документации, куда никто не заглядывает.
-  // Кнопки нет в шапке ControlC — действие осталось, вызывать
-  // его пока неоткуда. Без защиты на null этот вызов ронял
-  // ВЕСЬ блок скрипта ниже, а не только себя.
-  (document.getElementById("mixxx-settings-btn") || {addEventListener: function () {}}).addEventListener("click", async function () {
-    if (!currentRoom) return;
-    const out = _setOut();
-    out.textContent = "Смотрю mixxx.cfg...";
-    try {
-      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/mixxx-settings");
-      const d = await r.json();
-      if (!r.ok) { out.textContent = d.detail || "не нашёл настройки Mixxx"; return; }
-      const rows = (d.findings || []).map(function (f) {
-        const mark = f.ok ? "✔" : (f.level === "must" ? "⚠" : (f.level === "note" ? "•" : "·"));
-        const color = f.ok ? "var(--muted)" : (f.level === "must" ? "var(--warn, #e6a23c)" : "var(--text)");
-        return '<div style="margin:3px 0;color:' + color + '">' + mark + " " +
-          escapeHtml(f.section + " " + f.key) + " = <b>" + escapeHtml(String(f.have)) + "</b>" +
-          (!f.ok && f.want ? " → <b>" + escapeHtml(f.want) + "</b>" : "") +
-          '<div style="color:var(--muted);font-size:12px;margin-left:14px">' + escapeHtml(f.why) + "</div></div>";
-      }).join("");
-      out.innerHTML = "<b>" + escapeHtml(d.summary) + "</b>" + rows +
-        ((d.to_fix || []).length
-          ? '<div style="margin-top:8px"><button id="mixxx-settings-fix">Прописать в mixxx.cfg</button> ' +
-            '<span style="color:var(--muted)">Mixxx должен быть закрыт — он перезаписывает конфиг при выходе.</span></div>'
-          : "");
-      const fix = document.getElementById("mixxx-settings-fix");
-      if (fix) fix.addEventListener("click", async function () {
-        fix.disabled = true;
-        const rr = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/mixxx-settings",
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-        const dd = await rr.json();
-        out.innerHTML = rr.ok
-          ? "Поменял: <br>" + (dd.changed || []).map(escapeHtml).join("<br>") +
-            '<br><span style="color:var(--muted)">Резервная копия: ' +
-            escapeHtml(String(dd.backup || "").split(/[\\/]/).pop()) + "</span>"
-          : escapeHtml(dd.detail || "не вышло");
-      });
-    } catch (e) { out.textContent = "Ошибка сети: " + e; }
-  });
 
   // «⚙» — редко трогаемые настройки плана. Открытое состояние помним:
   // тот, кто подбирает дугу и жанр, делает это несколько раз подряд.
@@ -6632,123 +6291,7 @@
     return out;
   }
 
-  // ===================== Автопилот: сет играет в Mixxx =====================
-  //
-  // Плейлист и очередь Auto DJ отдают Mixxx только ПОРЯДОК треков: ни
-  // точки входа, ни приёма в них положить некуда — таких полей в модели
-  // плейлиста нет. Поэтому «в Mixxx» значит «DARAVE играет сет руками
-  // своего виртуального контроллера»: сам грузит треки на деки, ставит
-  // иглу в нужную секунду, ждёт по телеметрии момент ухода и сводит.
-  // На экране при этом настоящие деки — две волны, фейдер, ручки, — то
-  // самое, чего не видно в отрендеренном файле.
-
-  let autopilotState = null;
-
-  async function startAutopilot(index, mode) {
-    if (!currentRoom) return;
-    if (!currentStrategy) { addMessage("Сначала постройте план сета.", "system"); return; }
-    // Подготовка может занять до минуты: если очередь Auto DJ разошлась с
-    // планом, backend закроет Mixxx, перепишет очередь и поднимет его
-    // обратно. Молчать всё это время нельзя — выглядит как зависшая кнопка.
-    const playBtn = document.getElementById("mixxx-play-btn");  // может отсутствовать
-    if (playBtn) { playBtn.disabled = true; playBtn.textContent = "⏳ готовлю Mixxx…"; }
-    try {
-      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/autopilot/start", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index: index || 0, mode: mode || "set" }),
-      });
-      const d = await r.json();
-      if (!r.ok) { addMessage("Автопилот не запустился: " + (d.detail || r.status), "system"); return; }
-      renderAutopilot(d);
-      addMessage(mode === "clip"
-        ? "Показываю переход №" + ((index || 0) + 1) + " в Mixxx."
-        : "Играю сет в Mixxx с перехода №" + ((index || 0) + 1) + ".", "system");
-    } catch (e) {
-      addMessage("Автопилот не запустился: " + e, "system");
-    } finally {
-      if (playBtn && !(autopilotState && autopilotState.running)) {
-        playBtn.disabled = false;
-        playBtn.textContent = "▶ В Mixxx";
-      }
-    }
-  }
-
-  async function stopAutopilot() {
-    if (!currentRoom) return;
-    try {
-      const r = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/autopilot/stop",
-                            { method: "POST" });
-      renderAutopilot(await r.json());
-    } catch (e) { addMessage("Не смог остановить автопилот: " + e, "system"); }
-  }
-
-  const AP_STATE_TEXT = {
-    loading: "⏳ готовлю деки", waiting: "▶ играет", mixing: "🎚 сведение",
-    done: "✔ сыграно", error: "⚠ сбой", stopped: "⏹ остановлен", idle: "",
-  };
-
-  function renderAutopilot(d) {
-    autopilotState = d;
-    const bar = document.getElementById("autopilot-bar");
-    const playBtn = document.getElementById("mixxx-play-btn");  // может отсутствовать
-    const stopBtn = document.getElementById("mixxx-stop-btn");
-    if (!bar) return;
-    const live = !!(d && d.running);
-    bar.style.display = (live || (d && (d.state === "error" || d.state === "done"))) ? "flex" : "none";
-    if (playBtn) { playBtn.disabled = live; playBtn.textContent = live ? "▶ играет в Mixxx" : "▶ В Mixxx"; }
-    if (stopBtn) stopBtn.style.display = live ? "" : "none";
-    if (!d) return;
-
-    document.getElementById("ap-state").textContent =
-      (AP_STATE_TEXT[d.state] || d.state || "") + (d.mode === "clip" ? " · клип" : "");
-    document.getElementById("ap-progress").textContent =
-      d.total ? "переход " + Math.min(d.index + 1, d.total) + " из " + d.total : "";
-    const nowEl = document.getElementById("ap-now");
-    nowEl.innerHTML = d.now_playing
-      ? escapeHtml(d.now_playing) + (d.next_track
-          ? ' <span style="color:var(--muted)">→ ' + escapeHtml(d.next_track) + "</span>" : "")
-      : "";
-    const eta = document.getElementById("ap-eta");
-    if (d.eta_seconds !== null && d.eta_seconds !== undefined && d.state === "waiting") {
-      const t = Math.max(0, Math.round(d.eta_seconds));
-      eta.textContent = "через " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0") +
-        (d.technique ? " · " + d.technique : "");
-      eta.style.color = t <= 10 ? "var(--accent, #7cf)" : "var(--muted)";
-    } else {
-      eta.textContent = d.message || "";
-      eta.style.color = d.state === "error" ? "#f77" : "var(--muted)";
-    }
-    if (d.state === "error" && d.error) addMessage("Автопилот: " + d.error, "system");
-  }
-
-  async function executeTransition(index) {
-    if (!currentRoom) return;
-    try {
-      const resp = await fetch("/api/rooms/" + encodeURIComponent(currentRoom) + "/strategy/execute", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transition_index: index, source_deck: "A", target_deck: "B" }),
-      });
-      const data = await resp.json();
-      addMessage(data.ok ? "Выполняю переход из стратегии: " + currentStrategy.transitions[index].technique_name : "companion не подключён — переход не отправлен", "system");
-    } catch (e) {
-      addMessage("Ошибка выполнения перехода: " + e, "system");
-    }
-  }
-
   // ===================== Техника =====================
-
-  // Пока companion реально исполняет технику, кнопка "Выполнить" должна
-  // это показывать: раньше переход длился десятки секунд молча, и второе
-  // нажатие уходило в никуда — выглядело как "работает через раз".
-  let techniqueBusy = false;
-
-  function setTechniqueBusy(busy) {
-    techniqueBusy = busy;
-    const btn = document.getElementById("tech-exec-btn");
-    if (!btn) return;
-    btn.disabled = busy;
-    btn.textContent = busy ? "▶ идёт переход…" : "▶ Выполнить";
-  }
 
   let techniquesCache = null;
   // Грузим сразу: селект техники есть в КАЖДОМ переходе плана, а раньше
@@ -6884,64 +6427,6 @@
     });
   })();
 
-  // Сверка двух библиотек и профиль настроек Mixxx. Обе кнопки ничего
-  // не ломают: первая только показывает расхождения, вторая снимает или
-  // накладывает набор настроек (и отказывается работать при запущенном
-  // Mixxx — он перезапишет mixxx.cfg при выходе).
-  (function wireMixxxTools() {
-    const out = function (html) {
-      const el = document.getElementById("scan-status") ||
-                 document.getElementById("lib-count");
-      if (el) el.innerHTML = html;
-    };
-    const sync = document.getElementById("lib-sync-btn");
-    if (sync) sync.addEventListener("click", async function () {
-      out("сверяю с Mixxx…");
-      try {
-        const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
-          "/mixxx-library")).json();
-        if (!r.ok) { out(escapeHtml(r.error || r.detail || "не вышло")); return; }
-        out("В Mixxx " + r.mixxx_total + " записей (" + r.mixxx_plain + " треков + " +
-          r.mixxx_stems + " стемовых). У DARAVE " + r.darave_total + ". " +
-          "Со стемовой записью в Mixxx: " + r.with_stem_record + ". " +
-          (r.only_in_mixxx.length ? "Нет у DARAVE: " + r.only_in_mixxx.length + ". " : "") +
-          (r.only_in_darave.length ? "Нет в Mixxx: " + r.only_in_darave.length + ". " : "") +
-          (r.stem_on_disk_not_in_mixxx.length
-            ? "Стем собран, но Mixxx о нём не знает: " + r.stem_on_disk_not_in_mixxx.length +
-              " — нужно пересканировать папку в самом Mixxx."
-            : ""));
-      } catch (e) { out("не удалось: " + e); }
-    });
-    const prof = document.getElementById("lib-profile-btn");
-    if (prof) prof.addEventListener("click", async function () {
-      try {
-        const st = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
-          "/mixxx-profile")).json();
-        const what = prompt(
-          "Профиль настроек Mixxx для комнаты «" + currentRoom + "».\n" +
-          "Сейчас в профиле: " + st.files + " файлов" +
-          (st.differs && st.differs.length
-            ? ", разошлись с установкой: " + st.differs.slice(0, 6).join(", ")
-            : ", всё совпадает") + ".\n\n" +
-          "Напишите: export — снять настройки Mixxx в профиль,\n" +
-          "         apply  — наложить профиль на Mixxx (Mixxx должен быть закрыт).",
-          "export");
-        if (!what) return;
-        const r = await (await fetch("/api/rooms/" + encodeURIComponent(currentRoom) +
-          "/mixxx-profile", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({action: what.trim()}),
-        })).json();
-        out(r.detail ? escapeHtml(r.detail)
-          : (r.ok ? (what.trim() === "export"
-              ? "Снято " + r.files + " файлов (" + Math.round(r.bytes / 1024) + " КБ) в " +
-                "profiles/" + currentRoom
-              : "Наложено " + (r.files || []).length + " файлов на " + r.target)
-            : escapeHtml(r.error || "не вышло")));
-      } catch (e) { out("не удалось: " + e); }
-    });
-  })();
-
   async function loadTechniques() {
     try {
       const resp = await fetch("/api/techniques");
@@ -6964,31 +6449,6 @@
       list.appendChild(item);
     });
     if (techniquesCache.length) selectTechnique(0);
-  }
-
-  // Диджей вручную выбирает деки под технику здесь же (не через чат/LLM) —
-  // сохраняем выбор между переключениями техник в рамках сессии вкладки.
-  let techSourceDeck = "A";
-  let techTargetDeck = "B";
-  let techThirdDeck = "C";
-
-  function _deckOptionNames() {
-    const names = Object.keys(currentDecks || {}).sort();
-    return names.length ? names : ["A", "B", "C", "D"];
-  }
-
-  // Грубая оценка "подойдёт ли BPM" — та же идея, что
-  // mix_strategist.py::bpm_type_mismatch, но на клиенте (телеметрия knows
-  // только BPM дек, не тональность/жанр — полноценные рекомендации по
-  // трекам для техники потребовали бы передавать имя трека в телеметрии,
-  // чего протокол companion пока не делает).
-  function _bpmHint(source, target) {
-    const a = (currentDecks[source] || {}).bpm, b = (currentDecks[target] || {}).bpm;
-    if (!a || !b) return { text: "BPM дек неизвестен (companion подключён? деки загружены?)", warn: true };
-    const diffPct = Math.abs(a - b) / Math.max(a, b) * 100;
-    if (diffPct < 3) return { text: "BPM почти совпадает (" + a.toFixed(1) + " / " + b.toFixed(1) + ") — подойдёт почти любая техника.", warn: false };
-    if (diffPct < 8) return { text: "BPM близко (" + a.toFixed(1) + " / " + b.toFixed(1) + ", разница " + diffPct.toFixed(1) + "%).", warn: false };
-    return { text: "BPM сильно отличается (" + a.toFixed(1) + " / " + b.toFixed(1) + ", разница " + diffPct.toFixed(1) + "%) — обычный бленд будет звучать плохо, посмотрите техники с конфликтом тональностей/резкой сменой (Echo Cut, Quick Cut).", warn: true };
   }
 
   let selectedTechniqueIndex = null;
@@ -7017,30 +6477,6 @@
     //
     // Теперь Technician получает пару ИЗВНЕ: из Clipping, из ControlC
     // или по коду шва. Его дело — ползунки и инструкция, а не поиск.
-
-    {
-      const opts = _deckOptionNames();
-      const optHtml = (selected) => opts.map(n => '<option value="' + n + '"' + (n === selected ? " selected" : "") + '>Дека ' + n + '</option>').join("");
-      // Третья дека — только у приёмов, которым она нужна (трипл-дроп).
-      // Раньше её имя было зашито как "C", и приём играл не на той деке,
-      // если трек лежал на D.
-      const thirdHtml = (t.requires_decks >= 3)
-        ? '<label>и <select id="tech-third-select">' + optHtml(techThirdDeck) + '</select></label>'
-        : '';
-      html += '<div class="tech-exec">' +
-        '<div class="tech-exec-row">' +
-          '<label>С <select id="tech-source-select">' + optHtml(techSourceDeck) + '</select></label>' +
-          '<label>на <select id="tech-target-select">' + optHtml(techTargetDeck) + '</select></label>' +
-          thirdHtml +
-          '<button id="tech-exec-btn">▶ Выполнить</button>' +
-        '</div>' +
-        '<div class="tech-exec-hint" id="tech-exec-hint"></div>' +
-        (t.requires_stems
-          ? '<div class="stems-warning">Работает по слоям: на обеих деках должен быть ' +
-            'загружен .stem.mp4. Соберите их кнопкой «🎚 Стемы» во вкладке «Библиотека».</div>'
-          : '') +
-        '</div>';
-    }
 
     if ((t.params || []).length) {
       html += '<div class="tech-param" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
@@ -7127,35 +6563,9 @@
       });
     }
 
-    if (!t.requires_stems) {
-      const srcSel = document.getElementById("tech-source-select");
-      const tgtSel = document.getElementById("tech-target-select");
-      const hint = document.getElementById("tech-exec-hint");
-      const updateHint = function () {
-        techSourceDeck = srcSel.value;
-        techTargetDeck = tgtSel.value;
-        const h = _bpmHint(techSourceDeck, techTargetDeck);
-        hint.textContent = h.text;
-        hint.classList.toggle("warn", h.warn);
-      };
-      srcSel.addEventListener("change", updateHint);
-      tgtSel.addEventListener("change", updateHint);
-      const thirdSel = document.getElementById("tech-third-select");
-      if (thirdSel) {
-        thirdSel.addEventListener("change", function () {
-          techThirdDeck = thirdSel.value;
-        });
-        techThirdDeck = thirdSel.value;
-      }
-      updateHint();
-
-      document.getElementById("tech-exec-btn").addEventListener("click", function () {
-        executeTechnique(t);
-      });
-      setTechniqueBusy(techniqueBusy);  // кнопку только что перерисовали
-    }
-
   }
+
+  // Показ вкладки "Техника"  }
 
   // Показ вкладки "Техника" как showcase-фичи: для выбранной техники сразу
   // подбираем из библиотеки комнаты готовые пары треков (backend:
@@ -7393,35 +6803,6 @@
     }
   }
 
-  async function executeTechnique(t) {
-    if (!currentRoom) return;
-    const overrides = {};
-    (t.params || []).forEach(function (p) {
-      const key = t.id + ":" + p.key;
-      if (paramOverrides[key] !== undefined) overrides[p.key] = paramOverrides[key];
-    });
-    try {
-      const resp = await fetch(
-        "/api/rooms/" + encodeURIComponent(currentRoom) + "/techniques/" + encodeURIComponent(t.id) + "/execute",
-        {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source_deck: techSourceDeck, target_deck: techTargetDeck,
-            third_deck: (t.requires_decks >= 3 ? techThirdDeck : undefined),
-            param_overrides: overrides }),
-        },
-      );
-      const data = await resp.json();
-      if (!resp.ok) {
-        addMessage((data.detail || "Не удалось выполнить технику"), "system");
-        return;
-      }
-      addMessage("Выполняю «" + t.name + "»: " + techSourceDeck + " → " + techTargetDeck, "system");
-    } catch (e) {
-      addMessage("Ошибка сети при выполнении техники: " + e, "system");
-    }
-  }
-
   // ===================== вход в комнату =====================
 
   function join(room) {
@@ -7444,11 +6825,9 @@
       // это косметика (запоминание комнаты в адресной строке), не критично.
     }
     connect(room);
-    refreshLlmStatus();
     // Стартовая вкладка теперь «Библиотека» (чат убран), и её содержимое
     // надо загрузить сразу: раньше оно грузилось по клику на вкладку.
     loadLibrary();
-    if (msgInput) msgInput.focus();
   }
 
   joinBtn.addEventListener("click", function () { join(roomInput.value); });

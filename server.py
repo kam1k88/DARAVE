@@ -245,7 +245,7 @@ async def require_account(request: "Request", call_next):
 #
 # ПЛАТНО — унести результат:
 #   свести сет целиком в файл, собрать сет из пула одобренных швов,
-#   выгрузить порядок в Mixxx и Auto DJ, автопилот, проиграть переход
+#   собрать план, предпрослушать переходы и отрендерить сет
 #   из плана на деках.
 #
 # Одной фразой: смотреть и слушать — сколько угодно, унести — за деньги.
@@ -339,7 +339,7 @@ CHAT_HTML_PATH = _paths.resource_dir() / "static" / "chat.html"
 # Локальное сканирование библиотеки прямо из веб-UI (кнопка "Сканировать" во
 # вкладке "Библиотека") — см. POST .../library/scan ниже. Работает, только
 # когда backend и музыка на одной машине (обычный локальный запуск рядом с
-# Mixxx), потому что сканирует диск ТОГО процесса, где крутится backend, а
+# локального приложения), потому что сканирует диск процесса backend, а
 # не диска диджея через сеть. Для облачного деплоя (backend на VPS) кнопка
 # не поможет — там по-прежнему нужен CLI track_analysis.py --upload на
 # машине диджея (см. README).
@@ -362,7 +362,7 @@ _SCAN_PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
 # оговорка, что у сканирования — см. execute_technique/library/scan).
 DEMOS_DIR = _paths.data_subdir("demos")
 
-# Выгрузка готового сета: плейлист для Mixxx, раскладка и рендер микса.
+# Выгрузка готового сета: плейлист, раскладка и рендер микса.
 SETS_DIR = _paths.data_subdir("sets")
 
 
@@ -408,7 +408,7 @@ async def list_rooms() -> JSONResponse:
 @app.delete("/api/rooms/{session_id}")
 async def forget_room(session_id: str) -> JSONResponse:
     """Убрать комнату из списка. Файлы и слои не трогает — только
-    запись о комнате: её библиотеку, план и переписку."""
+    запись о комнате: её библиотеку и план сета."""
     await asyncio.to_thread(persistence.forget_room, session_id)
     return JSONResponse({"ok": True})
 
@@ -422,9 +422,7 @@ async def code_version() -> JSONResponse:
 
 @app.get("/api/techniques")
 async def list_techniques() -> JSONResponse:
-    """Библиотека техник сведения — для веб-вкладки "Техника" (см.
-    static/chat.html) и как справочный контекст (используется agent.py
-    отдельно, тут — для UI)."""
+    """Библиотека техник сведения для веб-вкладки «Техника»."""
     return JSONResponse([t.to_dict() for t in TECHNIQUES.values()])
 
 
@@ -696,10 +694,7 @@ async def get_technique_demo(session_id: str, filename: str) -> FileResponse:
 
 @app.post("/api/rooms/{session_id}/strategy/export")
 async def export_set(session_id: str, body: dict | None = None) -> JSONResponse:
-    """Отдаёт сет наружу: M3U-плейлист для Mixxx + текстовая раскладка.
-
-    Плейлист — это и есть «нативно в Mixxx»: треки играет сам Mixxx, а не
-    браузер. Загрузить его в Mixxx: Медиатека -> Импорт плейлиста."""
+    """Отдаёт сет наружу: универсальный M3U-плейлист и текстовая раскладка."""
     require_paid("Выгрузить сет плейлистом")
     room = sessions.get_or_create(session_id)
     if room.last_strategy is None:
@@ -721,7 +716,7 @@ async def export_set(session_id: str, body: dict | None = None) -> JSONResponse:
         "playlist_path": str(m3u),
         "tracks": result["tracks"],
         "skipped": result["skipped"],
-        "how_to": "В Mixxx: Медиатека -> Импорт плейлиста -> выбрать этот .m3u8",
+        "how_to": "Откройте .m3u8 в совместимом DJ-плеере или медиаплеере.",
     })
 
 
@@ -1185,22 +1180,9 @@ async def refine_library_bpm_status(session_id: str) -> JSONResponse:
     return JSONResponse(_bpm_refine_status.get(session_id, {"running": False}))
 
 
-@app.post("/api/rooms/{session_id}/library")
-async def upload_library(session_id: str, body: dict) -> JSONResponse:
-    """Companion шлёт сюда результаты track_analysis.py --upload (список
-    аналитических записей треков — BPM/тональность/структура). Полностью
-    заменяет предыдущую библиотеку комнаты (пересканирование = новый снимок)."""
-    tracks = body.get("tracks", [])
-    room = sessions.get_or_create(session_id)
-    room.library_tracks = tracks
-    persistence.save_library(session_id, tracks)
-    await room.broadcast_to_chat({"type": "library_updated", "count": len(tracks)})
-    return JSONResponse({"ok": True, "count": len(tracks)})
-
-
 @app.get("/api/docs")
 async def docs_index() -> JSONResponse:
-    """Оглавление встроенной документации."""
+    """Оглавление встроенной справки."""
     import docs as _docs
 
     return JSONResponse({"sections": _docs.index()})
@@ -1208,9 +1190,7 @@ async def docs_index() -> JSONResponse:
 
 @app.get("/api/docs/{slug}")
 async def docs_page(slug: str) -> JSONResponse:
-    """Один раздел. Теория берётся из тех же строк, что читает ассистент,
-    а справочник приёмов собирается из живого словаря TECHNIQUES —
-    поэтому документация не может отстать от кода."""
+    """Один раздел встроенной справки."""
     import docs as _docs
 
     page = _docs.page(slug)
@@ -1485,10 +1465,6 @@ async def library_scan_status(session_id: str) -> JSONResponse:
 #     если не хватает нечего. Пропуск — это нормальный исход шага, а не
 #     ошибка, и он так и показывается.
 #
-# Шаг "cues" (метки в Mixxx) выключен по умолчанию сознательно: Mixxx
-# держит свою библиотеку в памяти и при выходе перезаписывает файл, то
-# есть запись меток при запущенном Mixxx их теряет. Шаг это проверяет сам
-# и отказывается, а не портит базу.
 
 ANALYZE_STEPS = _la.ANALYZE_STEPS
 ANALYZE_DEFAULT = _la.ANALYZE_DEFAULT

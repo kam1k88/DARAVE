@@ -3,12 +3,12 @@ techniques.py — библиотека техник сведения (изнач
 универсальна) + сборка MixPlan под конкретную технику.
 
 Три роли одних и тех же данных:
-  1. Контекст для LLM (agent.py передаёт TECHNIQUES в system-промпт/tool-схему,
-     чтобы модель выбирала технику по имени, а не изобретала MIDI-параметры).
+  1. Каталог для подбора переходов: метаданные описывают применимость
+     техники, а функции ниже строят последовательность аудиособытий.
   2. Данные для web UI ("Техника" — карточки с описанием/параметрами/шагами,
      см. server.py::GET /api/techniques и static/chat.html).
-  3. Исполняемая логика — build_plan() строит реальный MixPlan (в midi_mapping.py
-     терминах) под выбранную технику, с учётом structure-анализа трека
+  3. Исполняемая логика — build_plan() строит план аудиоперехода
+     под выбранную технику, с учётом structure-анализа трека
      (drops/breakdowns из track_analysis.py), если он есть.
 
 Часть техник (A Cappella Overlay) требует стемов — им requires_stems=True,
@@ -99,15 +99,15 @@ class Technique:
         return d
 
 
-from mixxx_controls import BY_ID as _CONTROLS
+from transition_controls import CONTROL_NEUTRAL
 
 # «Штатная единица» ручки EQ в нормализованных 0..1. Диапазон контрола
 # Mixxx у EQ — 0..4, поэтому единица это 0.25, а не 1.0 (1.0 = буст в 4x).
 # Берём из каталога, чтобы не разъехалось, если диапазон когда-то изменится.
-EQ_UNITY = _CONTROLS["eq_low"].neutral
+EQ_UNITY = CONTROL_NEUTRAL["eq_low"]
 
 
-# --- вспомогательные конструкторы событий (см. mixplan.py::MixEvent) ---
+# --- вспомогательные конструкторы событий (см. формат событий перехода) ---
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
@@ -3333,7 +3333,7 @@ def _restore_neutral(events: list[dict], source: str, beats: float = _RESTORE_BE
             last[k] = e
     added = []
     for (deck, action), e in sorted(last.items()):
-        neutral = _CONTROLS[action].neutral
+        neutral = CONTROL_NEUTRAL[action]
         vt = e.get("value_to")
         if vt is None or abs(float(vt) - float(neutral)) < 1e-6:
             continue

@@ -8,7 +8,8 @@
 
 
 
-[Website](https://darave.ru/) · [Download for Windows](https://darave.ru/) · [Releases](https://github.com/kam1k88/darave-releases)
+[Website](https://darave.ru/) · [Download for Windows](https://darave.ru/) · [Releases](https://github.com/kam1k88/darave-releases) <img width="276" height="276" alt="image" src="https://github.com/user-attachments/assets/34f070f0-4642-4ab4-967f-b79b098cbd49" />
+
 
 DARAVE is a Windows application for analyzing music libraries, discovering DJ transitions, and assembling complete mixes.
 

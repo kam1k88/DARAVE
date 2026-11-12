@@ -9,7 +9,7 @@
 #   Inno Setup 6  — https://jrsoftware.org/isdl.php  (бесплатно)
 #   интернет      — качаются пакеты и ffmpeg
 #
-# Пользователю установщика не нужно НИЧЕГО: ни Python, ни Mixxx.
+# Пользователю установщика не нужно устанавливать Python или зависимости.
 
 [CmdletBinding()]
 param(

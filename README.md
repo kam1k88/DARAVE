@@ -2,7 +2,7 @@
 
 [English](README.md) · [Русский](README.ru.md)
 
-<img width="96" height="96" alt="favicon" src="https://github.com/user-attachments/assets/7cbcb0e1-28aa-4d61-abca-546bb060c6b5" />
+<img width="128" height="128" alt="favicon" src="https://github.com/user-attachments/assets/7cbcb0e1-28aa-4d61-abca-546bb060c6b5" />
 
 **Digital Audio Rave — A DJ mixing tool that analyzes your music, finds transitions, and renders the mix.**
 
